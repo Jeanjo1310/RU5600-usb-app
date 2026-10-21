@@ -47,9 +47,11 @@ def main():
                     help="operation to run")
     ap.add_argument("--mem", default="EPC", choices=["EPC", "TID", "USER"])
     ap.add_argument("--ptr", default="0", help="start word address (hex)")
-    ap.add_argument("--count", default="2", help="word count (hex)")
+    ap.add_argument("--count", default="8", help="word count (hex), 8 = 16 bytes")
     ap.add_argument("--epc", default="", help="EPC bytes to write (hex)")
     ap.add_argument("--band", default="USA", help="frequency band")
+    ap.add_argument("--password", default="00000000",
+                    help="Gen2 access password (8 hex digits)")
     ap.add_argument("--seconds", type=float, default=30.0)
     args = ap.parse_args()
 
@@ -68,7 +70,7 @@ def main():
             print(f"Hardware     : {info.hard_ver}")
 
         elif args.command == "inventory":
-            tags = reader.inventory()
+            tags = reader.scan()
             print(f"{len(tags)} tag(s)")
             for line in _fmt_tags(tags):
                 print(line)
@@ -93,7 +95,9 @@ def main():
 
         elif args.command == "read":
             mem = {"EPC": MEM_EPC, "TID": MEM_TID, "USER": MEM_USER}[args.mem]
-            data = reader.read_card(mem, int(args.ptr, 16), int(args.count, 16))
+            pwd = bytes.fromhex(args.password)
+            data = reader.read_card(mem, int(args.ptr, 16),
+                                  int(args.count, 16), pwd)
             print(data.hex().upper())
 
         elif args.command == "write":
@@ -101,7 +105,7 @@ def main():
                 print("error: --epc required", file=sys.stderr)
                 return 2
             data = bytes.fromhex(args.epc.replace(" ", ""))
-            reader.write_epc(data)
+            reader.write_epc(data, bytes.fromhex(args.password))
             print(f"written: {data.hex().upper()}")
 
         elif args.command == "params":

@@ -162,9 +162,8 @@ offset  size  field
   0      1    record length (does NOT include this byte)
   1      1    type       bit 0x80 => record carries a 6 byte timestamp
   2      1    antenna
-  3      m    tag id (EPC or TID),  m = len - 1   (len - 7 with timestamp)
-  ...    6    timestamp (only when type & 0x80)
-  ...    1    RSSI
+  3      m    tag id slot (see below), m = len - 3  (len - 9 with timestamp)
+  ...    1    RSSI        (immediately before the 6 byte timestamp)
 ```
 
 Next record starts at `offset += record_length + 1`.
@@ -172,6 +171,121 @@ Next record starts at `offset += record_length + 1`.
 Cross-checked against four independent vendor demos (C++ `main.cpp`, Delphi
 `Unit1.pas`, VB `Form1.vb`, Python `UsbDemo.py`) — all four decode it the
 same way.
+
+### Measured records (firmware 7.1)
+
+96 bit EPC tag, answer mode — **28 bytes total**:
+
+```
+1B 03 01 | E2 00 47 01 99 51 66 2B 03 9F D1 AD | 00 00 00 00 01 00 00 00 00 00 00 | 30
+^  ^  ^   ^------------------- EPC (12 bytes) -----^  ^-------- reader metadata (12) ---^  ^
+|  |  ant                                                        RSSI = 0x30 = 48
+|  type = 0x03
+len = 27
+```
+
+192 bit EPC tag, answer mode — **28 bytes total** as well, with a 24 byte EPC
+slot:
+
+```
+1B 03 01 | E2 00 47 06 6B C0 60 27 AC 48 01 14 | 00 00 00 00 01 00 00 00 00 00 00 | 30
+```
+
+96 bit EPC tag, active mode — **16 bytes per record** (the reader repeats
+the tag with a fresh RSSI):
+
+```
+0F 03 01 E2 00 47 01 99 51 66 2B 03 9F D1 AD 34
+^  ^  ^  ^---------------- EPC (12) ------------^  ^ RSSI
+|  |  ant
+|  type
+len = 15
+```
+
+### The ID slot is the whole EPC
+
+The slot length follows the EPC length: 12 bytes for a 96 bit tag, 24 for a
+192 bit one. It is **not** padded - the bytes past the EPC belong to the
+EPC itself.
+
+> An earlier revision of this client clamped the slot to 12 bytes and
+> truncated 192 bit EPCs. That was wrong: a second tag with a 12 byte slot
+> proved the slot length tracks the EPC length. `ReadCardG2` is the
+> ground truth and always agrees with the slot.
+
+The real EPC was confirmed against `ReadCardG2`:
+
+```
+ReadCardG2(bank=EPC, word=0, words=8) -> 55B334BF | E20047019951662B039FD1AD
+                                        ^^^^^^^^   ^--- EPC starts at word 2
+                                        CRC + PC header
+ReadCardG2(bank=TID, word=0, words=6) -> E2803813 | 2000662B039FD1AD
+```
+
+Note the Gen2 relationship: the last 6 bytes of the TID (`00662B039FD1AD`)
+are the last 6 bytes of the EPC (`00662B039FD1AD`).
+
+Cross-checked against four independent vendor demos (C++ `main.cpp`, Delphi
+`Unit1.pas`, VB `Form1.vb`, Python `UsbDemo.py`) — all four decode the
+record the same way.
+
+> Open item: the reader's *access password* is a 4 byte parameter of the
+> read command. With `00000000` the read succeeds; **any** other value
+> fails 100 % of the time (0/14 attempts), so a wrong password is easy to
+> recognise.
+
+---
+
+## 6.1 Command pacing (critical)
+
+The reader **drops commands that arrive while it is still busy**. Measured
+on the bench:
+
+| Gap between two commands | Answer-mode inventory success |
+|---|---|
+| 0 ms (back to back) | 0 / 15 |
+| 50 ms | ~4 / 8 |
+| 60 ms (what this client uses) | 6 / 6 |
+
+A single answer-mode inventory round takes only ~3 ms, and roughly half of
+the rounds are refused even with a gap. The client therefore
+
+* waits **60 ms** between any two commands (`Ru5600Reader.MIN_GAP`),
+* waits **450 ms** after a state changing command - set parameter, set
+  frequency, start/stop reading, write (`Ru5600Reader.SETTLE`),
+* retries the inventory and the memory reads.
+
+### Memory reads only answer in bursts
+
+A single `ReadCardG2` succeeds only **~20 %** of the time. The successes
+come in bursts - roughly 4 consecutive accepted commands every ~3.3 s:
+
+```
+t = 0.07 3.06 5.78 6.43 6.61 9.32 9.51 9.70 9.89 13.34 13.53 16.71 16.90 ...
+```
+
+Retrying every **30 ms** turns it into a reliable operation (measured 10/10
+successful reads, 0.4 - 2.4 s per read). The client does exactly that
+(`ReadCardG2` with `retries=40`).
+
+### Active mode is the reliable detector
+
+The answer mode inventory is refused far more often than active mode. The
+client therefore scans with a short **active** dwell and drains the tag
+buffer:
+
+```
+set work mode = Active -> clear tag buffer -> start read
+-> dwell 350 ms -> stop read -> GetTagBuf
+```
+
+That returns the tag 2-5 times per scan, every time. The one shot *Read*
+button of the GUI uses this path; the *ActiveMode* tab keeps the reader
+streaming and fills the table from the library callback.
+
+A one shot inventory also requires the reader to be in **answer mode**
+(work mode parameter `0x02` = 0). The client switches back to answer mode
+after stopping an active read.
 
 ---
 

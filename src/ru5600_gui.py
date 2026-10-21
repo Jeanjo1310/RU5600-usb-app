@@ -244,6 +244,8 @@ class ReaderApp(Gtk.Window):
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
         actions.set_halign(Gtk.Align.CENTER)
         root.pack_start(actions, False, False, 0)
+        self.btn_read_action = None
+        self.btn_set_action = None
         for label, cb in (("Read", self.on_read),
                           ("Set", self.on_set),
                           ("Default", self.on_default)):
@@ -251,6 +253,10 @@ class ReaderApp(Gtk.Window):
             b.set_size_request(150, -1)
             b.connect("clicked", cb)
             actions.pack_start(b, False, False, 0)
+            if label == "Read":
+                self.btn_read_action = b
+            elif label == "Set":
+                self.btn_set_action = b
 
         # ---------------- bottom log -------------------------------------
         logbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -272,6 +278,35 @@ class ReaderApp(Gtk.Window):
         logbox.pack_start(scroll, True, True, 0)
 
         self.refresh_devices()
+        self._install_accelerators()
+
+    def _install_accelerators(self):
+        """Keyboard shortcuts: Ctrl+letter for actions, Alt+1..6 for tabs."""
+        accel = Gtk.AccelGroup()
+        self.add_accel_group(accel)
+        targets = [
+            ("Ctrl+o", self.btn_open),
+            ("Ctrl+r", self.btn_read_action),
+            ("Ctrl+s", self.btn_set_action),
+            ("Ctrl+t", self.btn_start),
+            ("Ctrl+Shift+t", self.btn_stop),
+        ]
+        for combo, widget in targets:
+            if widget is None:
+                continue
+            key, mods = Gtk.accelerator_parse(combo)
+            accel.connect(key, mods, Gtk.AccelFlags.VISIBLE,
+                          lambda *_, w=widget: w.activate())
+        for i in range(self.nb.get_n_pages()):
+            key, mods = Gtk.accelerator_parse(f"Alt+{i + 1}")
+            accel.connect(key, mods, Gtk.AccelFlags.VISIBLE,
+                          self._make_tab_switcher(i))
+
+    def _make_tab_switcher(self, index):
+        def handler(*_):
+            self.nb.set_current_page(index)
+            return True
+        return handler
 
     # ------------------------------------------------------------- tabs
     def _build_param_tab(self):
@@ -368,16 +403,22 @@ class ReaderApp(Gtk.Window):
             self.cb_mem.append_text(m)
         self.cb_mem.set_active(0)
         self.entry_wordptr = Gtk.Entry(text="00")
-        self.entry_wordcount = Gtk.Entry(text="02")
+        self.entry_wordcount = Gtk.Entry(text="08")
+        self.entry_password = Gtk.Entry(text="00000000")
+        self.entry_password.set_max_length(8)
+        self.entry_password.set_tooltip_text(
+            "Gen2 access password (8 hex digits, 00000000 = no password)")
         g.attach(Gtk.Label(label="Bank:", xalign=0), 0, 0, 1, 1)
         g.attach(self.cb_mem, 1, 0, 1, 1)
         g.attach(Gtk.Label(label="WordPtr(Hex):", xalign=0), 2, 0, 1, 1)
         g.attach(self.entry_wordptr, 3, 0, 1, 1)
         g.attach(Gtk.Label(label="WordCount(Hex):", xalign=0), 4, 0, 1, 1)
         g.attach(self.entry_wordcount, 5, 0, 1, 1)
+        g.attach(Gtk.Label(label="Password:", xalign=0), 0, 1, 1, 1)
+        g.attach(self.entry_password, 1, 1, 2, 1)
         b = Gtk.Button(label="Read memory")
         b.connect("clicked", lambda *_: self.on_read_memory())
-        g.attach(b, 0, 1, 2, 1)
+        g.attach(b, 3, 1, 2, 1)
         box.pack_start(frame, False, False, 0)
 
         frame2 = Gtk.Frame(label="Write EPC")
@@ -678,8 +719,9 @@ class ReaderApp(Gtk.Window):
         self.log("Read started...")
 
         def task():
-            tags = self.reader.inventory()
-            return tags
+            # scan() uses active mode with a short dwell, which the reader
+            # answers far more reliably than a single answer mode round.
+            return self.reader.scan()
 
         def ok(tags):
             if not tags:
@@ -708,6 +750,16 @@ class ReaderApp(Gtk.Window):
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
+    def _access_password(self) -> bytes:
+        text = self.entry_password.get_text().strip().replace(" ", "")
+        try:
+            pwd = bytes.fromhex(text)
+        except ValueError:
+            pwd = b""
+        if len(pwd) != 4:
+            pwd = b"\x00" * 4
+        return pwd
+
     def on_read_memory(self, *_):
         if not self.reader.is_open:
             self.log("Open the reader first")
@@ -720,14 +772,20 @@ class ReaderApp(Gtk.Window):
         except ValueError:
             self.log("Invalid address / length (use hex)")
             return
+        pwd = self._access_password()
 
         def task():
-            return self.reader.read_card(mem, wptr, wcount)
+            return self.reader.read_card(mem, wptr, wcount, pwd)
 
         def ok(data):
             self.mem_output.set_text(data.hex().upper())
-            self.log(f"Read {wcount} word(s) from "
-                     f"{self.cb_mem.get_active_text()}: {data.hex().upper()}")
+            bank = self.cb_mem.get_active_text()
+            extra = ""
+            if bank == "EPC" and wptr == 0 and len(data) >= 4:
+                extra = ("  (word 0-1 = CRC + PC header, the EPC starts at "
+                         "word 2)")
+            self.log(f"Read {wcount} word(s) from {bank}: "
+                     f"{data.hex().upper()}{extra}")
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
@@ -746,7 +804,7 @@ class ReaderApp(Gtk.Window):
             return
 
         def task():
-            return self.reader.write_epc(data)
+            return self.reader.write_epc(data, self._access_password())
 
         def ok(_):
             self.log(f"EPC written: {data.hex().upper()}")
@@ -778,12 +836,15 @@ class ReaderApp(Gtk.Window):
             return
 
         def task():
-            return self.reader.stop_read()
+            self.reader.stop_read()
+            # Back to answer mode so the one shot Read button works again.
+            self.reader.set_work_mode(0)
+            return True
 
         def ok(_):
             self._active = False
             self.lbl_active.set_text("Status: stopped")
-            self.log("ActiveMode: stop reading")
+            self.log("ActiveMode: stop reading (back to AnswerMode)")
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 

@@ -86,7 +86,8 @@ The **Set** button applies the ParameterSet page to the reader.
 
 ## Verified against the physical reader
 
-Everything below was exercised on a real RU5600 on the bench:
+Everything below was exercised on a real RU5600 on the bench, with two
+different UHF tags (96 bit and 192 bit EPC):
 
 | Check | Result |
 |---|---|
@@ -96,20 +97,27 @@ Everything below was exercised on a real RU5600 on the bench:
 | `ReadFreq` / `SetFreq` | USA `31 80` → Europe `4E 00` → USA `31 80` (read back) |
 | `SetDeviceOneParam` | work mode answer ↔ active |
 | `StartRead` / `StopRead` | OK |
-| `InventoryG2` / `GetTagBuf` | OK (returned 0 tags - none on the antenna) |
-| `ReadCardG2` / `WriteEPCG2` | correct failure when no tag is in the field |
+| Tag detection (active dwell) | 2–5 tag records per scan, every scan |
+| `ReadCardG2` EPC bank | `55B334BF` + `E20047019951662B039FD1AD` (CRC + PC + EPC) |
+| `ReadCardG2` TID | `E2803813` + `2000662B039FD1AD` |
+| `ReadCardG2` USER | zeros (empty bank) |
+| `WriteEPCG2` | writes and reads back the same EPC |
 | GUI *Open* button | SN, firmware and hardware populate; log entry written |
+| GUI *Read* button | finds the tag and fills the table |
+| GUI *Read memory* | returns the EPC with its CRC/PC header |
 
-**Not yet exercised**: reading a real tag (no UHF tag was on the antenna
-during the bench test) and writing EPC to a tag.
+**Important**: the reader refuses most commands if they arrive too fast,
+and a memory read only succeeds inside a short window (roughly 4 accepted
+commands every 3.3 s). The client paces every command and retries - see
+[PROTOCOL.md](PROTOCOL.md) for the measurements.
 
 ## Notes
 
-* The reader must be in **AnswerMode** for the one-shot `Read` button and in
-  **ActiveMode** for the live table. The app switches work mode when you
-  press *Start read*.
-* **Only one program can use the reader at a time** - the USB interface is
+* Only one program can use the reader at a time - the USB interface is
   claimed exclusively. If *Open* fails while the reader is plugged in,
   close the other client (the CLI, or a second copy of this app).
+* Memory reads need the Gen2 **access password** of the tag
+  (`00000000` for an unprotected tag). The field is on the *Read/Write*
+  tab; a wrong password fails on every attempt.
 * `libCFHidApi.so` is the vendor's file, redistributed as-is from the SDK for
   interoperability with the hardware.
