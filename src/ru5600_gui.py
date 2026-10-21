@@ -1,0 +1,891 @@
+#!/usr/bin/env python3
+"""RU5600 Reader - GTK3 front-end (Linux reimplementation of ReaderSoft 5.1).
+
+Layout mirrors the Windows ReaderSoftV5.1 UI: connection panel on the left,
+tabbed parameter pages on the right, and a timestamped log at the bottom.
+"""
+from __future__ import annotations
+
+import os
+import sys
+import threading
+import time
+import traceback
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import GLib, Gtk  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from ru5600_core import (  # noqa: E402
+    FREQ_BANDS,
+    MEM_EPC,
+    MEM_TID,
+    MEM_USER,
+    ReaderError,
+    Ru5600Reader,
+    Tag,
+)
+
+APP_TITLE = "RU5600 Reader"
+USB_VID = "1a86"
+USB_PID = "e010"
+
+
+def _usb_readers() -> list:
+    """Find reader nodes under /sys/bus/usb/devices (VID:PID 1a86:e010)."""
+    found = []
+    base = "/sys/bus/usb/devices"
+    try:
+        for node in sorted(os.listdir(base)):
+            vid = pid = product = None
+            try:
+                vid = open(os.path.join(base, node, "idVendor")).read().strip()
+                pid = open(os.path.join(base, node, "idProduct")).read().strip()
+            except OSError:
+                continue
+            if vid.lower() == USB_VID and pid.lower() == USB_PID:
+                try:
+                    product = open(
+                        os.path.join(base, node, "product"), errors="replace"
+                    ).read().strip()
+                except OSError:
+                    product = node
+                found.append((node, product or node))
+    except OSError:
+        pass
+    return found
+
+
+class Worker:
+    """Runs a callable off the GTK thread and posts the result back."""
+
+    def __init__(self, gui):
+        self.gui = gui
+
+    def run(self, fn, on_ok=None, on_err=None):
+        def target():
+            try:
+                result = fn()
+            except Exception as exc:  # noqa: BLE001
+                if on_err:
+                    GLib.idle_add(on_err, exc)
+                else:
+                    GLib.idle_add(self.gui.log_error, str(exc))
+                return
+            if on_ok:
+                GLib.idle_add(on_ok, result)
+
+        threading.Thread(target=target, daemon=True).start()
+
+
+class ReaderApp(Gtk.Window):
+    def __init__(self):
+        super().__init__(title=APP_TITLE)
+        self.set_default_size(1024, 720)
+        self.reader = Ru5600Reader(on_tags=self._on_tags_threadsafe)
+        self.worker = Worker(self)
+        self._tag_counts = {}
+        self._tag_order = []
+        self._active = False
+
+        self._build_ui()
+        self.connect("destroy", self._on_destroy)
+
+    # ------------------------------------------------------------------ UI
+    def _build_ui(self):
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.add(root)
+
+        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        root.pack_start(paned, True, True, 0)
+
+        # ---------------- left: connection -------------------------------
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        left.set_size_request(290, -1)
+        left_scroll = Gtk.ScrolledWindow()
+        left_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        left_scroll.set_min_content_width(290)
+        left_scroll.add(left)
+        paned.pack1(left_scroll, False, False)
+
+        conn = Gtk.Frame(label="Connection")
+        lv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        conn.add(lv)
+
+        self.rb_usb = Gtk.RadioButton.new_with_label_from_widget(None, "USB")
+        self.rb_com = Gtk.RadioButton.new_with_label_from_widget(self.rb_usb, "COM")
+        self.rb_net = Gtk.RadioButton.new_with_label_from_widget(self.rb_usb, "Net")
+        for rb in (self.rb_usb, self.rb_com, self.rb_net):
+            lv.pack_start(rb, False, False, 0)
+        self.rb_usb.set_active(True)
+
+        grid = Gtk.Grid(column_spacing=6, row_spacing=4)
+        grid.set_column_homogeneous(False)
+        lv.pack_start(grid, False, False, 0)
+
+        self.cb_baud = Gtk.ComboBoxText()
+        for rate in ("9600bps", "19200bps", "38400bps", "57600bps",
+                     "115200bps", "230400bps"):
+            self.cb_baud.append_text(rate)
+        self.cb_baud.set_active(4)
+        grid.attach(Gtk.Label(label="Baudrate:", xalign=0), 0, 0, 1, 1)
+        grid.attach(self.cb_baud, 1, 0, 1, 1)
+
+        self.cb_device = Gtk.ComboBoxText()
+        grid.attach(Gtk.Label(label="Device:", xalign=0), 0, 1, 1, 1)
+        grid.attach(self.cb_device, 1, 1, 1, 1)
+
+        self.cb_transport = Gtk.ComboBoxText()
+        for t in ("USB", "COM", "Net"):
+            self.cb_transport.append_text(t)
+        self.cb_transport.set_active(0)
+        grid.attach(Gtk.Label(label="Interface:", xalign=0), 0, 2, 1, 1)
+        grid.attach(self.cb_transport, 1, 2, 1, 1)
+
+        self.entry_ip = Gtk.Entry(text="192.168.1.250")
+        grid.attach(Gtk.Label(label="Net IP:", xalign=0), 0, 3, 1, 1)
+        grid.attach(self.entry_ip, 1, 3, 1, 1)
+
+        self.entry_port = Gtk.Entry(text="60000")
+        grid.attach(Gtk.Label(label="NetPort:", xalign=0), 0, 4, 1, 1)
+        grid.attach(self.entry_port, 1, 4, 1, 1)
+
+        btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        lv.pack_start(btns, False, False, 0)
+        self.btn_open = Gtk.Button(label="Open")
+        self.btn_close = Gtk.Button(label="Close")
+        self.btn_close.set_sensitive(False)
+        self.btn_open.connect("clicked", lambda *_: self.on_open())
+        self.btn_close.connect("clicked", lambda *_: self.on_close())
+        btns.pack_start(self.btn_open, True, True, 0)
+        btns.pack_start(self.btn_close, True, True, 0)
+
+        btns2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        lv.pack_start(btns2, False, False, 0)
+        for label, cb in (("ScanPort", self.on_scan_port),
+                          ("ScanNetwork", self.on_scan_network)):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", cb)
+            btns2.pack_start(b, True, True, 0)
+
+        btns3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        lv.pack_start(btns3, False, False, 0)
+        for label, cb in (("TCPServer", self.on_tcp_server),
+                          ("Help", self.on_help)):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", cb)
+            btns3.pack_start(b, True, True, 0)
+
+        self.btn_udev = Gtk.Button(label="Install USB access rule")
+        self.btn_udev.set_tooltip_text(
+            "Installs the udev rule that lets non-root users open the "
+            "reader (needs the administrator password)")
+        self.btn_udev.connect("clicked", self.on_install_udev)
+        lv.pack_start(self.btn_udev, False, False, 0)
+
+        left.pack_start(conn, False, False, 0)
+
+        # device identity
+        info = Gtk.Frame(label="Device")
+        ig = Gtk.Grid(column_spacing=6, row_spacing=4)
+        info.add(ig)
+        self.entry_sn = Gtk.Entry(); self.entry_sn.set_editable(False)
+        self.entry_fw = Gtk.Entry(); self.entry_fw.set_editable(False)
+        self.entry_hw = Gtk.Entry(); self.entry_hw.set_editable(False)
+        ig.attach(Gtk.Label(label="DeviceSN:", xalign=0), 0, 0, 1, 1)
+        ig.attach(self.entry_sn, 1, 0, 1, 1)
+        ig.attach(Gtk.Label(label="Firmware:", xalign=0), 0, 1, 1, 1)
+        ig.attach(self.entry_fw, 1, 1, 1, 1)
+        ig.attach(Gtk.Label(label="Hardware:", xalign=0), 0, 2, 1, 1)
+        ig.attach(self.entry_hw, 1, 2, 1, 1)
+        left.pack_start(info, False, False, 0)
+
+        cfg = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        left.pack_start(cfg, False, False, 0)
+        for label, cb in (("ExportConfig", self.on_export_config),
+                          ("ImportConfig", self.on_import_config)):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", cb)
+            cfg.pack_start(b, True, True, 0)
+
+        relay = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        left.pack_start(relay, False, False, 0)
+        for label, cb in (("CloseRelay", lambda *_: self.on_relay(False)),
+                          ("ReleaseRelay", lambda *_: self.on_relay(True))):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", cb)
+            relay.pack_start(b, True, True, 0)
+
+        opts = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        left.pack_start(opts, False, False, 0)
+        self.chk_skin = Gtk.CheckButton(label="Skin")
+        self.chk_skin.set_active(True)
+        opts.pack_start(self.chk_skin, False, False, 0)
+        self.cb_lang = Gtk.ComboBoxText()
+        for lang in ("English", "Spanish", "Portuguese"):
+            self.cb_lang.append_text(lang)
+        self.cb_lang.set_active(0)
+        opts.pack_start(self.cb_lang, True, True, 0)
+
+        # ---------------- right: notebook --------------------------------
+        self.nb = Gtk.Notebook()
+        self.nb.set_scrollable(True)
+        paned.pack2(self.nb, True, False)
+        self._build_param_tab()
+        self._build_readwrite_tab()
+        self._build_active_tab()
+        self._build_advance_tab()
+        self._build_batch_tab()
+
+        # ---------------- bottom action row ------------------------------
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
+        actions.set_halign(Gtk.Align.CENTER)
+        root.pack_start(actions, False, False, 0)
+        for label, cb in (("Read", self.on_read),
+                          ("Set", self.on_set),
+                          ("Default", self.on_default)):
+            b = Gtk.Button(label=label)
+            b.set_size_request(150, -1)
+            b.connect("clicked", cb)
+            actions.pack_start(b, False, False, 0)
+
+        # ---------------- bottom log -------------------------------------
+        logbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        root.pack_start(logbox, False, False, 0)
+
+        self.log_store = Gtk.ListStore(str, str)
+        self.log_view = Gtk.TreeView(model=self.log_store)
+        self.log_view.append_column(Gtk.TreeViewColumn("Time",
+                                                       Gtk.CellRendererText(),
+                                                       text=0))
+        self.log_view.append_column(Gtk.TreeViewColumn("Result",
+                                                       Gtk.CellRendererText(),
+                                                       text=1))
+        self.log_view.set_headers_visible(True)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_min_content_height(150)
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(self.log_view)
+        logbox.pack_start(scroll, True, True, 0)
+
+        self.refresh_devices()
+
+    # ------------------------------------------------------------- tabs
+    def _build_param_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(8)
+
+        rp = Gtk.Frame(label="Reader parameters")
+        rg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        rp.add(rg)
+        self.cb_rfpower = Gtk.ComboBoxText()
+        for v in range(0, 31):
+            self.cb_rfpower.append_text(f"{v}dBm")
+        self.cb_rfpower.set_active(15)
+        self.cb_freqband = Gtk.ComboBoxText()
+        for band in FREQ_BANDS:
+            self.cb_freqband.append_text(band)
+        self.cb_freqband.set_active(0)
+        self.chk_singlefreq = Gtk.CheckButton(label="SingleFreq")
+        self.entry_freq = Gtk.Entry(text="902.75")
+        rg.attach(Gtk.Label(label="RFPower:", xalign=0), 0, 0, 1, 1)
+        rg.attach(self.cb_rfpower, 1, 0, 1, 1)
+        rg.attach(Gtk.Label(label="FreqBand:", xalign=0), 2, 0, 1, 1)
+        rg.attach(self.cb_freqband, 3, 0, 1, 1)
+        rg.attach(self.chk_singlefreq, 4, 0, 1, 1)
+        rg.attach(self.entry_freq, 5, 0, 1, 1)
+        box.pack_start(rp, False, False, 0)
+
+        rs = Gtk.Frame(label="Reading settings")
+        sg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        rs.add(sg)
+        self.cb_workmode = Gtk.ComboBoxText()
+        for m in ("AnswerMode", "ActiveMode"):
+            self.cb_workmode.append_text(m)
+        self.cb_workmode.set_active(0)
+        self.cb_inquiry = Gtk.ComboBoxText()
+        for a in ("EPC", "TID", "USER"):
+            self.cb_inquiry.append_text(a)
+        self.cb_inquiry.set_active(0)
+        self.entry_filter = Gtk.Entry(text="0")
+        self.entry_start = Gtk.Entry(text="00")
+        self.entry_bytelen = Gtk.Entry(text="00")
+        self.entry_readtime = Gtk.Entry(text="2")
+        self.chk_buzzer = Gtk.CheckButton(label="Buzzer")
+        self.chk_buzzer.set_active(True)
+        sg.attach(Gtk.Label(label="Interface:", xalign=0), 0, 0, 1, 1)
+        sg.attach(self.cb_transport2(), 1, 0, 1, 1)
+        sg.attach(Gtk.Label(label="WorkMode:", xalign=0), 2, 0, 1, 1)
+        sg.attach(self.cb_workmode, 3, 0, 1, 1)
+        sg.attach(Gtk.Label(label="FilterTime(S):", xalign=0), 4, 0, 1, 1)
+        sg.attach(self.entry_filter, 5, 0, 1, 1)
+        sg.attach(Gtk.Label(label="InquiryArea:", xalign=0), 0, 1, 1, 1)
+        sg.attach(self.cb_inquiry, 1, 1, 1, 1)
+        sg.attach(Gtk.Label(label="StartAddress(Hex):", xalign=0), 2, 1, 1, 1)
+        sg.attach(self.entry_start, 3, 1, 1, 1)
+        sg.attach(Gtk.Label(label="ByteLength(Hex):", xalign=0), 4, 1, 1, 1)
+        sg.attach(self.entry_bytelen, 5, 1, 1, 1)
+        sg.attach(Gtk.Label(label="ReadTime(*10ms):", xalign=0), 0, 2, 1, 1)
+        sg.attach(self.entry_readtime, 1, 2, 1, 1)
+        sg.attach(self.chk_buzzer, 2, 2, 1, 1)
+        box.pack_start(rs, False, False, 0)
+
+        kb = Gtk.Frame(label="Keyboard")
+        kg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        kb.add(kg)
+        self.cb_outfmt = Gtk.ComboBoxText()
+        for f in ("All(Hex)", "EPC(HEX)", "EPC(ASCII)"):
+            self.cb_outfmt.append_text(f)
+        self.cb_outfmt.set_active(0)
+        self.chk_enterkey = Gtk.CheckButton(label="OutWithEnterKey")
+        self.chk_enterkey.set_active(True)
+        kg.attach(Gtk.Label(label="OutPutFormat:", xalign=0), 0, 0, 1, 1)
+        kg.attach(self.cb_outfmt, 1, 0, 1, 1)
+        kg.attach(self.chk_enterkey, 2, 0, 1, 1)
+        box.pack_start(kb, False, False, 0)
+
+        self.nb.append_page(box, Gtk.Label(label="ParameterSet"))
+
+    def cb_transport2(self):
+        cb = Gtk.ComboBoxText()
+        for t in ("USB", "COM", "Net"):
+            cb.append_text(t)
+        cb.set_active(0)
+        return cb
+
+    def _build_readwrite_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(8)
+
+        frame = Gtk.Frame(label="Read tag memory")
+        g = Gtk.Grid(column_spacing=8, row_spacing=6)
+        frame.add(g)
+        self.cb_mem = Gtk.ComboBoxText()
+        for m in ("EPC", "TID", "USER"):
+            self.cb_mem.append_text(m)
+        self.cb_mem.set_active(0)
+        self.entry_wordptr = Gtk.Entry(text="00")
+        self.entry_wordcount = Gtk.Entry(text="02")
+        g.attach(Gtk.Label(label="Bank:", xalign=0), 0, 0, 1, 1)
+        g.attach(self.cb_mem, 1, 0, 1, 1)
+        g.attach(Gtk.Label(label="WordPtr(Hex):", xalign=0), 2, 0, 1, 1)
+        g.attach(self.entry_wordptr, 3, 0, 1, 1)
+        g.attach(Gtk.Label(label="WordCount(Hex):", xalign=0), 4, 0, 1, 1)
+        g.attach(self.entry_wordcount, 5, 0, 1, 1)
+        b = Gtk.Button(label="Read memory")
+        b.connect("clicked", lambda *_: self.on_read_memory())
+        g.attach(b, 0, 1, 2, 1)
+        box.pack_start(frame, False, False, 0)
+
+        frame2 = Gtk.Frame(label="Write EPC")
+        g2 = Gtk.Grid(column_spacing=8, row_spacing=6)
+        frame2.add(g2)
+        self.entry_write_epc = Gtk.Entry(
+            text="3034333234353536373839303132")
+        g2.attach(Gtk.Label(label="EPC (hex):", xalign=0), 0, 0, 1, 1)
+        g2.attach(self.entry_write_epc, 1, 0, 3, 1)
+        b2 = Gtk.Button(label="Write EPC")
+        b2.connect("clicked", lambda *_: self.on_write_epc())
+        g2.attach(b2, 0, 1, 2, 1)
+        box.pack_start(frame2, False, False, 0)
+
+        self.mem_output = Gtk.Label(label="-")
+        self.mem_output.set_selectable(True)
+        box.pack_start(self.mem_output, False, False, 0)
+        self.nb.append_page(box, Gtk.Label(label="Read/Write"))
+
+    def _build_active_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_border_width(8)
+
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.pack_start(bar, False, False, 0)
+        self.btn_start = Gtk.Button(label="Start read")
+        self.btn_stop = Gtk.Button(label="Stop read")
+        self.btn_start.connect("clicked", lambda *_: self.on_start_read())
+        self.btn_stop.connect("clicked", lambda *_: self.on_stop_read())
+        bar.pack_start(self.btn_start, False, False, 0)
+        bar.pack_start(self.btn_stop, False, False, 0)
+        self.lbl_active = Gtk.Label(label="Status: stopped")
+        bar.pack_start(self.lbl_active, False, False, 0)
+
+        self.tag_store = Gtk.ListStore(str, str, str, str, str)
+        view = Gtk.TreeView(model=self.tag_store)
+        for i, title in enumerate(("Ant", "EPC / Tag ID", "RSSI", "Count",
+                                   "Last seen")):
+            view.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(),
+                                                  text=i))
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.add(view)
+        box.pack_start(scroll, True, True, 0)
+        self.nb.append_page(box, Gtk.Label(label="ActiveMode"))
+
+    def _build_advance_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(8)
+
+        frame = Gtk.Frame(label="Frequency")
+        g = Gtk.Grid(column_spacing=8, row_spacing=6)
+        frame.add(g)
+        self.cb_freq_adv = Gtk.ComboBoxText()
+        for band in FREQ_BANDS:
+            self.cb_freq_adv.append_text(band)
+        self.cb_freq_adv.set_active(0)
+        g.attach(Gtk.Label(label="Band:", xalign=0), 0, 0, 1, 1)
+        g.attach(self.cb_freq_adv, 1, 0, 1, 1)
+        b_read = Gtk.Button(label="Read freq")
+        b_read.connect("clicked", lambda *_: self.on_read_freq())
+        b_set = Gtk.Button(label="Set freq")
+        b_set.connect("clicked", lambda *_: self.on_set_freq())
+        g.attach(b_read, 0, 1, 1, 1)
+        g.attach(b_set, 1, 1, 1, 1)
+        box.pack_start(frame, False, False, 0)
+
+        frame2 = Gtk.Frame(label="Device")
+        g2 = Gtk.Grid(column_spacing=8, row_spacing=6)
+        frame2.add(g2)
+        b_reboot = Gtk.Button(label="Reboot reader")
+        b_reboot.connect("clicked", lambda *_: self.on_reboot())
+        g2.attach(b_reboot, 0, 0, 1, 1)
+        self.lbl_freq_raw = Gtk.Label(label="raw freq: -")
+        g2.attach(self.lbl_freq_raw, 1, 0, 1, 1)
+        box.pack_start(frame2, False, False, 0)
+        self.nb.append_page(box, Gtk.Label(label="AdvanceSet"))
+
+    def _build_batch_tab(self):
+        for title in ("BatchWrite", "WhiteList"):
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            box.set_border_width(8)
+            lbl = Gtk.Label(
+                label=f"{title} is not exposed by the vendor Linux API "
+                      "(libCFHidApi) and is not implemented here.",
+                wrap=True)
+            box.pack_start(lbl, False, False, 0)
+            self.nb.append_page(box, Gtk.Label(label=title))
+
+    # ------------------------------------------------------------ actions
+    def refresh_devices(self):
+        self.cb_device.remove_all()
+        devices = _usb_readers()
+        for node, product in devices:
+            self.cb_device.append_text(f"{USB_VID}:{USB_PID} ({product})")
+        if not devices:
+            self.cb_device.append_text("No reader found")
+        self.cb_device.set_active(0)
+
+    def on_scan_port(self, *_):
+        self.refresh_devices()
+        self.log(f"Scan: {len(_usb_readers())} USB reader(s) found")
+
+    def on_scan_network(self, *_):
+        self.log("ScanNetwork: not supported by this build (USB transport)")
+
+    def on_tcp_server(self, *_):
+        self.log("TCPServer: not supported by this build (USB transport)")
+
+    def on_help(self, *_):
+        dlg = Gtk.MessageDialog(
+            self, Gtk.DialogFlags.MODAL, Gtk.MessageType.INFO,
+            Gtk.ButtonsType.OK,
+            "RU5600 Reader (unofficial Linux client)\n\n"
+            "Transport : USB via libusb (vendor library libCFHidApi)\n"
+            "Device    : WCH 1a86:e010\n"
+            "If Open fails, install the udev rule so the reader is\n"
+            "readable without root.")
+        dlg.run()
+        dlg.destroy()
+
+    def on_install_udev(self, *_):
+        """Install the udev rule with a polkit prompt (needs admin rights)."""
+        import shutil
+        import subprocess
+
+        rule = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "99-inveton-ru5600.rules")
+        if not os.path.exists(rule):
+            rule = "/opt/ru5600-reader/99-inveton-ru5600.rules"
+        if not os.path.exists(rule):
+            self.log("udev rule not found next to the app")
+            return
+        target = "/etc/udev/rules.d/99-inveton-ru5600.rules"
+        script = (f"install -m 644 {rule} {target} && "
+                  "udevadm control --reload-rules && "
+                  "udevadm trigger --subsystem-match=usb "
+                  "--attr-match=idVendor=1a86")
+        if shutil.which("pkexec") is None:
+            self.log("pkexec not available - run the install script manually")
+            return
+        self.log("Requesting administrator rights to install the udev rule...")
+        try:
+            proc = subprocess.run(["pkexec", "sh", "-c", script],
+                                  capture_output=True, text=True)
+        except OSError as exc:
+            self.log_error(str(exc))
+            return
+        if proc.returncode == 0:
+            self.log("udev rule installed - unplug and replug the reader")
+        else:
+            self.log(f"udev rule install failed (rc={proc.returncode})")
+
+    def on_export_config(self, *_):
+        dlg = Gtk.FileChooserDialog(
+            title="Export configuration", parent=self,
+            action=Gtk.FileChooserAction.SAVE)
+        dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                        Gtk.STOCK_SAVE, Gtk.ResponseType.OK)
+        dlg.set_current_name("ru5600-config.ini")
+        if dlg.run() == Gtk.ResponseType.OK:
+            path = dlg.get_filename()
+            cfg = self.collect_config()
+            with open(path, "w") as fh:
+                for k, v in cfg.items():
+                    fh.write(f"{k}={v}\n")
+            self.log(f"Configuration exported to {path}")
+        dlg.destroy()
+
+    def on_import_config(self, *_):
+        dlg = Gtk.FileChooserDialog(
+            title="Import configuration", parent=self,
+            action=Gtk.FileChooserAction.OPEN)
+        dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                        Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
+        if dlg.run() == Gtk.ResponseType.OK:
+            path = dlg.get_filename()
+            try:
+                with open(path) as fh:
+                    for line in fh:
+                        if "=" in line:
+                            k, v = line.strip().split("=", 1)
+                            self.apply_config(k, v)
+                self.log(f"Configuration imported from {path}")
+            except OSError as exc:
+                self.log_error(str(exc))
+        dlg.destroy()
+
+    def collect_config(self):
+        return {
+            "rfpower": self.cb_rfpower.get_active_text(),
+            "freqband": self.cb_freqband.get_active_text(),
+            "workmode": self.cb_workmode.get_active_text(),
+            "filtertime": self.entry_filter.get_text(),
+            "buzzer": "1" if self.chk_buzzer.get_active() else "0",
+            "startaddr": self.entry_start.get_text(),
+            "bytelength": self.entry_bytelen.get_text(),
+            "readtime": self.entry_readtime.get_text(),
+            "outformat": self.cb_outfmt.get_active_text(),
+        }
+
+    def apply_config(self, key, value):
+        table = {
+            "rfpower": self.cb_rfpower,
+            "freqband": self.cb_freqband,
+            "workmode": self.cb_workmode,
+            "outformat": self.cb_outfmt,
+        }
+        if key in table:
+            cb = table[key]
+            for i in range(cb.get_model()[0]):
+                if cb.get_model()[i][0] == value:
+                    cb.set_active(i)
+                    return
+        entry = {
+            "filtertime": self.entry_filter,
+            "startaddr": self.entry_start,
+            "bytelength": self.entry_bytelen,
+            "readtime": self.entry_readtime,
+        }.get(key)
+        if entry is not None:
+            entry.set_text(value)
+        elif key == "buzzer":
+            self.chk_buzzer.set_active(value == "1")
+
+    def on_default(self, *_):
+        self.cb_rfpower.set_active(15)
+        self.cb_freqband.set_active(0)
+        self.cb_workmode.set_active(0)
+        self.entry_filter.set_text("0")
+        self.entry_start.set_text("00")
+        self.entry_bytelen.set_text("00")
+        self.entry_readtime.set_text("2")
+        self.chk_buzzer.set_active(True)
+        self.log("Default parameters restored")
+
+    def on_open(self, *_):
+        if self.rb_com.get_active() or self.rb_net.get_active():
+            self.log("Only the USB transport is implemented; forcing USB")
+        self.log("Opening USB reader...")
+
+        def task():
+            self.reader.open()
+            return self.reader.system_info()
+
+        self.worker.run(
+            task,
+            on_ok=self._on_opened,
+            on_err=self.log_error,
+        )
+
+    def _on_opened(self, info):
+        self.entry_sn.set_text(info.device_sn)
+        self.entry_fw.set_text(info.soft_ver)
+        self.entry_hw.set_text(info.hard_ver)
+        self.btn_open.set_sensitive(False)
+        self.btn_close.set_sensitive(True)
+        self.log(f"Open USB successfully - SN {info.device_sn}, "
+                 f"firmware {info.soft_ver}, hardware {info.hard_ver}")
+        self.load_params()
+
+    def on_close(self, *_):
+        try:
+            self.reader.close()
+        except Exception as exc:  # noqa: BLE001
+            self.log_error(str(exc))
+            return
+        self.btn_open.set_sensitive(True)
+        self.btn_close.set_sensitive(False)
+        self.lbl_active.set_text("Status: stopped")
+        self.log("Reader closed")
+
+    def load_params(self):
+        def task():
+            return {
+                "rf": self.reader.rf_power(),
+                "mode": self.reader.work_mode(),
+                "beep": self.reader.beep(),
+                "filter": self.reader.filter_time(),
+                "freq": self.reader.read_freq(),
+            }
+
+        def ok(data):
+            self.cb_rfpower.set_active(min(data["rf"], 30))
+            self.cb_workmode.set_active(1 if data["mode"] else 0)
+            self.chk_buzzer.set_active(bool(data["beep"]))
+            self.entry_filter.set_text(str(data["filter"]))
+            self.lbl_freq_raw.set_text(
+                "raw freq: " + data["freq"].hex().upper())
+            self.log("Parameters loaded from reader")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_read(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        self.log("Read started...")
+
+        def task():
+            tags = self.reader.inventory()
+            return tags
+
+        def ok(tags):
+            if not tags:
+                self.log("Read finished: no tags found")
+            else:
+                self.log(f"Read finished: {len(tags)} tag(s)")
+            self.update_tag_table(tags)
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_set(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+
+        def task():
+            self.reader.set_rf_power(int(self.cb_rfpower.get_active_text()[:-3]))
+            mode = 1 if self.cb_workmode.get_active_text() == "ActiveMode" else 0
+            self.reader.set_work_mode(mode)
+            self.reader.set_beep(self.chk_buzzer.get_active())
+            self.reader.set_filter_time(int(self.entry_filter.get_text() or 0))
+            return True
+
+        def ok(_):
+            self.log("Parameters applied to reader")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_read_memory(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        mem_map = {"EPC": MEM_EPC, "TID": MEM_TID, "USER": MEM_USER}
+        mem = mem_map.get(self.cb_mem.get_active_text(), MEM_EPC)
+        try:
+            wptr = int(self.entry_wordptr.get_text() or "0", 16)
+            wcount = int(self.entry_wordcount.get_text() or "0", 16)
+        except ValueError:
+            self.log("Invalid address / length (use hex)")
+            return
+
+        def task():
+            return self.reader.read_card(mem, wptr, wcount)
+
+        def ok(data):
+            self.mem_output.set_text(data.hex().upper())
+            self.log(f"Read {wcount} word(s) from "
+                     f"{self.cb_mem.get_active_text()}: {data.hex().upper()}")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_write_epc(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        text = self.entry_write_epc.get_text().strip().replace(" ", "")
+        try:
+            data = bytes.fromhex(text)
+        except ValueError:
+            self.log("EPC must be an even-length hex string")
+            return
+        if len(data) % 2:
+            self.log("EPC length must be a multiple of 2 bytes")
+            return
+
+        def task():
+            return self.reader.write_epc(data)
+
+        def ok(_):
+            self.log(f"EPC written: {data.hex().upper()}")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_start_read(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        self.reader.clear_tag_buf()
+        self._tag_counts.clear()
+        self._tag_order.clear()
+        self.tag_store.clear()
+
+        def task():
+            self.reader.set_work_mode(1)
+            return self.reader.start_read()
+
+        def ok(_):
+            self._active = True
+            self.lbl_active.set_text("Status: reading")
+            self.log("ActiveMode: start reading")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_stop_read(self, *_):
+        if not self.reader.is_open:
+            return
+
+        def task():
+            return self.reader.stop_read()
+
+        def ok(_):
+            self._active = False
+            self.lbl_active.set_text("Status: stopped")
+            self.log("ActiveMode: stop reading")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_relay(self, on: bool, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+
+        def task():
+            return self.reader.relay(on)
+
+        def ok(_):
+            self.log("Relay " + ("closed" if on else "released"))
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_read_freq(self, *_):
+        if not self.reader.is_open:
+            return
+
+        def task():
+            return self.reader.read_freq()
+
+        def ok(raw):
+            self.lbl_freq_raw.set_text("raw freq: " + raw.hex().upper())
+            self.log(f"Frequency read: {raw.hex().upper()}")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_set_freq(self, *_):
+        if not self.reader.is_open:
+            return
+        band = self.cb_freq_adv.get_active_text()
+
+        def task():
+            return self.reader.set_freq(band)
+
+        def ok(_):
+            self.log(f"Frequency set to {band}")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_reboot(self, *_):
+        if not self.reader.is_open:
+            return
+
+        def task():
+            return self.reader.reboot()
+
+        def ok(_):
+            self.log("Reboot command sent")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    # -------------------------------------------------------------- tags
+    def _on_tags_threadsafe(self, tags):
+        GLib.idle_add(self.update_tag_table, tags)
+
+    def update_tag_table(self, tags):
+        now = time.strftime("%H:%M:%S")
+        for tag in tags:
+            key = tag.epc_hex
+            if key not in self._tag_counts:
+                self._tag_counts[key] = 0
+                self._tag_order.append(key)
+            self._tag_counts[key] += 1
+            row = self._find_row(key)
+            if row is None:
+                row = self.tag_store.append([str(tag.ant), key, str(tag.rssi),
+                                             "1", now])
+            else:
+                row[2] = str(tag.rssi)
+                row[3] = str(self._tag_counts[key])
+                row[4] = now
+        return False
+
+    def _find_row(self, key):
+        for row in self.tag_store:
+            if row[1] == key:
+                return row
+        return None
+
+    # --------------------------------------------------------------- log
+    def log(self, message):
+        self.log_store.append([time.strftime("%H:%M:%S"), message])
+
+    def log_error(self, exc):
+        self.log_store.append([time.strftime("%H:%M:%S"), f"ERROR: {exc}"])
+
+    def _on_destroy(self, *_):
+        try:
+            self.reader.close()
+        except Exception:
+            pass
+        Gtk.main_quit()
+
+
+def main():
+    app = ReaderApp()
+    app.show_all()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

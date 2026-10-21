@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RU5600 Reader
+Comment=INVETON RU5600 UHF RFID reader - Linux client
+Exec=ru5600-reader
+Icon=ru5600-reader
+Terminal=false
+Categories=Utility;System;
+Keywords=RFID;UHF;EPC;reader;barcode;

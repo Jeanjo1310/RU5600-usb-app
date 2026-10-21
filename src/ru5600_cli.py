@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""RU5600 Reader - headless command line client.
+
+Examples:
+    ru5600_cli.py info
+    ru5600_cli.py inventory
+    ru5600_cli.py watch
+    ru5600_cli.py read --mem EPC --ptr 0 --count 2
+    ru5600_cli.py write --epc 3034333234353536373839303132
+    ru5600_cli.py params
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from ru5600_core import (  # noqa: E402
+    MEM_EPC,
+    MEM_TID,
+    MEM_USER,
+    ReaderError,
+    Ru5600Reader,
+)
+
+
+def _fmt_tags(tags):
+    out = []
+    for t in tags:
+        ts = ""
+        if t.timestamp:
+            ts = "  ts=" + t.timestamp.hex().upper()
+        out.append(
+            f"ant={t.ant} rssi={t.rssi:3d} type=0x{t.type:02X} "
+            f"epc={t.epc_hex}{ts}")
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(description="RU5600 UHF reader CLI")
+    ap.add_argument("command",
+                    choices=["info", "inventory", "watch", "read", "write",
+                             "params", "freq"],
+                    help="operation to run")
+    ap.add_argument("--mem", default="EPC", choices=["EPC", "TID", "USER"])
+    ap.add_argument("--ptr", default="0", help="start word address (hex)")
+    ap.add_argument("--count", default="2", help="word count (hex)")
+    ap.add_argument("--epc", default="", help="EPC bytes to write (hex)")
+    ap.add_argument("--band", default="USA", help="frequency band")
+    ap.add_argument("--seconds", type=float, default=30.0)
+    args = ap.parse_args()
+
+    reader = Ru5600Reader()
+    try:
+        reader.open()
+    except ReaderError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        if args.command == "info":
+            info = reader.system_info()
+            print(f"Device SN   : {info.device_sn}")
+            print(f"Firmware     : {info.soft_ver}")
+            print(f"Hardware     : {info.hard_ver}")
+
+        elif args.command == "inventory":
+            tags = reader.inventory()
+            print(f"{len(tags)} tag(s)")
+            for line in _fmt_tags(tags):
+                print(line)
+
+        elif args.command == "watch":
+            reader.set_work_mode(1)
+            reader.start_read()
+            seen = {}
+            end = time.time() + args.seconds
+            try:
+                while time.time() < end:
+                    for tag in reader.poll_tags():
+                        key = tag.epc_hex
+                        seen[key] = seen.get(key, 0) + 1
+                        print(f"[{time.strftime('%H:%M:%S')}] "
+                              f"ant={tag.ant} rssi={tag.rssi:3d} "
+                              f"epc={key}  (n={seen[key]})")
+                    time.sleep(0.2)
+            finally:
+                reader.stop_read()
+            print(f"unique tags: {len(seen)}")
+
+        elif args.command == "read":
+            mem = {"EPC": MEM_EPC, "TID": MEM_TID, "USER": MEM_USER}[args.mem]
+            data = reader.read_card(mem, int(args.ptr, 16), int(args.count, 16))
+            print(data.hex().upper())
+
+        elif args.command == "write":
+            if not args.epc:
+                print("error: --epc required", file=sys.stderr)
+                return 2
+            data = bytes.fromhex(args.epc.replace(" ", ""))
+            reader.write_epc(data)
+            print(f"written: {data.hex().upper()}")
+
+        elif args.command == "params":
+            print(f"RF power   : {reader.rf_power()} dBm")
+            print(f"Work mode  : {reader.work_mode()} "
+                  f"({'Active' if reader.work_mode() else 'Answer'})")
+            print(f"Buzzer     : {reader.beep()}")
+            print(f"Filter time: {reader.filter_time()} s")
+            print(f"Raw freq   : {reader.read_freq().hex().upper()}")
+
+        elif args.command == "freq":
+            reader.set_freq(args.band)
+            print(f"band {args.band} -> raw {reader.read_freq().hex().upper()}")
+
+    except ReaderError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        reader.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

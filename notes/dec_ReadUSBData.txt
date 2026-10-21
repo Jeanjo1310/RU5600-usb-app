@@ -1,0 +1,68 @@
+evidence_id: ev_3bd189c57741ff681c36401dd8aac708c37c8e61a85a62accb8fd718e9e76ba5
+subject:
+  name: SWHidApi.dll
+  digest:
+    sha256: 4da92b7726d1a1b62a4f45f73e053683ec35aa01b7216a707abd12d158dbd3ce
+  local_path: /mnt/ZorinHDD/JEAN_JOSE/rea-reverse/ru5600/triage/SWHidApi.dll
+  format: pe
+  architecture: x86
+provider:
+  id: ghidra
+  name: Ghidra
+  version: 12.1.4
+analysis_profile:
+  provider:
+    id: ghidra
+    name: Ghidra
+    version: 12.1.4
+  parameters:
+    target_kind: executable
+    target_format: pe
+    executable_role: shared-library
+    managed: false
+    native_aot_metadata:
+      contract_revision: rtr-9.1-x64-pe-read-only-v3
+      source_bytes: 134217728
+      work_units: 67108864
+      working_memory_bytes: 67108864
+      report_bytes: 4194304
+    architecture: x86
+    available_architectures[1]: x86
+    import_mode: ephemeral-source-immutable
+    pdb_observations: program-info-v1
+    annotation_policy: atomic-function-entry-metadata-v1
+    load_image_observations: source-mappings-entry-context-v2
+    function_body_evidence: complete-inclusive-ranges-v1
+    function_references: complete-body-and-entry-reference-manager-v2
+    call_relationship_coverage: function-body-call-coverage-v5
+    function_dossier_coverage: observed-facets-and-call-relationships-v1
+    string_inventory_evidence: defined-data-coverage-v1
+    location_resolution: explicit-address-exact-entry-symbol-first-v3
+    procedure_file_offset_resolution: address-first-unique-target-source-mapping-v2
+    instruction_flow_evidence: decoded-return-pcode-v1
+    instruction_references: exact-address-incoming-v1
+    function_boundary_observations: ghidra-function-boundary-limitations-v3
+    no_return_repair: returning-imports-decoded-return-v2
+    process_launch: inspected-jvm-launch-support-v1
+    jump_table_evidence: typed-case-default-blocks-v1
+    decompiler_jump_loads: true
+    loader: auto-from-header
+    language_id: auto-from-header
+    compiler_spec_id: auto-default
+    analyzer_preset: ghidra-default
+  digest: 2f288fed9f5ccfb6ff84bff6765847d8990d41e5f4b3f1133cedfe4f9d8c4a4f
+predicate_type: rea.analysis
+operation: procedure_pseudo_code
+parameters:
+  procedure: ReadUSBData
+raw_result:
+  value: "\nvoid __cdecl ReadUSBData(void *param_1,uint *param_2)\n\n{\n  bool bVar1;\n  DWORD DVar2;\n  DWORD local_108;\n  undefined1 local_104;\n  byte local_103;\n  undefined1 local_102 [254];\n  uint local_4;\n  \n                    /* 0x1450  3  ReadUSBData */\n  local_4 = DAT_10010020 ^ (uint)&local_108;\n  local_104 = 0;\n  _memset(&local_103,0,0xff);\n  local_108 = 0;\n  ReadFile(DAT_10010004,&local_104,(uint)DAT_10016f44,&local_108,(LPOVERLAPPED)&DAT_10011f08);\n  DVar2 = WaitForSingleObject(DAT_10010008,5);\n  if (DVar2 == 0) {\n    if (local_103 == 0) {\n      *param_2 = 0;\n    }\n    else {\n      *param_2 = (uint)local_103;\n      _memcpy(param_1,local_102,(uint)local_103);\n    }\n    bVar1 = true;\n  }\n  else {\n    *param_2 = 0;\n    if (DVar2 == 0x102) {\n      CancelIo(DAT_10010004);\n      bVar1 = false;\n    }\n    else {\n      bVar1 = false;\n    }\n  }\n  ResetEvent(DAT_10010008);\n  if (!bVar1) {\n    DVar2 = GetLastError();\n    if ((DVar2 != 0x3e4) && (DVar2 != 0x3e5)) {\n      CancelIo(DAT_10010004);\n      __security_check_cookie(local_4 ^ (uint)&local_108);\n      return;\n    }\n    __security_check_cookie(local_4 ^ (uint)&local_108);\n    return;\n  }\n  __security_check_cookie(local_4 ^ (uint)&local_108);\n  return;\n}\n\n"
+  limitations: []
+normalized_result: "\nvoid __cdecl ReadUSBData(void *param_1,uint *param_2)\n\n{\n  bool bVar1;\n  DWORD DVar2;\n  DWORD local_108;\n  undefined1 local_104;\n  byte local_103;\n  undefined1 local_102 [254];\n  uint local_4;\n  \n                    /* 0x1450  3  ReadUSBData */\n  local_4 = DAT_10010020 ^ (uint)&local_108;\n  local_104 = 0;\n  _memset(&local_103,0,0xff);\n  local_108 = 0;\n  ReadFile(DAT_10010004,&local_104,(uint)DAT_10016f44,&local_108,(LPOVERLAPPED)&DAT_10011f08);\n  DVar2 = WaitForSingleObject(DAT_10010008,5);\n  if (DVar2 == 0) {\n    if (local_103 == 0) {\n      *param_2 = 0;\n    }\n    else {\n      *param_2 = (uint)local_103;\n      _memcpy(param_1,local_102,(uint)local_103);\n    }\n    bVar1 = true;\n  }\n  else {\n    *param_2 = 0;\n    if (DVar2 == 0x102) {\n      CancelIo(DAT_10010004);\n      bVar1 = false;\n    }\n    else {\n      bVar1 = false;\n    }\n  }\n  ResetEvent(DAT_10010008);\n  if (!bVar1) {\n    DVar2 = GetLastError();\n    if ((DVar2 != 0x3e4) && (DVar2 != 0x3e5)) {\n      CancelIo(DAT_10010004);\n      __security_check_cookie(local_4 ^ (uint)&local_108);\n      return;\n    }\n    __security_check_cookie(local_4 ^ (uint)&local_108);\n    return;\n  }\n  __security_check_cookie(local_4 ^ (uint)&local_108);\n  return;\n}\n\n"
+confidence: observed
+authority: shipped-artifact
+environment: null
+limitations[6]: The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.,The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.,Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.,"Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.","Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",External functions and functions without an analyzable body return null; other decompiler failures remain explicit.
+relationship_coverage: null
+locations: []
+evidence_links: []

@@ -1,0 +1,24 @@
+#!/bin/sh
+# AppRun for the RU5600 Reader AppImage.
+HERE="$(dirname "$(readlink -f "$0")")"
+APP_DIR="$HERE/usr/opt/ru5600-reader"
+
+# The vendor library resolves its libusb symbols from the global namespace,
+# so make sure the bundled copy is discoverable as well.
+export LD_LIBRARY_PATH="$APP_DIR/vendor:${LD_LIBRARY_PATH:-}"
+
+# Headless mode:  ./ru5600-reader.AppImage --cli info
+if [ "$1" = "--cli" ]; then
+    shift
+    exec python3 "$APP_DIR/ru5600_cli.py" "$@"
+fi
+
+# The GUI needs PyGObject with GTK 3 on the host system.
+if ! python3 -c 'import gi; gi.require_version("Gtk","3.0")' >/dev/null 2>&1; then
+    echo "RU5600 Reader: PyGObject (GTK 3) is missing on this system." >&2
+    echo "Install it with:" >&2
+    echo "    sudo apt install python3-gi gir1.2-gtk-3.0" >&2
+    exit 1
+fi
+
+exec python3 "$APP_DIR/ru5600_gui.py" "$@"

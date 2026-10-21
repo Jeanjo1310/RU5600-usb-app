@@ -1,0 +1,9 @@
+error: Analysis failed
+code: evidence_integrity_mismatch
+category: integrity_mismatch
+message: "Evidence is invalid or has changed. Recreate or re-import it, then try again."
+retryable: false
+remediation:
+  action: "Evidence is invalid or has changed. Recreate or re-import it, then try again."
+details:
+  reason: Analysis snapshot target does not match the requested binary

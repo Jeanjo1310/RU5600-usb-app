@@ -1,0 +1,14 @@
+# Local build artefacts
+dist/
+build/
+*.AppImage
+
+# Copies of the vendor binaries used during the reverse engineering
+triage/
+
+# Python
+__pycache__/
+*.pyc
+
+# Ghidra snapshot (large, regenerable)
+notes/snap_*

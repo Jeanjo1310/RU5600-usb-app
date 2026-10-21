@@ -1,0 +1,15 @@
+# INVETON / RU5600 UHF RFID reader - USB access rule
+#
+# The vendor library (libCFHidApi.so) talks to the reader over libusb and
+# therefore needs write access to the USB device node (it must detach the
+# kernel HID driver).  Without this rule the reader only shows up as
+# root:root 0644 and opening it fails with "unable to open device".
+#
+# Install:
+#   sudo install -m 644 99-inveton-ru5600.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# 1a86:e010 = QinHeng Electronics SWUSB_HID (the RU5600 USB reader)
+
+SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="e010", MODE="0660", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="e010", MODE="0666"
