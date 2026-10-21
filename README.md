@@ -5,7 +5,7 @@ the RU5600 SDK. It talks to the reader over USB and reproduces the layout of
 the original program: connection panel on the left, tabbed parameter pages on
 the right, timestamped log at the bottom.
 
-![layout](docs/screenshot-layout.md)
+![RU5600 Reader on Linux](docs/screenshot.png)
 
 ## What it is
 
@@ -84,10 +84,32 @@ python3 src/ru5600_cli.py freq --band USA
 The **Read** button performs a one-shot inventory (answer mode).
 The **Set** button applies the ParameterSet page to the reader.
 
+## Verified against the physical reader
+
+Everything below was exercised on a real RU5600 on the bench:
+
+| Check | Result |
+|---|---|
+| `CFHid_OpenDevice` | OK |
+| `GetDeviceSystemInfo` | SN `D304260702562B`, firmware `7.1`, hardware `1.1` |
+| `ReadDeviceOneParam` | RF power `18` dBm, beep `1`, filter time `0` |
+| `ReadFreq` / `SetFreq` | USA `31 80` → Europe `4E 00` → USA `31 80` (read back) |
+| `SetDeviceOneParam` | work mode answer ↔ active |
+| `StartRead` / `StopRead` | OK |
+| `InventoryG2` / `GetTagBuf` | OK (returned 0 tags - none on the antenna) |
+| `ReadCardG2` / `WriteEPCG2` | correct failure when no tag is in the field |
+| GUI *Open* button | SN, firmware and hardware populate; log entry written |
+
+**Not yet exercised**: reading a real tag (no UHF tag was on the antenna
+during the bench test) and writing EPC to a tag.
+
 ## Notes
 
 * The reader must be in **AnswerMode** for the one-shot `Read` button and in
   **ActiveMode** for the live table. The app switches work mode when you
   press *Start read*.
+* **Only one program can use the reader at a time** - the USB interface is
+  claimed exclusively. If *Open* fails while the reader is plugged in,
+  close the other client (the CLI, or a second copy of this app).
 * `libCFHidApi.so` is the vendor's file, redistributed as-is from the SDK for
   interoperability with the hardware.

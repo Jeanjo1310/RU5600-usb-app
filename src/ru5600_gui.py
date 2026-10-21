@@ -84,7 +84,7 @@ class Worker:
 class ReaderApp(Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_TITLE)
-        self.set_default_size(1024, 720)
+        self.set_default_size(1180, 800)
         self.reader = Ru5600Reader(on_tags=self._on_tags_threadsafe)
         self.worker = Worker(self)
         self._tag_counts = {}

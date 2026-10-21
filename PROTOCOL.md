@@ -195,6 +195,27 @@ The reader enumerates as a **WCH QinHeng `1a86:e010` "SWUSB_HID"** device
 
 * The **batch write** and **whitelist** commands are exposed by the Windows
   DLL but not by `libCFHidApi.so`; they are not implemented in this client.
-* Field validation of the tag record is confirmed by the four vendor demos
-  but not yet exercised against a physical tag in this repo (the reader used
-  for development was on the bench without tags).
+* Reading and writing a **physical tag** was not exercised during the bench
+  test (the reader had no tag on its antenna). The tag record decoder matches
+  four independent vendor demos, but it has not been confirmed against real
+  tag data yet.
+
+## 9. Hardware verification log
+
+| Test | Reader answer |
+|---|---|
+| `GetDeviceSystemInfo` | `71 11 D3 04 26 07 02 56 2B` → soft 7.1, hard 1.1, SN `D304260702562B` |
+| `ReadDeviceOneParam(0x05)` | 18 (dBm) |
+| `ReadDeviceOneParam(0x06)` | 1 (beep) |
+| `ReadDeviceOneParam(0x04)` | 0 (filter time) |
+| `ReadFreq` | `31 80` (USA) |
+| `SetFreq("Europe")` → `ReadFreq` | `4E 00` ✔ matches the documented table |
+| `SetFreq("USA")` → `ReadFreq` | `31 80` ✔ |
+| `SetDeviceOneParam(0x02, 1/0)` | work mode switches between active and answer |
+| `StartRead` / `StopRead` | succeed |
+| `InventoryG2` | succeeds, 0 tags (no tag on the antenna) |
+| `ReadCardG2` / `WriteEPCG2` | fail as expected with no tag in the field |
+
+The frequency round trip is the strongest confirmation of the command table:
+the bytes the SDK header documents are exactly what the reader stores and
+returns.
