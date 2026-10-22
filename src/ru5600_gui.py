@@ -514,7 +514,13 @@ class ReaderApp(Gtk.Window):
         scroll.set_vexpand(True)
         scroll.add(view)
         box.pack_start(scroll, True, True, 0)
-        self.nb.append_page(box, Gtk.Label(label="ActiveMode"))
+        lbl_active_tab = Gtk.Label(label="ActiveMode")
+        lbl_active_tab.set_tooltip_text(
+            "Lectura continua del lector (stream de tags).\n"
+            "No tiene que ver con los tags activos: los tags Gen2 son "
+            "pasivos, sin bateria.\n"
+            "Este es el nombre que le da el vendor a este modo del lector.")
+        self.nb.append_page(box, lbl_active_tab)
 
     def _build_advance_tab(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)

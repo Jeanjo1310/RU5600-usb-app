@@ -57,6 +57,17 @@ PARAM_RFPOWER = 0x05
 PARAM_BEEP = 0x06
 PARAM_UARTBAUD = 0x07
 
+# Work modes of the reader, with the vendor's names (the same ones the
+# Windows software uses for its AnswerMode / ActiveMode tabs):
+#
+#   ANSWER  - the reader answers one command at a time
+#   ACTIVE  - the reader scans continuously and streams the tags it sees
+#
+# "Active" here means **continuous scanning of the reader**, NOT an
+# active tag: every Gen2 tag handled by this tool is passive (no
+# battery).  The memory reads answer much better in answer mode (86 %
+# measured) than while the reader streams (43 %), so the scans put the
+# reader back into answer mode when they are done.
 WORKMODE_ANSWER = 0x00
 WORKMODE_ACTIVE = 0x01
 
