@@ -43,7 +43,7 @@ def main():
     ap = argparse.ArgumentParser(description="RU5600 UHF reader CLI")
     ap.add_argument("command",
                     choices=["info", "inventory", "watch", "read", "write",
-                             "params", "freq"],
+                             "params", "freq", "chip", "password"],
                     help="operation to run")
     ap.add_argument("--mem", default="EPC", choices=["EPC", "TID", "USER"])
     ap.add_argument("--ptr", default="0", help="start word address (hex)")
@@ -52,6 +52,8 @@ def main():
     ap.add_argument("--band", default="USA", help="frequency band")
     ap.add_argument("--password", default="00000000",
                     help="Gen2 access password (8 hex digits)")
+    ap.add_argument("--deep", action="store_true",
+                    help="also map the reserved and user memory")
     ap.add_argument("--seconds", type=float, default=30.0)
     args = ap.parse_args()
 
@@ -115,6 +117,22 @@ def main():
             print(f"Buzzer     : {reader.beep()}")
             print(f"Filter time: {reader.filter_time()} s")
             print(f"Raw freq   : {reader.read_freq().hex().upper()}")
+
+        elif args.command == "chip":
+            from ru5600_chip import analyze_chip, format_report
+            print(format_report(analyze_chip(
+                reader, bytes.fromhex(args.password), deep=args.deep)))
+
+        elif args.command == "password":
+            from ru5600_chip import verify_password
+            pwd = bytes.fromhex(args.password)
+            good, data = verify_password(reader, pwd)
+            if good:
+                print(f"password {pwd.hex().upper()} WORKS")
+                print(f"EPC bank: {data.hex().upper()}")
+            else:
+                print(f"password {pwd.hex().upper()} is WRONG "
+                      f"(every read was refused)")
 
         elif args.command == "freq":
             reader.set_freq(args.band)

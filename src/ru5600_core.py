@@ -513,7 +513,8 @@ class Ru5600Reader:
 
     def read_card(self, mem: int = MEM_EPC, word_ptr: int = 0,
                   word_count: int = 6, password: bytes = b"\x00" * 4,
-                  retries: int = 40, retry_delay: float = 0.03) -> bytes:
+                  retries: int = 40, retry_delay: float = 0.03,
+                  pace: bool = True) -> bytes:
         """Read a Gen2 memory bank.
 
         ``word_count`` is in 16 bit words: 6 words = 12 bytes.
@@ -522,13 +523,16 @@ class Ru5600Reader:
         every 3 s it accepts a burst of a few commands), so a single call
         succeeds only ~20 % of the time.  Retrying every 30 ms makes it
         reliable; a wrong ``password`` fails every single time.
+
+        ``pace=False`` skips the minimum gap between commands, which is
+        what a round robin scan over several areas wants.
         """
         data = (ctypes.c_ubyte * 256)()
         pwd = (ctypes.c_ubyte * 4)(*password)
         for attempt in range(max(1, retries)):
             if attempt:
                 time.sleep(retry_delay)
-            else:
+            elif pace:
                 self._pace()
             if self._lib.CFHid_ReadCardG2(
                 DEV_ADDR, pwd, mem, word_ptr, word_count, data

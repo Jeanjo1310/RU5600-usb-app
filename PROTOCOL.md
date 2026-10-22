@@ -314,7 +314,72 @@ The reader enumerates as a **WCH QinHeng `1a86:e010` "SWUSB_HID"** device
   four independent vendor demos, but it has not been confirmed against real
   tag data yet.
 
-## 9. Hardware verification log
+## 9. Chip identification (TID / GS1 TDS)
+
+The TID memory bank identifies the chip. The first four bytes are decoded
+following the GS1 EPC Tag Data Standard:
+
+```
+byte 0      0xE2                     ISO/IEC 18000-6C class
+byte 1      bit 7  = XTID indicator
+            bit 6  = security (Authenticate / Challenge)
+            bit 5  = file (FileOpen)
+byte 1..2   MDID  = (byte1 << 4) | (byte2 >> 4)      12 bit, the manufacturer
+byte 2..3   TMN   = ((byte2 & 0x0F) << 8) | byte3    12 bit, the chip model
+```
+
+Both formulas were verified against the published TMN values (NXP UCODE 8 =
+`0x894`, UCODE 9 = `0x995`, UCODE 8M = `0x994`, Impinj Monza M730 = `0x191`,
+M750 = `0x190`, R6 = `0x160`).
+
+The tag that was on the bench:
+
+```
+TID : E2 80 38 13 20 | 00 66 2B 03 9F D1 AD | 32 30 01 18 30 1C 00 F0 03 03 0C 53 CA 62
+       ^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^ XTID (dynamic bytes)
+       MDID 0x803      serial (7 bytes)
+       = Alien         TMN 0x813
+```
+
+`E2803813` is the published prefix of the **Alien Higgs-10 (H10)**, the
+chip sold as the 7320 / H3 class: EPC 96 (128) bit, **user memory 32 bit**,
+32 bit access and kill password. The public tables that list the H10 as
+`E2803813` also say it has 32 bits of user memory - which explains the
+benchmark result that the user memory stops after 2 words: the chip
+simply has 4 bytes of user memory, it is **not locked**.
+
+The client ships a table of known prefixes (`TID_PREFIX_DB` in
+`ru5600_chip.py`) plus the GS1 MDID list, and reports the model, the
+serial and the XTID.
+
+### Password
+
+The access password is the 4 byte parameter of the read command. On this
+tag `00000000` works and **every** other value fails on every single
+attempt (0/14), so a wrong password is easy to recognise:
+
+```
+password 00000000  -> EPC read 3/12 ok
+password E3700001  -> EPC read 0/12
+password 00000001  -> EPC read 0/12
+```
+
+The *Test password* button in the *Chip info* tab uses exactly that
+property, so a candidate can be verified without unlocking anything.
+
+### Dynamic bytes
+
+Two areas change on every read and are not a stable identifier:
+
+* the XTID byte at offset 15 (`0x17`, `0x18`, `0x19`, ...) - a counter,
+* the reserved words 4-5 (`E370`, `74D1`, `5B33`, ...) - the Alien
+  "dynamic authentication" fingerprint.
+
+Words 6-7 of the reserved bank (`0002 0000`) are stable.
+
+---
+
+## 10. Hardware verification log
 
 | Test | Reader answer |
 |---|---|

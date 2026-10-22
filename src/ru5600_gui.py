@@ -238,6 +238,7 @@ class ReaderApp(Gtk.Window):
         self._build_readwrite_tab()
         self._build_active_tab()
         self._build_advance_tab()
+        self._build_chip_tab()
         self._build_batch_tab()
 
         # ---------------- bottom action row ------------------------------
@@ -285,11 +286,11 @@ class ReaderApp(Gtk.Window):
         accel = Gtk.AccelGroup()
         self.add_accel_group(accel)
         targets = [
-            ("Ctrl+o", self.btn_open),
-            ("Ctrl+r", self.btn_read_action),
-            ("Ctrl+s", self.btn_set_action),
-            ("Ctrl+t", self.btn_start),
-            ("Ctrl+Shift+t", self.btn_stop),
+            ("<Control>o", self.btn_open),
+            ("<Control>r", self.btn_read_action),
+            ("<Control>s", self.btn_set_action),
+            ("<Control>t", self.btn_start),
+            ("<Control><Shift>t", self.btn_stop),
         ]
         for combo, widget in targets:
             if widget is None:
@@ -298,7 +299,7 @@ class ReaderApp(Gtk.Window):
             accel.connect(key, mods, Gtk.AccelFlags.VISIBLE,
                           lambda *_, w=widget: w.activate())
         for i in range(self.nb.get_n_pages()):
-            key, mods = Gtk.accelerator_parse(f"Alt+{i + 1}")
+            key, mods = Gtk.accelerator_parse(f"<Alt>{i + 1}")
             accel.connect(key, mods, Gtk.AccelFlags.VISIBLE,
                           self._make_tab_switcher(i))
 
@@ -496,6 +497,96 @@ class ReaderApp(Gtk.Window):
         g2.attach(self.lbl_freq_raw, 1, 0, 1, 1)
         box.pack_start(frame2, False, False, 0)
         self.nb.append_page(box, Gtk.Label(label="AdvanceSet"))
+
+    def _build_chip_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(8)
+
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.pack_start(bar, False, False, 0)
+        b_analyze = Gtk.Button(label="Analyze chip")
+        b_analyze.connect("clicked", lambda *_: self.on_analyze_chip())
+        bar.pack_start(b_analyze, False, False, 0)
+        bar.pack_start(Gtk.Label(label="Access password:"), False, False, 0)
+        self.entry_chip_pwd = Gtk.Entry(text="00000000")
+        self.entry_chip_pwd.set_max_length(8)
+        self.entry_chip_pwd.set_width_chars(10)
+        self.entry_chip_pwd.set_tooltip_text(
+            "Gen2 access password (8 hex digits). Leave 00000000 for an "
+            "unprotected tag.")
+        bar.pack_start(self.entry_chip_pwd, False, False, 0)
+        b_pwd = Gtk.Button(label="Test password")
+        b_pwd.connect("clicked", lambda *_: self.on_test_password())
+        bar.pack_start(b_pwd, False, False, 0)
+        self.chk_deep = Gtk.CheckButton(label="Deep scan (memory map)")
+        self.chk_deep.set_tooltip_text(
+            "Also maps the reserved and user memory. Takes a few seconds.")
+        bar.pack_start(self.chk_deep, False, False, 0)
+
+        self.chip_view = Gtk.TextView()
+        self.chip_view.set_editable(False)
+        self.chip_view.set_monospace(True)
+        self.chip_buffer = self.chip_view.get_buffer()
+        self.chip_buffer.set_text(
+            "Put a tag on the antenna and press 'Analyze chip'.")
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.add(self.chip_view)
+        box.pack_start(scroll, True, True, 0)
+        self.nb.append_page(box, Gtk.Label(label="Chip info"))
+
+    def _chip_password(self) -> bytes:
+        text = self.entry_chip_pwd.get_text().strip().replace(" ", "")
+        try:
+            pwd = bytes.fromhex(text)
+        except ValueError:
+            pwd = b""
+        return pwd if len(pwd) == 4 else b"\x00" * 4
+
+    def on_analyze_chip(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        self.log("Analyzing chip...")
+
+        def task():
+            from ru5600_chip import analyze_chip, format_report
+            rep = analyze_chip(self.reader, self._chip_password(),
+                               deep=self.chk_deep.get_active())
+            return format_report(rep)
+
+        def ok(text):
+            self.chip_buffer.set_text(text)
+            self.log("Chip analysis finished")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_test_password(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        pwd = self._chip_password()
+
+        def task():
+            from ru5600_chip import verify_password
+            ok, data = verify_password(self.reader, pwd)
+            return ok, data
+
+        def ok(result):
+            good, data = result
+            if good:
+                self.log(f"Password {pwd.hex().upper()} WORKS - EPC read ok")
+                self.chip_buffer.set_text(
+                    self.chip_buffer.get_text(
+                        self.chip_buffer.get_start_iter(),
+                        self.chip_buffer.get_end_iter(), False)
+                    + f"\n\nAccess password {pwd.hex().upper()} WORKS\n"
+                      f"EPC bank: {data.hex().upper()}")
+            else:
+                self.log(f"Password {pwd.hex().upper()} is WRONG "
+                         f"(every read was refused)")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def _build_batch_tab(self):
         for title in ("BatchWrite", "WhiteList"):

@@ -105,6 +105,21 @@ different UHF tags (96 bit and 192 bit EPC):
 | GUI *Open* button | SN, firmware and hardware populate; log entry written |
 | GUI *Read* button | finds the tag and fills the table |
 | GUI *Read memory* | returns the EPC with its CRC/PC header |
+| Chip identification | TID `E2803813` → **Alien Higgs-10 (H10 / 7320 class)**, MDID `0x803`, TMN `0x813` |
+| Access password | `00000000` works; every other candidate fails 100 % of the time |
+| Memory map | RESERVED 8 bytes, EPC 16 bytes (CRC+PC+96 bit EPC), TID 28 bytes, USER 4 bytes |
+
+### Chip info tab
+
+Identifies the chip from its TID (GS1 TDS: MDID = manufacturer, TMN =
+model), maps which memory banks are readable, and verifies access
+password candidates.
+
+```bash
+ru5600_cli.py chip              # identification only (~1-2 s)
+ru5600_cli.py chip --deep       # + memory map (~5-6 s)
+ru5600_cli.py password --password 00000000
+```
 
 **Important**: the reader refuses most commands if they arrive too fast,
 and a memory read only succeeds inside a short window (roughly 4 accepted
