@@ -78,6 +78,12 @@ FREQ_BANDS = {
 #              single burst, but misses when the reader does not answer
 #   balanced - a few polls with a short dwell: good speed, still reliable
 #   reliable - keeps polling until the reader answers (the "8/8" mode)
+# Commands that must never be sent by mistake: they start a firmware
+# update of the reader (0x2B upgrade data, 0x2C upgrade data in,
+# 0x2D upgrade end).  A wrong one can leave the reader unusable.
+FORBIDDEN_COMMANDS = {0x2B, 0x2C, 0x2D, 0x65}   # 0x65 = Kill6C (kills a tag)
+
+
 def _env_num(name, default, cast=float):
     """A tunable from the environment, with the default as fallback."""
     try:
@@ -861,6 +867,10 @@ class Ru5600Reader:
         with self._lock:
             if not self._open:
                 raise ReaderError("the reader is not open")
+            if (cmd & 0xFF) in FORBIDDEN_COMMANDS:
+                raise ReaderError(
+                    f"command 0x{cmd & 0xFF:02X} is blocked: it starts a "
+                    f"firmware update of the reader (or kills a tag)")
             self._pace()
             buf = (ctypes.c_ubyte * max(1, len(payload)))(*payload) \
                 if payload else None

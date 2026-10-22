@@ -740,7 +740,10 @@ class ReaderApp(Gtk.Window):
                   "0x10 informacion   0x20/0x21 parametro   "
                   "0x23/0x24 un parametro   0x3E/0x3F frecuencia   "
                   "0x30 reiniciar   0x40/0x41 start/stop read   "
-                  "0x85/0x86 relay   0xE8-0xEC whitelist")
+                  "0x85/0x86 relay   0xE0 modulo   0xE1 antena   "
+                  "0xE8-0xEC whitelist   0x2E/0x2F CryptWrite\n"
+                  "BLOQUEADOS: 0x2B/0x2C/0x2D (actualizan el firmware del "
+                  "lector) y 0x65 (Kill6C, mata un tag).")
         tl.set_xalign(0.0)
         tl.set_line_wrap(True)
         table.add(tl)
