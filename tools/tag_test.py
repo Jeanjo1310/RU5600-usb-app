@@ -171,8 +171,9 @@ def describe(reader, target: bytes, rssi: int, ant: int,
 
 def print_report(rep):
     print("=" * 66)
-    print(f"EPC          : {rep['epc']}  ({rep['epc_len']} B)   "
-          f"RSSI {rep['rssi']}  ant {rep['ant']}")
+    print(f"#{rep.get('id', 1):<3} EPC       : {rep['epc']}  "
+          f"({rep['epc_len']} B)   RSSI {rep['rssi']}  ant {rep['ant']}  "
+          f"leido {rep.get('veces', 1)} vez/veces")
     if rep.get("estado") != "ok":
         print(f"Estado       : {rep['estado']}")
         return
@@ -200,7 +201,12 @@ def print_report(rep):
 
 
 def scan_tags(reader, attempts=4):
-    """The distinct tags the reader reports, with their best RSSI."""
+    """The distinct tags the reader reports.
+
+    Returns ``{epc: (rssi, antenna, times_read)}``: a tag that is
+    reported again does not become a new record, it only gets its count
+    higher (the same as the ReaderSoft demo does).
+    """
     best = {}
     for _ in range(attempts):
         try:
@@ -209,8 +215,11 @@ def scan_tags(reader, attempts=4):
             continue
         for t in tags:
             key = t.epc_hex
-            if key not in best or t.rssi > best[key][0]:
-                best[key] = (t.rssi, t.ant)
+            if key not in best:
+                best[key] = (t.rssi, t.ant, 1)
+            else:
+                rssi, ant, n = best[key]
+                best[key] = (max(rssi, t.rssi), ant, n + 1)
         if len(best) >= 2:
             break
     return best
@@ -240,6 +249,8 @@ def main():
             pass
         if args.watch:
             seen = set()
+            order = []
+            counts = {}
             print("modo batch: poné los tags sobre la antena, Ctrl+C para salir")
             print("-" * 66)
             while True:
@@ -248,16 +259,25 @@ def main():
                 except ReaderError:
                     continue
                 for t in tags:
-                    if t.epc_hex in seen:
+                    key = t.epc_hex
+                    counts[key] = counts.get(key, 0) + 1
+                    if key in seen:
+                        # a tag that was already read does not get a new
+                        # record: it keeps its number and its count
                         continue
-                    seen.add(t.epc_hex)
+                    seen.add(key)
+                    order.append(key)
                     rep = describe(reader, t.epc, t.rssi, t.ant,
                                    n_tags=len(seen))
+                    rep["id"] = len(order)
+                    rep["veces"] = counts[key]
                     rows.append(rep)
-                    print(f"EPC {rep['epc']}  {rep.get('chip','?')}  "
+                    print(f"#{rep['id']:<3} EPC {rep['epc']}  "
+                          f"{rep.get('chip','?')}  "
                           f"[{rep.get('prefix','?')}]  "
                           f"user {rep.get('user_len',0)}B  "
                           f"pwd {rep.get('pwd','?')}  "
+                          f"veces {rep['veces']}  "
                           f"({rep.get('estado','?')})")
         else:
             # Characterize the tags the reader points at, one at a time.
@@ -265,13 +285,18 @@ def main():
             # commands, so the tag is only characterized when a memory
             # read confirms that the reader is really pointing at it.
             done = set()
+            order = []
+            counts = {}
             deadline = time.monotonic() + args.seconds
             while time.monotonic() < deadline and len(done) < args.max_tags:
                 found = scan_tags(reader, attempts=2)
                 if not found:
                     continue
-                for epc, (rssi, ant) in found.items():
+                for epc, (rssi, ant, times) in found.items():
+                    counts[epc] = counts.get(epc, 0) + times
                     if epc in done:
+                        # a tag that was already read does not get a new
+                        # record: it keeps its number and its count
                         continue
                     try:
                         cur, crc, pc = reader.read_current_epc()
@@ -284,6 +309,9 @@ def main():
                                    n_tags=len(found))
                     if rep.get("estado") == "ok":
                         done.add(epc)
+                        order.append(epc)
+                        rep["id"] = len(order)
+                        rep["veces"] = counts[epc]
                         rows.append(rep)
                         print_report(rep)
     except KeyboardInterrupt:

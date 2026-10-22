@@ -372,7 +372,12 @@ class ReaderApp(Gtk.Window):
         self.entry_bytelen = Gtk.Entry(text="00")
         self.entry_readtime = Gtk.Entry(text="2")
         self.chk_buzzer = Gtk.CheckButton(label="Buzzer")
-        self.chk_buzzer.set_active(True)
+        self.chk_buzzer.set_active(False)
+        self.btn_silence = Gtk.Button(label="Silence it")
+        self.btn_silence.set_tooltip_text(
+            "Turns the reader's buzzer off right away (the reader beeps "
+            "on every tag it reads).")
+        self.btn_silence.connect("clicked", lambda *_: self.on_silence())
         sg.attach(Gtk.Label(label="Interface:", xalign=0), 0, 0, 1, 1)
         sg.attach(self.cb_transport2(), 1, 0, 1, 1)
         sg.attach(Gtk.Label(label="WorkMode:", xalign=0), 2, 0, 1, 1)
@@ -388,6 +393,7 @@ class ReaderApp(Gtk.Window):
         sg.attach(Gtk.Label(label="ReadTime(*10ms):", xalign=0), 0, 2, 1, 1)
         sg.attach(self.entry_readtime, 1, 2, 1, 1)
         sg.attach(self.chk_buzzer, 2, 2, 1, 1)
+        sg.attach(self.btn_silence, 3, 2, 1, 1)
         box.pack_start(rs, False, False, 0)
 
         kb = Gtk.Frame(label="Keyboard")
@@ -442,6 +448,36 @@ class ReaderApp(Gtk.Window):
         b.connect("clicked", lambda *_: self.on_read_memory())
         g.attach(b, 3, 1, 2, 1)
         box.pack_start(frame, False, False, 0)
+
+        frame3 = Gtk.Frame(label="Write memory (USER, EPC...)")
+        g3 = Gtk.Grid(column_spacing=8, row_spacing=6)
+        frame3.add(g3)
+        self.cb_write_bank = Gtk.ComboBoxText()
+        for name, val in (("USER", 3), ("EPC", 1), ("RESERVED", 0)):
+            self.cb_write_bank.append(name, val)
+        self.cb_write_bank.set_active(0)
+        self.cb_write_bank.set_tooltip_text(
+            "RESERVED holds the passwords: writing there changes the "
+            "access password of the tag. Do it only with a reason.")
+        self.entry_write_ptr = Gtk.Entry(text="00")
+        self.entry_write_ptr.set_tooltip_text(
+            "Start word (hex). 0 = the beginning of the bank.")
+        self.entry_write_data = Gtk.Entry(text="")
+        self.entry_write_data.set_placeholder_text(
+            "data to write (hex, even number of bytes)")
+        g3.attach(Gtk.Label(label="Bank:", xalign=0), 0, 0, 1, 1)
+        g3.attach(self.cb_write_bank, 1, 0, 1, 1)
+        g3.attach(Gtk.Label(label="WordPtr(Hex):", xalign=0), 2, 0, 1, 1)
+        g3.attach(self.entry_write_ptr, 3, 0, 1, 1)
+        g3.attach(Gtk.Label(label="Data(hex):", xalign=0), 0, 1, 1, 1)
+        g3.attach(self.entry_write_data, 1, 1, 3, 1)
+        b3 = Gtk.Button(label="Write and verify")
+        b3.set_tooltip_text(
+            "Writes the data and reads it back: what is reported as "
+            "written was really read from the tag afterwards.")
+        b3.connect("clicked", lambda *_: self.on_write_memory())
+        g3.attach(b3, 4, 1, 1, 1)
+        box.pack_start(frame3, False, False, 0)
 
         frame2 = Gtk.Frame(label="Write EPC")
         g2 = Gtk.Grid(column_spacing=8, row_spacing=6)
@@ -504,10 +540,14 @@ class ReaderApp(Gtk.Window):
         b_measure.connect("clicked", lambda *_: self.on_measure())
         bar.pack_start(b_measure, False, False, 0)
 
-        self.tag_store = Gtk.ListStore(str, str, str, str, str)
+        # one row per tag, with the sequential number it was given when
+        # it was read the first time (the same as the ReaderSoft demo:
+        # a tag that is read again does not get a new record, it only
+        # gets its count and its last seen updated)
+        self.tag_store = Gtk.ListStore(str, str, str, str, str, str)
         view = Gtk.TreeView(model=self.tag_store)
-        for i, title in enumerate(("Ant", "EPC / Tag ID", "RSSI", "Count",
-                                   "Last seen")):
+        for i, title in enumerate(("#", "Ant", "EPC / Tag ID", "RSSI",
+                                   "Count", "Last seen")):
             view.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(),
                                                   text=i))
         scroll = Gtk.ScrolledWindow()
@@ -1310,6 +1350,22 @@ class ReaderApp(Gtk.Window):
         self.log("Opening USB reader...")
         return Ru5600Reader(on_tags=self._on_tags_threadsafe)
 
+    def on_silence(self, *_):
+        """Turn the reader's buzzer off (it beeps on every tag read)."""
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+
+        def task():
+            self.reader.set_beep(False)
+            return True
+
+        def ok(_):
+            self.chk_buzzer.set_active(False)
+            self.log("Buzzer off: the reader will not beep anymore")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
     def on_open(self, *_):
         if self.rb_com.get_active():
             self.log("The serial transport is not in the Linux library - "
@@ -1336,6 +1392,14 @@ class ReaderApp(Gtk.Window):
         self.log(f"Open USB successfully - SN {info.device_sn}, "
                  f"firmware {info.soft_ver}, hardware {info.hard_ver}")
         self.load_params()
+        # the reader beeps on every tag it reads, which is unbearable
+        # when it is next to you: it is silenced on opening
+        try:
+            self.reader.set_beep(False)
+            self.chk_buzzer.set_active(False)
+            self.log("Buzzer off (the reader beeps on every tag read)")
+        except Exception:
+            pass
 
     def on_close(self, *_):
         try:
@@ -1467,6 +1531,45 @@ class ReaderApp(Gtk.Window):
             epc, tid = res
             self.lbl_fp.set_text(f"{epc.hex().upper()} -> {tid}")
             self.log(f"Fingerprint learned: {epc.hex().upper()} -> {tid}")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_write_memory(self, *_):
+        """Write a chunk of memory and verify it by reading it back."""
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        text = self.entry_write_data.get_text().strip().replace(" ", "")
+        try:
+            data = bytes.fromhex(text)
+        except ValueError:
+            self.log("The data must be an even-length hex string")
+            return
+        if not data or len(data) % 2:
+            self.log("The data must be an even-length hex string")
+            return
+        try:
+            word_ptr = int(self.entry_write_ptr.get_text().strip() or "0", 16)
+        except ValueError:
+            self.log("The word pointer must be in hex")
+            return
+        bank_id = self.cb_write_bank.get_active_id()
+        mem = int(bank_id) if bank_id is not None else 3
+        bank_name = self.cb_write_bank.get_active_text() or "USER"
+        if mem == 0:
+            if not self.chk_fp.get_active():
+                self.log("Writing the RESERVED bank changes the passwords "
+                         "of the tag: arm the fingerprint check first")
+                return
+
+        def task():
+            self.reader.write_card_verified(data, mem, word_ptr,
+                                            self._access_password())
+            return True
+
+        def ok(_):
+            self.log(f"{bank_name}: {len(data)} B written at word "
+                     f"{word_ptr} and read back OK")
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
@@ -1630,17 +1733,20 @@ class ReaderApp(Gtk.Window):
             self._tag_counts[key] += 1
             row = self._find_row(key)
             if row is None:
-                row = self.tag_store.append([str(tag.ant), key, str(tag.rssi),
-                                             "1", now])
+                # the sequential number is given when the tag is read
+                # for the first time and does not change afterwards
+                row = self.tag_store.append([str(len(self._tag_order)),
+                                             str(tag.ant), key,
+                                             str(tag.rssi), "1", now])
             else:
-                row[2] = str(tag.rssi)
-                row[3] = str(self._tag_counts[key])
-                row[4] = now
+                row[3] = str(tag.rssi)
+                row[4] = str(self._tag_counts[key])
+                row[5] = now
         return False
 
     def _find_row(self, key):
         for row in self.tag_store:
-            if row[1] == key:
+            if row[2] == key:
                 return row
         return None
 

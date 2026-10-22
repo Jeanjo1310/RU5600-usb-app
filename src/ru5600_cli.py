@@ -43,12 +43,14 @@ def main():
     ap = argparse.ArgumentParser(description="RU5600 UHF reader CLI")
     ap.add_argument("command",
                     choices=["info", "inventory", "watch", "read", "write",
+                             "buzzer",
                              "params", "freq", "chip", "password", "heat"],
                     help="operation to run")
     ap.add_argument("--mem", default="EPC", choices=["EPC", "TID", "USER"])
     ap.add_argument("--ptr", default="0", help="start word address (hex)")
     ap.add_argument("--count", default="8", help="word count (hex), 8 = 16 bytes")
     ap.add_argument("--epc", default="", help="EPC bytes to write (hex)")
+    ap.add_argument("--value", default="", help="value for the command")
     ap.add_argument("--band", default="USA", help="frequency band")
     ap.add_argument("--password", default="00000000",
                     help="Gen2 access password (8 hex digits)")
@@ -97,13 +99,19 @@ def main():
             reader.set_work_mode(1)
             reader.start_read()
             seen = {}
+            order = []
             end = time.time() + args.seconds
             try:
                 while time.time() < end:
                     for tag in reader.poll_tags():
                         key = tag.epc_hex
+                        if key not in seen:
+                            # the sequential number is given the first
+                            # time the tag is seen and does not change
+                            order.append(key)
                         seen[key] = seen.get(key, 0) + 1
                         print(f"[{time.strftime('%H:%M:%S')}] "
+                              f"#{order.index(key) + 1:<4} "
                               f"ant={tag.ant} rssi={tag.rssi:3d} "
                               f"epc={key}  (n={seen[key]})")
                     time.sleep(0.2)
@@ -125,6 +133,12 @@ def main():
             data = bytes.fromhex(args.epc.replace(" ", ""))
             reader.write_epc(data, bytes.fromhex(args.password))
             print(f"written: {data.hex().upper()}")
+
+        elif args.command == "buzzer":
+            # the reader beeps on every tag it reads
+            on = (args.value or "off").lower() in ("on", "1", "true", "yes")
+            reader.set_beep(on)
+            print(f"buzzer {'on' if on else 'off'}")
 
         elif args.command == "params":
             print(f"RF power   : {reader.rf_power()} dBm")

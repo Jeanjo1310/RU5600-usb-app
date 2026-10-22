@@ -35,6 +35,13 @@ DEV_ADDR = 0xFF
 # Device parameter addresses (documented in the SDK demos).
 PARAM_TRANSPORT = 0x01
 RESP_READ = 0x02          # tipo de frame de respuesta de una lectura
+# Status codes of the reader's answer:
+#   0x01 - the tag answered, the data is good
+#   0x83 - the tag does not have that memory (a DEFINITIVE answer: a
+#          read that does not fit the bank always gets this one)
+#   0x00 - the reader did not answer properly (flaky): nothing is known
+RESP_OK = 0x01
+RESP_NO_DATA = 0x83
 # The vendor library and the preloaded libusb both tear the USB context
 # down when the process ends, and the second one aborts with a libusb
 # mutex error ("pthread_mutex_lock(mutex) == 0 no se cumple").  When the
@@ -836,49 +843,108 @@ class Ru5600Reader:
             retries = self.READ_RETRIES
         if retry_delay is None:
             retry_delay = self.READ_DELAY
-        if word_count <= MAX_READ_WORDS:
-            return self._read_chunk(mem, word_ptr, word_count, password,
-                                    retries, retry_delay, pace)
+        data, status = self.read_card_status(mem, word_ptr, word_count,
+                                             password, retries, retry_delay,
+                                             pace)
+        if status != RESP_OK:
+            raise ReaderError(
+                f"ReadCardG2 did not return data (status 0x{status:02X})."
+            ) from None
+        return data
+
+    def read_card_status(self, mem: int = MEM_EPC, word_ptr: int = 0,
+                         word_count: int = 6,
+                         password: bytes = b"\x00" * 4,
+                         retries: int = None, retry_delay: float = None,
+                         pace: bool = True):
+        """Read a bank and report the status of the answer.
+
+        Returns ``(data, status)``:
+
+        * ``RESP_OK``  - the data is good;
+        * ``RESP_NO_DATA`` - the tag does not have that memory.  It is a
+          definite answer: a read that does not fit the bank always gets
+          it, and that is what makes it possible to find the exact end
+          of a bank;
+        * ``0`` - the reader did not answer properly.  Nothing is known
+          and the attempt is worth repeating.
+
+        A read longer than 8 words is split, and the status of the last
+        piece is the one returned.
+        """
+        if retries is None:
+            retries = self.READ_RETRIES
+        if retry_delay is None:
+            retry_delay = self.READ_DELAY
         out = b""
+        status = RESP_OK
         done = 0
         while done < word_count:
             chunk = min(MAX_READ_WORDS, word_count - done)
-            out += self._read_chunk(mem, word_ptr + done, chunk, password,
-                                    retries, retry_delay, pace)
+            data, status = self._read_chunk(mem, word_ptr + done, chunk,
+                                            password, retries, retry_delay,
+                                            pace)
+            if status != RESP_OK:
+                return b"", status
+            out += data
             done += chunk
-        return out
+        return out, status
 
     def _read_chunk(self, mem: int, word_ptr: int, word_count: int,
                     password: bytes, retries: int, retry_delay: float,
-                    pace: bool) -> bytes:
-        """One read command (at most MAX_READ_WORDS words)."""
+                    pace: bool):
+        """One read command (at most MAX_READ_WORDS words).
+
+        Returns ``(data, status)``: the data is only meaningful when the
+        status is RESP_OK.  A status of RESP_NO_DATA means the tag does
+        not have that memory, which is a definite answer and does not
+        need to be retried.  A status of 0 means the reader did not
+        answer properly and the attempt is worth repeating.
+        """
         data = (ctypes.c_ubyte * 256)()
         pwd = (ctypes.c_ubyte * 4)(*password)
         stale = 0
+        status = 0
         for attempt in range(max(1, retries)):
             if attempt:
                 time.sleep(retry_delay)
             elif pace:
                 self._pace()
-            wiped = self._wipe_response()
-            if self._lib.CFHid_ReadCardG2(
-                DEV_ADDR, pwd, mem, word_ptr, word_count, data
-            ) == 1:
-                chunk = bytes(data[: word_count * 2])
-                # the library hands over the last frame it received, even
-                # when it is the answer of a *previous* command; after the
-                # wipe the buffer only holds a frame if the reader
-                # answered right now, and a frame that does not match the
-                # request is discarded instead of being passed off as data
-                if self._response_matches(RESP_READ, word_count * 2,
-                                          strict=wiped):
-                    return chunk
+            self._wipe_response()
+            self._lib.CFHid_ReadCardG2(
+                DEV_ADDR, pwd, mem, word_ptr, word_count, data)
+            # The library hands over the last frame it received, even
+            # when it is the answer of a *previous* command; after the
+            # wipe the buffer only holds a frame if the reader answered
+            # right now, and a frame that does not match the request is
+            # discarded instead of being passed off as data.
+            frame = self._read_response_frame()
+            parsed = parse_module_response(frame) if frame else None
+            if parsed is None:
+                status = 0
+                continue
+            ftype, status, body = parsed
+            if ftype != RESP_READ:
+                status = 0
                 stale += 1
+                continue
+            if status == RESP_OK and len(body) == word_count * 2:
+                # The data is taken from the frame, not from the buffer the
+                # vendor library fills: that buffer can still hold the
+                # bytes of a previous answer, and the frame is what was
+                # validated.
+                return bytes(body), RESP_OK
+            if status == RESP_NO_DATA:
+                # the tag does not have that memory: a real answer, and
+                # the same one every time
+                return b"", RESP_NO_DATA
+            stale += 1
         extra = f", {stale} stale" if stale else ""
         raise ReaderError(
             f"ReadCardG2 failed (bank={mem}, word={word_ptr}, "
-            f"words={word_count}, {retries} attempts{extra}). Is a tag on "
-            f"the antenna, and is the access password correct?"
+            f"words={word_count}, {retries} attempts{extra}, status "
+            f"0x{status:02X}). Is a tag on the antenna, and is the access "
+            f"password correct?"
         ) from None
 
     def _read_at(self, reader, mem, offset, size, password, budget):
@@ -894,118 +960,155 @@ class Ru5600Reader:
 
     def probe_bank(self, mem: int, password: bytes = b"\x00" * 4,
                    max_words: int = 64, chunk: int = MAX_READ_WORDS,
-                   bank_budget: float = 6.0, offset_budget: float = 0.3):
-        """Find out how much of a memory bank the tag really has.
+                   bank_budget: float = 12.0, offset_budget: float = 0.8):
+        """How much of a memory bank the tag really has - exactly.
 
-        The reader answers a read only intermittently (measured between
-        25 % and 100 % depending on the moment), so "it refused once" does
-        not mean "the memory ended".
+        Three things the reader does have to be worked around:
 
-        The size of the read has to fit the bank: the reserved bank of a
-        tag answers only 4 bytes and refuses 8 or 16.  The size is not
-        taken from a single answer - the reader refuses a lot of
-        commands - but from the one that answers most reliably.
-
-        The offsets are **sampled** with a coarse sweep and then narrowed
-        down, which is far quicker than walking the bank chunk by chunk
-        (that stops at the first refusal) and gives a tight bound.
-
-        The result is a **lower bound** - the reader may have refused an
-        offset that really exists - and that is what tells "the bank
-        answers beyond the first chunk" (not locked) from "the bank does
-        not answer at all" (locked or absent).
+        * it answers a memory read with a **status**: ``RESP_OK`` when
+          the tag answered, ``RESP_NO_DATA`` (0x83) when the tag does
+          not have that memory, and 0 when the reader did not answer at
+          all.  Both of the first two are proofs, and the status is what
+          makes the size of the bank a fact instead of a guess;
+        * in a bad phase it answers with the same error status it uses
+          for "no memory", so a "no data" is only believed when a
+          control read at a word that exists answers too;
+        * it can answer with the frame of the **previous** command, so
+          consecutive probes use different sizes: a frame of another
+          length does not pass the check and is discarded.
 
         Returns ``(bytes, words)``.
         """
         deadline = time.monotonic() + bank_budget
+
+        # the last offset that answered: it is the control to know
+        # whether the reader is healthy
+        control = [0]
+        # the size of the last probe: two probes in a row with the same
+        # size could both be answered with the frame of the previous
+        # one, so the size always changes
+        last_size = [0]
+
+        def next_size(preferred):
+            size_ = preferred if preferred != last_size[0] else (
+                1 if preferred > 1 else 2)
+            last_size[0] = size_
+            return size_
+
+        def probe(offset, size_, tries=4):
+            """(outcome, data): 'ok', 'nodata' or 'unknown'."""
+            for _ in range(max(1, tries)):
+                try:
+                    data, status = self.read_card_status(
+                        mem, offset, size_, password, retries=1)
+                except ReaderError:
+                    status = 0
+                if status == RESP_OK:
+                    control[0] = offset
+                    return "ok", data
+                if status == RESP_NO_DATA:
+                    try:
+                        _, cstatus = self.read_card_status(
+                            mem, control[0], 1, password, retries=1)
+                    except ReaderError:
+                        cstatus = 0
+                    if cstatus == RESP_OK:
+                        return "nodata", b""
+                    # the reader is not answering: this error means
+                    # nothing, try again
+                    continue
+            return "unknown", b""
+
+        # 1. the size of the read that fits the bank
         size = min(chunk, max_words)
-
-        def answers(offset, budget=None, at=None):
-            if offset >= max_words:
-                return False
-            return self._read_at(self, mem, offset, at or size, password,
-                                 budget or offset_budget) is not None
-
-        # 1. the read size that answers most reliably
-        # The size is chosen by how reliably it answers, not by the first
-        # answer: a read that does not fit the bank is refused by the tag
-        # (the reserved bank answers 4 bytes and refuses 8), and a single
-        # answer is not enough to tell a fitting read from a lucky one.
-        # Two short windows per candidate keep the number of commands
-        # low: the reader refuses a lot of them anyway.
-        best_size, best_hits = 0, 0
-        for _pass in range(2):
-            for candidate in (size, max(2, size // 2), 2, 1):
-                hits = 0
-                for _ in range(2):
-                    if answers(0, 0.3, at=candidate):
-                        hits += 1
-                if hits > best_hits:
-                    best_size, best_hits = candidate, hits
-                if hits == 2:
-                    break
-            if best_size:
+        chosen = 0
+        for candidate in (size, max(2, size // 2), 2, 1):
+            outcome, _ = probe(0, candidate, tries=3)
+            if outcome == "ok":
+                chosen = candidate
                 break
-        if not best_size:
+        if not chosen:
             return b"", 0
-        size = best_size
 
-        # 2. the sweep, with a second chance: the reader degrades with
-        #    use and an empty sweep is often just a bad moment
-        for _round in range(2):
+        # 2. the coarse sweep, with alternating sizes so that a frame
+        #    left over from the previous probe does not pass the check
+        chunks = []
+        lo = 0
+        hi = max_words
+        offset = 0
+        hole = False
+        step = 0
+        while offset < max_words and time.monotonic() < deadline:
+            size_ = next_size(chosen if step % 2 == 0
+                              else max(1, chosen // 2))
+            step += 1
+            outcome, data = probe(offset, size_, tries=4)
+            if outcome == "ok":
+                chunks.append(data)
+                lo = offset + size_
+                offset += size_
+                continue
+            if outcome == "nodata":
+                # the tag does not have that memory: the bank ends
+                hi = offset + size_ - 1
+                break
+            hole = True
+            break
+
+        # 3. the exact end: a read of N words at offset M answers only
+        #    if the words M..M+N-1 exist, so the answer bounds the size
+        #    of the bank.  The sizes alternate, so a frame left over
+        #    from the previous probe is discarded instead of counted.
+        while hi - lo > 1 and time.monotonic() < deadline:
+            mid = (lo + hi) // 2
+            size_ = next_size(1 if step % 2 == 0 else 2)
+            step += 1
+            outcome, _ = probe(mid, size_, tries=5)
+            if outcome == "ok":
+                lo = mid + size_
+            elif outcome == "nodata":
+                hi = mid + size_ - 1
+            else:
+                break
+
+        # 4. confirm the end with two reads of different sizes: the last
+        #    word of the bank has to exist and the one after it must
+        #    not.  Only a proof moves the bound: a reader that did not
+        #    answer leaves it where it is.
+        for _ in range(4):
             if time.monotonic() > deadline:
                 break
-            words = self._sweep_bank(mem, password, size, max_words,
-                                      offset_budget, deadline)
-            if not words:
+            # the end is confirmed with two reads of different sizes: a
+            # frame left over from the previous probe cannot pass both
+            after1, _ = probe(lo, next_size(1), tries=4)
+            after2, _ = probe(lo, next_size(2), tries=4)
+            if after1 == "nodata" and after2 == "nodata":
+                break
+            if after1 == "ok" or after2 == "ok":
+                # there is at least one more word
+                lo += 1
                 continue
-            data = self._read_at(self, mem, 0, min(words, size), password,
-                                 offset_budget)
-            if data:
-                return data, words
-        return b"", 0
+            break
+        words = min(max_words, max(0, lo))
 
-    def _sweep_bank(self, mem, password, size, max_words, offset_budget,
-                    deadline):
-        """How many words of a bank answer, as a lower bound.
-
-        The first chunk answers (that is how the read size was chosen),
-        so the sweep starts right after it.
-        """
-        def answers(offset, budget=None):
-            if offset >= max_words:
-                return False
-            return self._read_at(self, mem, offset, size, password,
-                                 budget or offset_budget) is not None
-
-        good = 0
-        offset = size
-        while offset < max_words and time.monotonic() < deadline:
-            if answers(offset):
-                good = offset
-                offset += size
-            else:
-                break
-        # narrow it down between the last good and the first bad
-        low, high = good, min(good + size, max_words)
-        while high - low > 1 and time.monotonic() < deadline:
-            mid = (low + high) // 2
-            if answers(mid):
-                low = mid
-            else:
-                high = mid
-        # refine in steps of 4 words: a one word read is the least
-        # reliable one (measured 1/8), so the size is given in steps of
-        # 8 bytes
-        probe = low + size
-        while probe < min(low + size * 2, max_words) and \
-                time.monotonic() < deadline:
-            if self._read_at(self, mem, probe, size, password, 0.3) is not None:
-                low = probe
-                probe += 4
-            else:
-                break
-        return min(max_words, low + size)
+        # 5. the data
+        data = b"".join(chunks)
+        have = len(data) // 2
+        if hole or have > words:
+            data = b""
+            have = 0
+        if have < words:
+            for _ in range(3):
+                try:
+                    tail, status = self.read_card_status(mem, have,
+                                                         words - have,
+                                                         password, retries=2)
+                except ReaderError:
+                    continue
+                if status == RESP_OK:
+                    data += tail
+                    break
+        return data, words
 
     def read_current_epc(self, retries: int = 14):
         """The EPC of the tag that is really in front of the reader.
@@ -1173,17 +1276,67 @@ class Ru5600Reader:
             f"words={word_count}). Is a tag on the antenna?"
         ) from None
 
+    def write_card_verified(self, data: bytes, mem: int = MEM_EPC,
+                            word_ptr: int = 0,
+                            password: bytes = b"\x00" * 4,
+                            attempts: int = 3) -> bool:
+        """Write a chunk and check that the tag really stored it.
+
+        The reader answers a write when it **sent** it, not when the tag
+        stored it, so the data is read back and compared word by word.
+        A read back that does not match is either an answer that was not
+        fresh or a write that did not take: the write is repeated.
+
+        This is what makes it safe to configure a tag: what is reported
+        as written was really read from the tag afterwards.
+        """
+        if len(data) % 2:
+            raise ReaderError("data length must be even (whole 16-bit words)")
+        for attempt in range(max(1, attempts)):
+            self.write_card(data, mem, word_ptr, password, retries=2)
+            try:
+                back = self.read_card(mem, word_ptr, len(data) // 2,
+                                      password, retries=4)
+            except ReaderError:
+                time.sleep(0.1)
+                continue
+            if back == data:
+                return True
+            time.sleep(0.1)
+        raise ReaderError(
+            "the write could not be verified: the tag did not read back "
+            "what was written"
+        ) from None
+
     def write_epc(self, epc: bytes, password: bytes = b"\x00" * 4,
-                  retries: int = 3) -> bool:
+                  retries: int = 3, verify: bool = True) -> bool:
         pwd = (ctypes.c_ubyte * 4)(*password)
         buf = (ctypes.c_ubyte * len(epc))(*epc)
         for _ in range(max(1, retries)):
             self._pace()
             if self._lib.CFHid_WriteEPCG2(DEV_ADDR, pwd, buf, len(epc)) == 1:
                 self._pace(settle=True)
-                return True
+                if not verify:
+                    return True
+                # the EPC is read back from the tag and compared
+                try:
+                    # the EPC bank answers with the CRC and the PC
+                    # before the EPC
+                    words = max(4, (len(epc) + 4 + 1) // 2)
+                    back = self.read_card(MEM_EPC, 0, words, password,
+                                          retries=4)
+                except ReaderError:
+                    time.sleep(0.1)
+                    continue
+                if back[4:4 + len(epc)] == epc:
+                    return True
+                time.sleep(0.1)
+                continue
             time.sleep(0.05)
-        raise ReaderError("WriteEPCG2 failed. Is a tag on the antenna?") from None
+        raise ReaderError(
+            "WriteEPCG2 failed or could not be verified. Is a tag on the "
+            "antenna?"
+        ) from None
 
     # -- misc --------------------------------------------------------------
     def relay(self, on: bool) -> bool:
@@ -1422,11 +1575,18 @@ def save_fingerprints(data: dict) -> None:
         json.dump(data, fh, indent=1, sort_keys=True)
 
 
+# The TID is normalized to its first 12 bytes (96 bits), so a fingerprint
+# learned before the probe measured the exact end of the bank still
+# matches.
+TID_FINGERPRINT_LEN = 12
+
+
 def learn_fingerprint(reader, epc: bytes) -> str:
     """Read the TID of the tag in front of the reader and remember it."""
     tid, _ = reader.probe_bank(MEM_TID)
     if not tid:
         raise ReaderError("the TID could not be read")
+    tid = tid[:TID_FINGERPRINT_LEN]
     data = load_fingerprints()
     data[epc.hex().upper()] = tid.hex().upper()
     save_fingerprints(data)
@@ -1446,6 +1606,7 @@ def check_fingerprint(reader, epc: bytes):
     tid, _ = reader.probe_bank(MEM_TID)
     if not tid:
         return False, "no se pudo leer el TID para verificar la huella"
+    tid = tid[:TID_FINGERPRINT_LEN]
     if tid.hex().upper() != expected.upper():
         return False, (f"huella no coincide: TID {tid.hex().upper()} "
                         f"!= {expected.upper()}")
