@@ -143,6 +143,26 @@ def test_tid_decode() -> None:
     check("xtid present", info.xtid, True)
 
 
+def test_epc_crc() -> None:
+    """The CRC the reader puts in front of the EPC.
+
+    It was found by brute force over the polynomials and the initial
+    values, with two tags of the same model: the same value reproduces
+    the CRC of both of them, and it is what tells a genuine answer from
+    one that was not fresh.
+    """
+    print("EPC CRC")
+    from ru5600_core import epc_crc16, epc_crc_ok
+    epc_a = bytes.fromhex("952520260302081200000300")
+    epc_b = bytes.fromhex("952520260302081200000299")
+    check("crc of tag A", epc_crc16(epc_a), 0xC9AE)
+    check("crc of tag B", epc_crc16(epc_b), 0xE80F)
+    check("crc of A accepted", epc_crc_ok(epc_a, b"\xc9\xae"), True)
+    check("crc of B accepted", epc_crc_ok(epc_b, b"\xe8\x0f"), True)
+    check("wrong crc rejected", epc_crc_ok(epc_b, b"\xc9\xae"), False)
+    check("garbage rejected", epc_crc_ok(b"\x00" * 12, b"\x00\x00"), False)
+
+
 def test_chip_table() -> None:
     """The chip table: the prefixes of the chips seen on the bench.
 
@@ -181,6 +201,7 @@ def main() -> int:
     test_response_layout()
     test_tag_records()
     test_tid_decode()
+    test_epc_crc()
     test_chip_table()
     test_safety()
     if FAILS:

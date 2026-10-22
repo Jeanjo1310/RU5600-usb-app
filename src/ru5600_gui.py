@@ -19,6 +19,7 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from ru5600_i18n import LANGUAGES, tr, tip  # noqa: E402
 from ru5600_net import NetReader  # noqa: E402
 from ru5600_core import (  # noqa: E402
     FREQ_BANDS,
@@ -99,9 +100,74 @@ class ReaderApp(Gtk.Window):
         self.connect("destroy", self._on_destroy)
 
     # ------------------------------------------------------------------ UI
+    def on_language(self, *_):
+        """Change the language of the interface in place."""
+        code = self.cb_lang.get_active_id() or "en"
+        self._translate(self, code)
+
+    def _translate(self, widget, lang):
+        """Translate the visible texts and add the missing tooltips.
+
+        The original text is kept on the widget, so the language can be
+        changed back and forth as many times as wanted.
+        """
+        if isinstance(widget, (Gtk.Label, Gtk.Button, Gtk.CheckButton,
+                              Gtk.Frame)):
+            if isinstance(widget, Gtk.Label):
+                text = widget.get_text()
+            else:
+                text = widget.get_label() or ""
+            original = getattr(widget, "_orig_text", None)
+            if original is None:
+                original = text
+                widget._orig_text = text
+            new = tr(original, lang)
+            if isinstance(widget, Gtk.Label):
+                widget.set_text(new)
+            else:
+                widget.set_label(new)
+            self._set_tip(widget, original, lang)
+        elif isinstance(widget, Gtk.Notebook):
+            for lbl in getattr(self, "_tab_labels", []):
+                original = getattr(lbl, "_orig_text", None)
+                if original is None:
+                    original = lbl.get_text()
+                    lbl._orig_text = original
+                lbl.set_text(tr(original, lang))
+            for i in range(widget.get_n_pages()):
+                page = widget.get_nth_page(i)
+                if page is not None:
+                    self._translate(page, lang)
+        if isinstance(widget, Gtk.Container):
+            for child in widget.get_children():
+                self._translate(child, lang)
+
+    def _set_tip(self, widget, text, lang):
+        """Put the tooltip of a control, without losing the one it had."""
+        if widget.get_tooltip_text():
+            return
+        text_tip = tip(text, lang)
+        if text_tip:
+            widget.set_tooltip_text(text_tip)
+
     def _build_ui(self):
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.add(root)
+
+        # the language selector lives in its own bar so it is always
+        # at hand
+        langbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        langbar.set_border_width(4)
+        self.cb_lang = Gtk.ComboBoxText()
+        for name, code in LANGUAGES:
+            self.cb_lang.append(name, code)
+        self.cb_lang.set_active(0)
+        self.cb_lang.set_tooltip_text(
+            "Language of the interface. It can be changed at any moment.")
+        self.cb_lang.connect("changed", self.on_language)
+        langbar.pack_start(Gtk.Label(label="Language", xalign=0), False, False, 0)
+        langbar.pack_start(self.cb_lang, False, False, 0)
+        root.pack_start(langbar, False, False, 0)
 
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         root.pack_start(paned, True, True, 0)
@@ -250,6 +316,7 @@ class ReaderApp(Gtk.Window):
         opts.pack_start(self.cb_lang, True, True, 0)
 
         # ---------------- right: notebook --------------------------------
+        self._tab_labels = []
         self.nb = Gtk.Notebook()
         self.nb.set_scrollable(True)
         paned.pack2(self.nb, True, False)
@@ -410,7 +477,9 @@ class ReaderApp(Gtk.Window):
         kg.attach(self.chk_enterkey, 2, 0, 1, 1)
         box.pack_start(kb, False, False, 0)
 
-        self.nb.append_page(box, Gtk.Label(label="ParameterSet"))
+        lbl_tab = Gtk.Label(label="ParameterSet")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
     def cb_transport2(self):
         cb = Gtk.ComboBoxText()
@@ -454,7 +523,7 @@ class ReaderApp(Gtk.Window):
         frame3.add(g3)
         self.cb_write_bank = Gtk.ComboBoxText()
         for name, val in (("USER", 3), ("EPC", 1), ("RESERVED", 0)):
-            self.cb_write_bank.append(name, val)
+            self.cb_write_bank.append(name, str(val))
         self.cb_write_bank.set_active(0)
         self.cb_write_bank.set_tooltip_text(
             "RESERVED holds the passwords: writing there changes the "
@@ -511,7 +580,9 @@ class ReaderApp(Gtk.Window):
         self.lbl_fp = Gtk.Label(label="")
         fg.attach(self.lbl_fp, 1, 0, 1, 2)
         box.pack_start(fp, False, False, 0)
-        self.nb.append_page(box, Gtk.Label(label="Read/Write"))
+        lbl_tab = Gtk.Label(label="Read/Write")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
     def _build_active_tab(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -560,6 +631,7 @@ class ReaderApp(Gtk.Window):
             "No tiene que ver con los tags activos: los tags Gen2 son "
             "pasivos, sin bateria.\n"
             "Este es el nombre que le da el vendor a este modo del lector.")
+        self._tab_labels.append(lbl_active_tab)
         self.nb.append_page(box, lbl_active_tab)
 
     def _build_advance_tab(self):
@@ -592,7 +664,9 @@ class ReaderApp(Gtk.Window):
         self.lbl_freq_raw = Gtk.Label(label="raw freq: -")
         g2.attach(self.lbl_freq_raw, 1, 0, 1, 1)
         box.pack_start(frame2, False, False, 0)
-        self.nb.append_page(box, Gtk.Label(label="AdvanceSet"))
+        lbl_tab = Gtk.Label(label="AdvanceSet")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
     def _build_chip_tab(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -629,7 +703,9 @@ class ReaderApp(Gtk.Window):
         scroll.set_vexpand(True)
         scroll.add(self.chip_view)
         box.pack_start(scroll, True, True, 0)
-        self.nb.append_page(box, Gtk.Label(label="Chip info"))
+        lbl_tab = Gtk.Label(label="Chip info")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
     def _chip_password(self) -> bytes:
         text = self.entry_chip_pwd.get_text().strip().replace(" ", "")
@@ -795,7 +871,9 @@ class ReaderApp(Gtk.Window):
         table.add(tl)
         box.pack_start(table, False, False, 0)
 
-        self.nb.append_page(box, Gtk.Label(label="Risky"))
+        lbl_tab = Gtk.Label(label="Risky")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
 
     def _risk_ok(self):
@@ -938,7 +1016,9 @@ class ReaderApp(Gtk.Window):
         scroll.set_vexpand(True)
         scroll.add(view)
         box.pack_start(scroll, True, True, 0)
-        self.nb.append_page(box, Gtk.Label(label="WhiteList"))
+        lbl_tab = Gtk.Label(label="WhiteList")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
     def _build_batchwrite_tab(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -982,7 +1062,9 @@ class ReaderApp(Gtk.Window):
         scroll.set_vexpand(True)
         scroll.add(view)
         box.pack_start(scroll, True, True, 0)
-        self.nb.append_page(box, Gtk.Label(label="BatchWrite"))
+        lbl_tab = Gtk.Label(label="BatchWrite")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
 
     # -- white list -------------------------------------------------------

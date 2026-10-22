@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 from ru5600_core import (  # noqa: E402
     MEM_EPC,
+    epc_crc_ok,
     MEM_RESERVED,
     MEM_TID,
     MEM_USER,
@@ -66,28 +67,32 @@ def read_tid_for(reader, target, rounds=3):
 
 
 def probe_for_tag(reader, target, bank, pwd=ZERO, stale=b"", guard=True):
-    """How much of a bank belongs to this tag (a lower bound).
+    """How much of a bank belongs to this tag, and why it stopped.
 
     With a single tag in the field the reader can only be pointing at
     it, so no guard is needed.  With several tags the reader re-targets
     between commands and a read can come from another tag: then the
     target is checked before and after the sweep and the result is
     discarded if the reader moved.
+
+    The reason matters: "the tag does not have that memory" is a fact
+    about the tag, while "the reader did not answer" says nothing about
+    the tag at all.
     """
     if guard:
         # the guard is checked before and after the sweep, not on every
         # chunk: the reader refuses most commands and each check is one
         if reader.current_epc_quick() != target:
-            return b"", 0
+            return b"", 0, "moved"
     try:
-        data, words = reader.probe_bank(bank, pwd)
+        data, words, reason = reader.probe_bank(bank, pwd)
     except ReaderError:
-        return b"", 0
+        return b"", 0, "no_answer"
     if guard and reader.current_epc_quick() != target:
-        return b"", 0
+        return b"", 0, "moved"
     if stale and data.hex().upper() == stale.upper():
-        return b"", 0
-    return data, words
+        return b"", 0, "stale"
+    return data, words, reason
 
 
 def describe(reader, target: bytes, rssi: int, ant: int,
@@ -111,6 +116,11 @@ def describe(reader, target: bytes, rssi: int, ant: int,
     rep["epc_bank"] = (crc + pc + cur).hex().upper()
     rep["epc_crc"] = crc.hex().upper()
     rep["epc_pc"] = pc.hex().upper()
+    # the reader computes the CRC of the EPC it read: if it does not
+    # add up, the answer was not fresh
+    rep["epc_crc_ok"] = epc_crc_ok(cur, crc)
+    # the PC carries the length of the EPC in words, in bits 11-14
+    rep["epc_len_ok"] = ((int.from_bytes(pc, "big") >> 11) & 0x0F) * 2 == len(cur)
 
     # the TID, guarded
     tid = read_tid_for(reader, target)
@@ -133,14 +143,18 @@ def describe(reader, target: bytes, rssi: int, ant: int,
 
     # the other banks, guarded as well
     guard = n_tags > 1
-    res, res_words = probe_for_tag(reader, target, MEM_RESERVED,
-                                   stale=rep["epc_bank"], guard=guard)
+    res, res_words, res_reason = probe_for_tag(reader, target, MEM_RESERVED,
+                                               stale=rep["epc_bank"],
+                                               guard=guard)
     rep["reserved"] = res.hex().upper()
     rep["reserved_len"] = res_words * 2
-    usr, usr_words = probe_for_tag(reader, target, MEM_USER,
-                                   stale=rep["epc_bank"], guard=guard)
+    rep["reserved_reason"] = res_reason
+    usr, usr_words, usr_reason = probe_for_tag(reader, target, MEM_USER,
+                                               stale=rep["epc_bank"],
+                                               guard=guard)
     rep["user"] = usr.hex().upper()
     rep["user_len"] = usr_words * 2
+    rep["user_reason"] = usr_reason
 
     # the identification has to agree with what the memory measured: if
     # it does not, the TID and the memory are not from the same tag
@@ -154,7 +168,13 @@ def describe(reader, target: bytes, rssi: int, ant: int,
     # The size the reader reports moves by a block (4 words = 8 bytes)
     # from one run to the next, so the comparison has that tolerance.
     if rep["user_len"] == 0:
-        rep["verdict"] = "USER no responde: bloqueado o inexistente"
+        if usr_reason == "no_answer":
+            rep["verdict"] = ("el lector no esta respondiendo: no se puede "
+                              "decir si el banco esta bloqueado")
+        elif usr_reason == "moved":
+            rep["verdict"] = "el lector apuntaba a otro tag: no se midio"
+        else:
+            rep["verdict"] = "USER no responde: bloqueado o inexistente"
     elif exp_user and rep["user_len"] >= exp_user:
         rep["verdict"] = (f"USER completo ({rep['user_len']} B, esperado "
                           f"{exp_user} B) - sin lock")
@@ -185,6 +205,8 @@ def print_report(rep):
               f"(user {rep.get('expected_user','?')} B)")
     print(f"EPC bank     : {rep.get('epc_crc','-')} {rep.get('epc_pc','-')} | "
           f"{rep.get('epc_bank','')}")
+    print(f"EPC CRC      : {'OK (el CRC del lector coincide con el EPC)' if rep.get('epc_crc_ok') else 'NO COINCIDE: la respuesta no era fresca'}"
+          f"   longitud {rep.get('epc_len_ok')}")
     print(f"RESERVED     : {rep['reserved'] or '(no leido)'}  "
           f"({rep['reserved_len']} B leidos)")
     print(f"USER         : {rep['user'] or '(no leido)'}  "
