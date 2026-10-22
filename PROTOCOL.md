@@ -379,7 +379,38 @@ Words 6-7 of the reserved bank (`0002 0000`) are stable.
 
 ---
 
-## 10. Hardware verification log
+## 10. Read modes and the antenna measurement
+
+Two primitives, measured on the bench:
+
+**One detection** (`detect(mode)`) - the answer mode inventory with a
+bounded number of rounds:
+
+| Mode | Rounds | Time | Hit rate |
+|---|---|---|---|
+| `burst` | 1 | 60 ms | 1/8 - the reader refuses the round most of the time |
+| `balanced` | 6 | 0,2-0,4 s | 5/8 |
+| `reliable` | 40 | 0,3-2,4 s | 8/8 (measured 10/10) |
+
+The gap between the rounds is 30 ms; the reader answers roughly one
+command out of four, and the answers come in bursts.
+
+**Continuous measurement** (`measure(duration)`) - the reader is switched
+to active mode and left streaming while the tag buffer is polled. This
+is the primitive for mapping the reading area of an antenna:
+
+```
+detections : 51 in 10 s (5.1/s)
+RSSI       : avg 71.5, min 45, max 90
+```
+
+The RSSI of the tag records is the signal strength reported by the
+reader, and the detection rate is how often the tag is seen - together
+they describe how well a spot of the antenna reads.
+
+---
+
+## 11. Hardware verification log
 
 | Test | Reader answer |
 |---|---|

@@ -110,6 +110,42 @@ different UHF tags (96 bit and 192 bit EPC):
 | Access password | `00000000` works; every other candidate fails 100 % of the time |
 | Memory map | RESERVED 8 bytes, EPC 16 bytes (CRC+PC+96 bit EPC), TID 28 bytes, USER 4 bytes |
 
+### Read modes and the antenna heat map
+
+The **Read mode** selector (connection panel) picks how hard the reader
+tries on a single detection. Measured on the bench:
+
+| Mode | Time per detection | Hit rate |
+|---|---|---|
+| `burst` - one inventory round | 60 ms | 1/8 - the reader refuses the round most of the time |
+| `balanced` - six rounds | 0,2-0,4 s | 5/8 |
+| `reliable` - keeps going | 0,3-2,4 s | **8/8** |
+
+```bash
+ru5600_cli.py inventory --mode burst     # fastest
+ru5600_cli.py inventory --mode reliable   # 8/8
+```
+
+For measuring the **reading speed and the antenna signal** - the numbers
+to compare when mapping the reading area of an antenna - use the *heat*
+measurement. The reader is switched to active mode and left streaming
+while the tag buffer is polled:
+
+```bash
+ru5600_cli.py heat --seconds 10
+```
+
+```
+elapsed        : 10.0 s
+detections     : 51 (5.10/s)
+RSSI           : avg 71.5 min 45 max 90 (51 samples)
+  E20047019951662B039FD1AD: 51 detections
+```
+
+In the GUI the same numbers are in the *ActiveMode* tab: the *Measure*
+button runs the measurement and the status line shows the detection rate
+and the RSSI average, minimum and maximum.
+
 ### Chip info tab
 
 Identifies the chip from its TID (GS1 TDS: MDID = manufacturer, TMN =

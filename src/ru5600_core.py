@@ -73,6 +73,33 @@ FREQ_BANDS = {
 }
 
 
+# Read modes: (dwell seconds between polls, max polls) for one detection.
+#   burst    - poll once, as fast as possible: detects the tag in a
+#              single burst, but misses when the reader does not answer
+#   balanced - a few polls with a short dwell: good speed, still reliable
+#   reliable - keeps polling until the reader answers (the "8/8" mode)
+READ_MODES = {
+    #          answer mode rounds, gap between rounds
+    "burst": (1, 0.0),
+    "balanced": (6, 0.03),
+    "reliable": (40, 0.03),
+}
+
+
+@dataclass
+class Detection:
+    """Result of one detection round set."""
+    tags: List[Tag] = field(default_factory=list)
+    rounds: int = 0
+    hits: int = 0
+    elapsed: float = 0.0
+
+    @property
+    def rate(self) -> float:
+        """Detections per second."""
+        return self.hits / self.elapsed if self.elapsed > 0 else 0.0
+
+
 class ReaderError(RuntimeError):
     """Raised when the reader is unreachable or rejects a command."""
 
@@ -313,6 +340,9 @@ class Ru5600Reader:
                 if self._lib.CFHid_OpenDevice() == 1:
                     self._open = True
                     self._last_cmd = time.monotonic()
+                    # let a previous client finish releasing the reader:
+                    # claiming it too early upsets the vendor library
+                    time.sleep(0.25)
                     self._install_callback()
                     return True
                 if attempt + 1 < attempts:
@@ -427,6 +457,92 @@ class Ru5600Reader:
         return True
 
     # -- inventory / read / write -----------------------------------------
+    def detect(self, mode: str = "balanced") -> Detection:
+        """Look for tags with the selected read effort.
+
+        The answer mode inventory is used here: with enough rounds it
+        answers every time (measured 10/10 with 40 rounds), and with one
+        round it is the fastest possible detection.
+
+        * ``burst``    - a single round: fastest, misses most of the time
+        * ``balanced`` - six rounds: good speed, still reliable
+        * ``reliable`` - keeps going until the reader answers (the 8/8)
+        """
+        rounds, gap = READ_MODES.get(mode, READ_MODES["balanced"])
+        det = Detection()
+        buf = (ctypes.c_ubyte * 65536)()
+        total = ctypes.c_ushort(0)
+        count = ctypes.c_ushort(0)
+        t0 = time.monotonic()
+        for _ in range(max(1, rounds)):
+            self._pace()
+            det.rounds += 1
+            if self._lib.CFHid_InventoryG2(
+                DEV_ADDR, buf, ctypes.byref(total), ctypes.byref(count)
+            ) == 1 and count.value:
+                det.hits += 1
+                for tag in parse_tag_buffer(bytes(buf[: total.value]),
+                                           count.value):
+                    if tag.epc_hex not in [t.epc_hex for t in det.tags]:
+                        det.tags.append(tag)
+                if det.tags:
+                    break
+            if gap:
+                time.sleep(gap)
+        det.elapsed = time.monotonic() - t0
+        return det
+
+    def measure(self, duration: float = 5.0, poll: float = 0.0) -> dict:
+        """Measure the read speed and the antenna signal.
+
+        The reader is switched to active mode and left streaming while
+        the tag buffer is polled, so every detection the reader sends is
+        counted.  The result is what to compare when mapping the reading
+        area of an antenna: detections per second and the RSSI of the
+        tags seen.
+        """
+        rssis = []
+        seen = {}
+        polls = hits = 0
+        self._pace()
+        self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                          WORKMODE_ACTIVE)
+        self._pace(settle=True)
+        self._lib.CFHid_ClearTagBuf()
+        self._pace()
+        self._lib.CFHid_StartRead(DEV_ADDR)
+        self._pace(settle=True)
+        t0 = time.monotonic()
+        try:
+            while time.monotonic() - t0 < duration:
+                polls += 1
+                tags = self.poll_tags()
+                if tags:
+                    hits += len(tags)
+                    for tag in tags:
+                        rssis.append(tag.rssi)
+                        seen[tag.epc_hex] = seen.get(tag.epc_hex, 0) + 1
+                if poll:
+                    time.sleep(poll)
+        finally:
+            self._lib.CFHid_StopRead(DEV_ADDR)
+            self._pace(settle=True)
+            self._lib.CFHid_ClearTagBuf()
+            self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                              WORKMODE_ANSWER)
+        elapsed = time.monotonic() - t0
+        return {
+            "elapsed": elapsed,
+            "polls": polls,
+            "detections": hits,
+            "detections_per_s": hits / elapsed if elapsed else 0.0,
+            "tags": seen,
+            "rssi_count": len(rssis),
+            "rssi_avg": sum(rssis) / len(rssis) if rssis else 0.0,
+            "rssi_min": min(rssis) if rssis else 0,
+            "rssi_max": max(rssis) if rssis else 0,
+        }
+
     def inventory(self, rounds: int = 12, delay: float = 0.03) -> List[Tag]:
         """One-shot inventory (answer mode).
 

@@ -43,7 +43,7 @@ def main():
     ap = argparse.ArgumentParser(description="RU5600 UHF reader CLI")
     ap.add_argument("command",
                     choices=["info", "inventory", "watch", "read", "write",
-                             "params", "freq", "chip", "password"],
+                             "params", "freq", "chip", "password", "heat"],
                     help="operation to run")
     ap.add_argument("--mem", default="EPC", choices=["EPC", "TID", "USER"])
     ap.add_argument("--ptr", default="0", help="start word address (hex)")
@@ -54,6 +54,9 @@ def main():
                     help="Gen2 access password (8 hex digits)")
     ap.add_argument("--deep", action="store_true",
                     help="also map the reserved and user memory")
+    ap.add_argument("--mode", default="balanced",
+                    choices=["burst", "balanced", "reliable"],
+                    help="read effort for a single detection")
     ap.add_argument("--seconds", type=float, default=30.0)
     args = ap.parse_args()
 
@@ -71,9 +74,22 @@ def main():
             print(f"Firmware     : {info.soft_ver}")
             print(f"Hardware     : {info.hard_ver}")
 
+        elif args.command == "heat":
+            st = reader.measure(args.seconds)
+            print(f"elapsed        : {st['elapsed']:.1f} s")
+            print(f"detections     : {st['detections']} "
+                  f"({st['detections_per_s']:.2f}/s)")
+            print(f"RSSI           : avg {st['rssi_avg']:.1f} "
+                  f"min {st['rssi_min']} max {st['rssi_max']} "
+                  f"({st['rssi_count']} samples)")
+            for epc, n in st["tags"].items():
+                print(f"  {epc}: {n} detections")
+
         elif args.command == "inventory":
-            tags = reader.scan()
-            print(f"{len(tags)} tag(s)")
+            det = reader.detect(args.mode)
+            tags = det.tags
+            print(f"{len(tags)} tag(s) in {det.elapsed:.2f}s "
+                  f"(mode {args.mode}, {det.hits}/{det.rounds} hits)")
             for line in _fmt_tags(tags):
                 print(line)
 

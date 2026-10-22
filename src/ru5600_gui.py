@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ru5600_core import (  # noqa: E402
     FREQ_BANDS,
+    READ_MODES,
     MEM_EPC,
     MEM_TID,
     MEM_USER,
@@ -144,6 +145,21 @@ class ReaderApp(Gtk.Window):
         self.cb_transport.set_active(0)
         grid.attach(Gtk.Label(label="Interface:", xalign=0), 0, 2, 1, 1)
         grid.attach(self.cb_transport, 1, 2, 1, 1)
+
+        self.cb_read_mode = Gtk.ComboBoxText()
+        for m, (dwell, polls, _s) in READ_MODES.items():
+            label = {"burst": "Burst (fastest)",
+                     "balanced": "Balanced",
+                     "reliable": "Reliable (8/8)"}[m]
+            self.cb_read_mode.append_text(label)
+        self.cb_read_mode.set_active(1)
+        self.cb_read_mode.set_tooltip_text(
+            "How hard the reader tries on a single detection:\n"
+            "Burst    - one poll, fastest, misses most of the time\n"
+            "Balanced - three polls\n"
+            "Reliable - keeps polling until the reader answers")
+        grid.attach(Gtk.Label(label="Read mode:", xalign=0), 0, 5, 1, 1)
+        grid.attach(self.cb_read_mode, 1, 5, 1, 1)
 
         self.entry_ip = Gtk.Entry(text="192.168.1.250")
         grid.attach(Gtk.Label(label="Net IP:", xalign=0), 0, 3, 1, 1)
@@ -453,6 +469,18 @@ class ReaderApp(Gtk.Window):
         bar.pack_start(self.btn_stop, False, False, 0)
         self.lbl_active = Gtk.Label(label="Status: stopped")
         bar.pack_start(self.lbl_active, False, False, 0)
+        self.entry_measure = Gtk.Entry(text="10")
+        self.entry_measure.set_max_length(4)
+        self.entry_measure.set_width_chars(4)
+        bar.pack_start(Gtk.Label(label="Measure (s):"), False, False, 0)
+        bar.pack_start(self.entry_measure, False, False, 0)
+        b_measure = Gtk.Button(label="Measure")
+        b_measure.set_tooltip_text(
+            "Reads for N seconds and reports the detection rate and the "
+            "antenna signal (RSSI) - the numbers to compare when mapping "
+            "the reading area of the antenna.")
+        b_measure.connect("clicked", lambda *_: self.on_measure())
+        bar.pack_start(b_measure, False, False, 0)
 
         self.tag_store = Gtk.ListStore(str, str, str, str, str)
         view = Gtk.TreeView(model=self.tag_store)
@@ -810,9 +838,10 @@ class ReaderApp(Gtk.Window):
         self.log("Read started...")
 
         def task():
-            # scan() uses active mode with a short dwell, which the reader
-            # answers far more reliably than a single answer mode round.
-            return self.reader.scan()
+            # detect() uses active mode - the answer mode inventory is
+            # refused by the reader most of the time - and the read mode
+            # picks how hard it tries.
+            return self.reader.detect(self._read_mode())
 
         def ok(tags):
             if not tags:
@@ -840,6 +869,11 @@ class ReaderApp(Gtk.Window):
             self.log("Parameters applied to reader")
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def _read_mode(self) -> str:
+        labels = {"Burst (fastest)": "burst", "Balanced": "balanced",
+                  "Reliable (8/8)": "reliable"}
+        return labels.get(self.cb_read_mode.get_active_text(), "balanced")
 
     def _access_password(self) -> bytes:
         text = self.entry_password.get_text().strip().replace(" ", "")
@@ -936,6 +970,34 @@ class ReaderApp(Gtk.Window):
             self._active = False
             self.lbl_active.set_text("Status: stopped")
             self.log("ActiveMode: stop reading (back to AnswerMode)")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_measure(self, *_):
+        if not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        try:
+            seconds = float(self.entry_measure.get_text() or "10")
+        except ValueError:
+            seconds = 10.0
+        seconds = max(1.0, min(300.0, seconds))
+        self.log(f"Measuring for {seconds:.0f} s...")
+
+        def task():
+            return self.reader.measure(seconds)
+
+        def ok(st):
+            self.lbl_active.set_text(
+                f"Status: {st['detections']} detections "
+                f"({st['detections_per_s']:.1f}/s), "
+                f"RSSI avg {st['rssi_avg']:.0f} "
+                f"min {st['rssi_min']} max {st['rssi_max']}")
+            self.log(
+                f"Measure {st['elapsed']:.1f}s: {st['detections']} detections "
+                f"({st['detections_per_s']:.2f}/s), RSSI avg {st['rssi_avg']:.1f} "
+                f"min {st['rssi_min']} max {st['rssi_max']}, "
+                f"tags {st['tags']}")
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
