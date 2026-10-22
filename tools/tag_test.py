@@ -38,31 +38,13 @@ from ru5600_core import (  # noqa: E402
     ReaderError,
     Ru5600Reader,
 )
-from ru5600_chip import decode_tid  # noqa: E402
+from ru5600_chip import (  # noqa: E402
+    TID_PREFIX_DB,
+    consistency_check,
+    decode_tid,
+)
 
 ZERO = b"\x00\x00\x00\x00"
-
-# TID prefix -> (chip name, USER memory in BYTES) as published
-# (the sources give the user memory in bits: 688 bits = 86 bytes, ...)
-EXPECTED = {
-    "E2803813": ("Alien Higgs-10 (H10/7320)", 4),
-    "E2003412": ("Alien Higgs-3", 64),
-    "E2003414": ("Alien Higgs-4", 16),
-    "E2003411": ("Alien Higgs-2", 0),
-    "E2803821": ("Alien Higgs-9", 86),
-    "E2003811": ("Alien Higgs-EC", 16),
-    "E2806894": ("NXP UCODE 8", 0),
-    "E2806994": ("NXP UCODE 8M", 4),
-    "E2806995": ("NXP UCODE 9", 0),
-    "E2806915": ("NXP UCODE 9 (2024+)", 0),
-    "E2806890": ("NXP UCODE 7", 0),
-    "E2801100": ("Impinj Monza 4D", 4),
-    "E2801114": ("Impinj Monza 4i", 60),
-    "E280110C": ("Impinj Monza 4E", 16),
-    "E2801130": ("Impinj Monza 5", 4),
-    "E2801160": ("Impinj Monza R6", 0),
-}
-
 
 def read_tid_for(reader, target, rounds=3):
     """The TID of a given tag.
@@ -141,9 +123,13 @@ def describe(reader, target: bytes, rssi: int, ant: int,
     rep["chip"] = (f"{info.manufacturer} {info.model}" if info.known
                    else (f"{info.manufacturer} (TMN {info.tmn:03X})"
                          if info.manufacturer else "desconocido"))
-    exp = EXPECTED.get(info.prefix)
-    rep["expected"] = exp[0] if exp else ""
-    rep["expected_user"] = exp[1] if exp else ""
+    entry = TID_PREFIX_DB.get(info.prefix)
+    exp_user = None
+    if entry:
+        rep["expected"] = f"{entry[0]} {entry[1]}"
+        if str(entry[3]).isdigit():
+            exp_user = int(entry[3]) // 8
+            rep["expected_user"] = exp_user
 
     # the other banks, guarded as well
     guard = n_tags > 1
@@ -156,6 +142,10 @@ def describe(reader, target: bytes, rssi: int, ant: int,
     rep["user"] = usr.hex().upper()
     rep["user_len"] = usr_words * 2
 
+    # the identification has to agree with what the memory measured: if
+    # it does not, the TID and the memory are not from the same tag
+    rep["warnings"] = consistency_check(info, rep["user_len"])
+
     # the access password: the EPC bank read already used it, so a
     # successful read means the password is accepted (no extra command)
     rep["pwd"] = "00000000 ok" if rep.get("epc_bank") else "00000000 RECHAZADO"
@@ -163,7 +153,6 @@ def describe(reader, target: bytes, rssi: int, ant: int,
     # The verdict, without claiming a lock the reader cannot prove.
     # The size the reader reports moves by a block (4 words = 8 bytes)
     # from one run to the next, so the comparison has that tolerance.
-    exp_user = exp[1] if exp else None
     if rep["user_len"] == 0:
         rep["verdict"] = "USER no responde: bloqueado o inexistente"
     elif exp_user and rep["user_len"] >= exp_user:
@@ -201,6 +190,9 @@ def print_report(rep):
           f"({rep['user_len']} B leidos)")
     print(f"Access pwd   : {rep['pwd']}")
     print(f"Veredicto    : {rep['verdict']}")
+    for w in rep.get("warnings", []):
+        print(f"AVISO        : {w} - el TID y la memoria no son del mismo "
+              f"tag, la identificacion no es de fiar")
     if rep.get("tags_seen", 1) > 1:
         print(f"NOTA         : hay {rep['tags_seen']} tags en la antena; cada "
               f"lectura se valida contra el tag, pero con el lector "

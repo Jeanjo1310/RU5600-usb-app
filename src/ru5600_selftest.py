@@ -143,12 +143,45 @@ def test_tid_decode() -> None:
     check("xtid present", info.xtid, True)
 
 
+def test_chip_table() -> None:
+    """The chip table: the prefixes of the chips seen on the bench.
+
+    Locking them here keeps a later edit of the table from silently
+    changing what the tool says about a tag.
+    """
+    print("chip table")
+    from ru5600_chip import consistency_check, decode_tid
+
+    h9 = decode_tid(bytes.fromhex("E28038212000682004D9CBAD"))
+    check("H9 mdid", h9.mdid, 0x803)
+    check("H9 model", h9.model, "Higgs-9")
+    check("H9 serial", h9.serial, "00682004D9CBAD")
+
+    h3 = decode_tid(bytes.fromhex("E20034121234567890ABCDEF00"))
+    check("H3 mdid", h3.mdid, 0x003)
+    check("H3 manufacturer", h3.manufacturer, "Alien")
+    check("H3 model", h3.model, "Higgs-3")
+
+    ucode9 = decode_tid(bytes.fromhex("E28069150000123456789ABCDEF0"))
+    check("UCODE 9 mdid", ucode9.mdid, 0x806)
+    check("UCODE 9 model", ucode9.model, "UCODE 9 (con Configuration Word)")
+
+    # the identification has to agree with the measured memory
+    check("H9 with 86 B of user memory is coherent",
+          consistency_check(h9, 86), [])
+    check("H9 with 4 B of user memory is flagged",
+          len(consistency_check(h9, 4)), 1)
+    check("UCODE 9 with 64 B of user memory is flagged",
+          len(consistency_check(ucode9, 64)), 1)
+
+
 def main() -> int:
     print("RU5600 protocol self test")
     test_checksum()
     test_response_layout()
     test_tag_records()
     test_tid_decode()
+    test_chip_table()
     test_safety()
     if FAILS:
         print(f"\n{len(FAILS)} FAILED: {', '.join(FAILS)}")

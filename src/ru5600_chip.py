@@ -106,7 +106,10 @@ TID_PREFIX_DB: Dict[str, Tuple[str, str, str, str]] = {
     "E2806894": ("NXP", "UCODE 8", "128", "0"),
     "E2806994": ("NXP", "UCODE 8M", "96", "32"),
     "E2806995": ("NXP", "UCODE 9", "96", "0"),
-    "E2806915": ("NXP", "UCODE 9 (2024+)", "96", "0"),
+    # E2806995 = UCODE 9 sub version 0011 (sin Configuration Word)
+    # E2806915 = UCODE 9 sub version 0010, con Configuration Word
+    # (Self-Adjust, Dynamic backscatter, Memory Safeguard)
+    "E2806915": ("NXP", "UCODE 9 (con Configuration Word)", "96", "0"),
     "E2C06892": ("NXP", "UCODE DNA", "224", "3072"),
     "E2C06C12": ("NXP", "UCODE DNA Track", "448", "256"),
     "E2C06B12": ("NXP", "UCODE DNA City", "224", "1024"),
@@ -362,6 +365,36 @@ def verify_password(reader: Ru5600Reader, password: bytes,
     return False, data
 
 
+def consistency_check(tid_info, user_bytes=None) -> list:
+    """Does the identification agree with what was measured?
+
+    The table says how much user memory each chip has.  If the bank
+    answers with a very different size, the TID and the memory did not
+    come from the same tag - a stale answer, or the reader pointing at
+    another tag - and the identification cannot be trusted.
+
+    The reader reports the size with a block of tolerance (it moves by
+    8 bytes from one run to the next), so only a bigger difference
+    counts as a contradiction.
+    """
+    entry = TID_PREFIX_DB.get(getattr(tid_info, "prefix", ""))
+    if not entry or user_bytes is None:
+        return []
+    model, user_bits = entry[1], str(entry[3])
+    if not user_bits.isdigit():
+        return []
+    expected = int(user_bits) // 8
+    if expected == 0:
+        if user_bytes <= 16:
+            return []
+        return [f"la identificacion dice {model} (sin memoria de usuario) "
+                f"pero el banco USER respondio {user_bytes} B"]
+    if abs(user_bytes - expected) <= 8:
+        return []
+    return [f"la identificacion dice {model} ({expected} B de memoria de "
+            f"usuario) pero el banco USER respondio {user_bytes} B"]
+
+
 def format_report(report: ChipReport) -> str:
     """Human readable analysis report."""
     t = report.tid
@@ -394,6 +427,14 @@ def format_report(report: ChipReport) -> str:
         if b.words:
             out.append("           " + " ".join(
                 w if w is not None else "XX" for w in b.words))
+    user = report.banks.get(MEM_USER)
+    warnings = consistency_check(t, user.size_bytes if user else None)
+    if warnings:
+        out.append("")
+        out.append("=== AVISO ===")
+        for w in warnings:
+            out.append(f"! {w}: el TID y la memoria no son del mismo tag, "
+                       f"la identificacion no es de fiar")
     if report.epc:
         out.append("")
         out.append(f"EPC             : {report.epc.hex().upper()}")
