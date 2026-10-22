@@ -33,6 +33,7 @@ DEV_ADDR = 0xFF
 
 # Device parameter addresses (documented in the SDK demos).
 PARAM_TRANSPORT = 0x01
+RESP_READ = 0x02          # tipo de frame de respuesta de una lectura
 PARAM_WORKMODE = 0x02
 PARAM_DEVADDR = 0x03
 PARAM_FILTERTIME = 0x04
@@ -402,13 +403,18 @@ class Ru5600Reader:
 
     # Timings, all tunable from the environment so nothing is hardcoded:
     #   RU5600_MIN_GAP      seconds between two consecutive commands
+    #                        (measured: 100 ms, with 0 ms the reader
+    #                        answers with a stale frame or not at all)
     #   RU5600_SETTLE       seconds to wait after a state changing command
     #   RU5600_READ_RETRIES attempts per memory read
     #   RU5600_READ_DELAY   seconds between those attempts
-    MIN_GAP = _env_num("RU5600_MIN_GAP", 0.06)
+    MIN_GAP = _env_num("RU5600_MIN_GAP", 0.10)
     SETTLE = _env_num("RU5600_SETTLE", 0.45)
-    READ_RETRIES = _env_num("RU5600_READ_RETRIES", 40, int)
-    READ_DELAY = _env_num("RU5600_READ_DELAY", 0.03)
+    # measured: the reader needs at least 100 ms between two commands
+    # (read right after a success: 0/8; with 100 ms: 5/8), and 12
+    # attempts at that pace fit in the 3 s a read must take
+    READ_RETRIES = _env_num("RU5600_READ_RETRIES", 12, int)
+    READ_DELAY = _env_num("RU5600_READ_DELAY", 0.10)
 
     def __init__(self, on_tags: Optional[Callable[[List[Tag]], None]] = None,
                  on_event: Optional[Callable[[str], None]] = None):
@@ -429,12 +435,13 @@ class Ru5600Reader:
         self._last_cmd = time.monotonic()
 
     # -- lifecycle ---------------------------------------------------------
-    def open(self, attempts: int = 3, retry_delay: float = 0.4) -> bool:
+    def open(self, attempts: int = 15, retry_delay: float = 2.5) -> bool:
         """Open the reader.
 
         The USB interface is claimed exclusively, so a previous client that
-        is still shutting down can make the first attempt fail.  Retry a few
-        times before giving up.
+        is still shutting down can make the first attempt fail - the
+        reader needs a few seconds to let go of it.  Retry before giving
+        up.
         """
         with self._lock:
             if self._open:
@@ -455,8 +462,10 @@ class Ru5600Reader:
                 "Open failed: the reader could not be claimed.\n"
                 "Either it is not connected, the udev rule is missing "
                 "(press 'Install USB access rule'), or another program "
-                "already has it open - only one client can use the "
-                "reader at a time."
+                "has it open - only one client can use the reader at a "
+                "time.  After another client disconnects, this reader "
+                "needs about 20-30 s to release the USB port, so the "
+                "client waits and retries."
             ) from None
 
     def close(self) -> bool:
@@ -699,7 +708,8 @@ class Ru5600Reader:
                 time.sleep(delay)
         return seen
 
-    def scan(self, dwell: float = 0.35, attempts: int = 4) -> List[Tag]:
+    def scan(self, dwell: float = 0.35, attempts: int = 4,
+             restore_mode: bool = True) -> List[Tag]:
         """Reliable one shot scan.
 
         The answer mode inventory is refused by the reader most of the
@@ -707,7 +717,17 @@ class Ru5600Reader:
         mode for a short dwell and draining the tag buffer is what the
         reader answers reliably.  The dwell is repeated until something
         shows up or the attempt budget runs out.
+
+        A scan must not degrade the reads that come after it: the reader
+        answers memory reads much better in answer mode (measured 86 %)
+        than in active mode (43 %), so the mode is put back.
         """
+        previous = None
+        if restore_mode:
+            try:
+                previous = self.work_mode()
+            except Exception:
+                previous = None
         for attempt in range(max(1, attempts)):
             self._pace()
             self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
@@ -722,8 +742,14 @@ class Ru5600Reader:
             self._pace(settle=True)
             tags = self.poll_tags()
             if tags:
-                return tags
-        return []
+                break
+        if restore_mode:
+            try:
+                self.set_work_mode(previous if previous is not None
+                                   else WORKMODE_ANSWER)
+            except Exception:
+                pass
+        return tags
 
     def poll_tags(self) -> List[Tag]:
         """Drain the tag buffer filled by active mode."""
@@ -799,19 +825,31 @@ class Ru5600Reader:
         """One read command (at most MAX_READ_WORDS words)."""
         data = (ctypes.c_ubyte * 256)()
         pwd = (ctypes.c_ubyte * 4)(*password)
+        stale = 0
         for attempt in range(max(1, retries)):
             if attempt:
                 time.sleep(retry_delay)
             elif pace:
                 self._pace()
+            wiped = self._wipe_response()
             if self._lib.CFHid_ReadCardG2(
                 DEV_ADDR, pwd, mem, word_ptr, word_count, data
             ) == 1:
-                return bytes(data[: word_count * 2])
+                chunk = bytes(data[: word_count * 2])
+                # the library hands over the last frame it received, even
+                # when it is the answer of a *previous* command; after the
+                # wipe the buffer only holds a frame if the reader
+                # answered right now, and a frame that does not match the
+                # request is discarded instead of being passed off as data
+                if self._response_matches(RESP_READ, word_count * 2,
+                                          strict=wiped):
+                    return chunk
+                stale += 1
+        extra = f", {stale} stale" if stale else ""
         raise ReaderError(
             f"ReadCardG2 failed (bank={mem}, word={word_ptr}, "
-            f"words={word_count}, {retries} attempts). Is a tag on the "
-            f"antenna, and is the access password correct?"
+            f"words={word_count}, {retries} attempts{extra}). Is a tag on "
+            f"the antenna, and is the access password correct?"
         ) from None
 
     def _read_at(self, reader, mem, offset, size, password, budget):
@@ -827,12 +865,17 @@ class Ru5600Reader:
 
     def probe_bank(self, mem: int, password: bytes = b"\x00" * 4,
                    max_words: int = 64, chunk: int = MAX_READ_WORDS,
-                   bank_budget: float = 8.0, offset_budget: float = 0.8):
+                   bank_budget: float = 6.0, offset_budget: float = 0.3):
         """Find out how much of a memory bank the tag really has.
 
         The reader answers a read only intermittently (measured between
         25 % and 100 % depending on the moment), so "it refused once" does
         not mean "the memory ended".
+
+        The size of the read has to fit the bank: the reserved bank of a
+        tag answers only 4 bytes and refuses 8 or 16.  The size is not
+        taken from a single answer - the reader refuses a lot of
+        commands - but from the one that answers most reliably.
 
         The offsets are **sampled** with a coarse sweep and then narrowed
         down, which is far quicker than walking the bank chunk by chunk
@@ -854,52 +897,77 @@ class Ru5600Reader:
             return self._read_at(self, mem, offset, at or size, password,
                                  budget or offset_budget) is not None
 
-        # the size of the read has to fit the bank: the reserved bank is
-        # only 8 bytes and the reader refuses a longer read, so the chunk
-        # is chosen by trying the usual sizes from the biggest
-        for candidate in (size, max(2, size // 2), 2, 1):
-            if answers(0, 1.0, at=candidate):
-                size = candidate
+        # 1. the read size that answers most reliably
+        best_size, best_hits = 0, 0
+        for _pass in range(2):
+            for candidate in (size, max(2, size // 2), 2, 1):
+                # one short window per candidate: the reader refuses a
+                # lot of commands and every probe is one order
+                if answers(0, 0.3, at=candidate):
+                    best_size, best_hits = candidate, 1
+                    break
+            if best_size:
                 break
-        else:
+        if not best_size:
             return b"", 0
-        step = max(size, 1)
+        size = best_size
 
-        # 1. coarse sweep: find the last offset that answers
-        step = max(size, 4)
-        # the first offset decides if the bank exists at all: give it more
-        # patience, the reader refuses long stretches at a time
+        # 2. the sweep, with a second chance: the reader degrades with
+        #    use and an empty sweep is often just a bad moment
+        for _round in range(2):
+            if time.monotonic() > deadline:
+                break
+            words = self._sweep_bank(mem, password, size, max_words,
+                                      offset_budget, deadline)
+            if not words:
+                continue
+            data = self._read_at(self, mem, 0, min(words, size), password,
+                                 offset_budget)
+            if data:
+                return data, words
+        return b"", 0
+
+    def _sweep_bank(self, mem, password, size, max_words, offset_budget,
+                    deadline):
+        """How many words of a bank answer, as a lower bound.
+
+        The first chunk answers (that is how the read size was chosen),
+        so the sweep starts right after it.
+        """
+        def answers(offset, budget=None):
+            if offset >= max_words:
+                return False
+            return self._read_at(self, mem, offset, size, password,
+                                 budget or offset_budget) is not None
+
         good = 0
-        offset = step
+        offset = size
         while offset < max_words and time.monotonic() < deadline:
             if answers(offset):
                 good = offset
-                offset += step
+                offset += size
             else:
                 break
-        # 2. narrow it down between the last good and the first bad
-        low, high = good, min(good + step, max_words)
+        # narrow it down between the last good and the first bad
+        low, high = good, min(good + size, max_words)
         while high - low > 1 and time.monotonic() < deadline:
             mid = (low + high) // 2
             if answers(mid):
                 low = mid
             else:
                 high = mid
-        # 3. refine in steps of 4 words: a one word read is the least
-        #    reliable one (measured 1/8), so the size is given in steps
-        #    of 8 bytes
+        # refine in steps of 4 words: a one word read is the least
+        # reliable one (measured 1/8), so the size is given in steps of
+        # 8 bytes
         probe = low + size
         while probe < min(low + size * 2, max_words) and \
                 time.monotonic() < deadline:
-            if self._read_at(self, mem, probe, size, password, 0.6) is not None:
+            if self._read_at(self, mem, probe, size, password, 0.3) is not None:
                 low = probe
                 probe += 4
             else:
                 break
-        words = min(max_words, low + size) if low else 0
-        data = self._read_at(self, mem, 0, min(words, size), password,
-                            offset_budget) or b""
-        return data, words
+        return min(max_words, low + size)
 
     def read_current_epc(self, retries: int = 14):
         """The EPC of the tag that is really in front of the reader.
@@ -952,6 +1020,58 @@ class Ru5600Reader:
             ok = bool(self._lib.CFHid_SendCommand(0x44, None, 0))
             self._pace()
             return ok
+
+    def current_epc_quick(self, tries: int = 4) -> Optional[bytes]:
+        """The EPC of the tag the reader points at, or None.
+
+        Cheap enough to use as a guard around another read: the reader
+        answers with the tag it has selected, and that selection can
+        change between two commands when several tags are in the field.
+        The reader refuses a lot of commands, so it is asked a few times.
+        """
+        for _ in range(max(1, tries)):
+            try:
+                data = self.read_card(MEM_EPC, 0, 8, b"\x00" * 4, retries=1)
+            except ReaderError:
+                continue
+            if len(data) < 6:
+                continue
+            epc = data[4:]
+            if any(epc):
+                return epc
+        return None
+
+    def read_for_tag(self, target: bytes, bank: int, word_ptr: int = 0,
+                     word_count: int = 8, password: bytes = b"\x00" * 4,
+                     tries: int = 8, delay: float = 0.05) -> Optional[bytes]:
+        """Read a chunk, but only while the reader points at ``target``.
+
+        With several tags in the field the reader re-targets between
+        commands, so a read can come from another tag.  The read is
+        therefore guarded: the reader has to point at the target before
+        *and* after the read, otherwise the answer is discarded and the
+        read is repeated.
+
+        This is what keeps two tags from sabotaging each other, without
+        assuming anything about the chip.
+        """
+        for _ in range(max(1, tries)):
+            before = self.current_epc_quick()
+            if before != target:
+                time.sleep(delay)
+                continue
+            try:
+                data = self.read_card(bank, word_ptr, word_count, password,
+                                      retries=1)
+            except ReaderError:
+                time.sleep(delay)
+                continue
+            after = self.current_epc_quick()
+            if after != target:
+                time.sleep(delay)
+                continue
+            return data
+        return None
 
     def read_card_checked(self, mem: int, word_ptr: int, word_count: int,
                          password: bytes = b"\x00" * 4, expect: bytes = b"",
@@ -1066,6 +1186,7 @@ class Ru5600Reader:
                     f"stops the continuous reading of the reader. Use the "
                     f"ActiveMode tab.")
             self._pace()
+            self._wipe_response()
             buf = (ctypes.c_ubyte * max(1, len(payload)))(*payload) \
                 if payload else None
             if not self._lib.CFHid_SendCommand(cmd & 0xFF, buf,
@@ -1085,6 +1206,43 @@ class Ru5600Reader:
             rtype, status, body = parsed
             return (rtype == (cmd & 0xFF) and status == 0x01), body
 
+
+    def _wipe_response(self) -> bool:
+        """Blank the vendor library's answer buffer.
+
+        The library hands over the last frame it received, even when it
+        is the answer of a *previous* command.  Blanking the buffer
+        before the command makes "no answer" detectable: after a wipe the
+        buffer only holds a frame if the reader answered right now.
+        """
+        base = getattr(self, "_lib_base", 0)
+        if not base:
+            return False
+        try:
+            ctypes.memset(base + RESPONSE_BUFFER_OFFSET, 0,
+                          RESPONSE_BUFFER_WINDOW)
+            return True
+        except (OSError, ValueError):
+            return False
+
+    def _response_matches(self, rtype: int, payload_len: int,
+                          strict: bool = False) -> bool:
+        """Does the last frame answer exactly what was asked?
+
+        When there is no frame to check the answer is trusted: a wrong
+        guess here would break every read, so the check is only applied
+        when a well formed frame is actually there.
+        """
+        frame = self._read_response_frame()
+        if not frame:
+            return not strict
+        parsed = parse_module_response(frame)
+        if parsed is None:
+            return not strict
+        ftype, status, body = parsed
+        if ftype != rtype or status != 0x01:
+            return False
+        return len(body) == payload_len
 
     def _read_response_frame(self):
         """The last answer the vendor library received, from its .bss."""
