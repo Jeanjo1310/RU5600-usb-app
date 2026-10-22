@@ -147,7 +147,7 @@ class ReaderApp(Gtk.Window):
         grid.attach(self.cb_transport, 1, 2, 1, 1)
 
         self.cb_read_mode = Gtk.ComboBoxText()
-        for m, (dwell, polls, _s) in READ_MODES.items():
+        for m in READ_MODES:
             label = {"burst": "Burst (fastest)",
                      "balanced": "Balanced",
                      "reliable": "Reliable (8/8)"}[m]
