@@ -78,10 +78,18 @@ FREQ_BANDS = {
 #              single burst, but misses when the reader does not answer
 #   balanced - a few polls with a short dwell: good speed, still reliable
 #   reliable - keeps polling until the reader answers (the "8/8" mode)
-# Commands that must never be sent by mistake: they start a firmware
-# update of the reader (0x2B upgrade data, 0x2C upgrade data in,
-# 0x2D upgrade end).  A wrong one can leave the reader unusable.
-FORBIDDEN_COMMANDS = {0x2B, 0x2C, 0x2D, 0x65}   # 0x65 = Kill6C (kills a tag)
+# Commands that must never be sent by mistake.
+#
+# FORBIDDEN: they damage the hardware or the tag.
+#   0x2B/0x2C/0x2D  firmware update of the reader (data, data in, end):
+#                    a wrong one leaves the reader unusable
+#   0x65            Kill6C: kills the tag for good
+#
+# RESERVED: they change the streaming state of the reader.  The GUI has
+# proper controls for them, and a reader left streaming keeps beeping and
+# flooding the tag buffer, so the raw path refuses them.
+FORBIDDEN_COMMANDS = {0x2B, 0x2C, 0x2D, 0x65}
+RESERVED_COMMANDS = {0x40, 0x41}
 
 
 def _env_num(name, default, cast=float):
@@ -452,6 +460,11 @@ class Ru5600Reader:
             ) from None
 
     def close(self) -> bool:
+        """Close the reader, leaving it quiet.
+
+        A reader left in active mode keeps streaming (and beeping), so
+        the stop is sent before closing even if the caller forgot it.
+        """
         with self._lock:
             if not self._open:
                 return False
@@ -460,6 +473,21 @@ class Ru5600Reader:
             except Exception:
                 pass
             self._cb = None
+            for cmd, payload in ((0x40, b""), (0x00, b"")):
+                try:
+                    self._lib.CFHid_SendCommand(cmd, None, 0)
+                    time.sleep(0.05)
+                except Exception:
+                    break
+            try:
+                self._lib.CFHid_ClearTagBuf()
+            except Exception:
+                pass
+            try:
+                self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                                   WORKMODE_ANSWER)
+            except Exception:
+                pass
             self._lib.CFHid_CloseDevice()
             self._open = False
             return True
@@ -869,8 +897,13 @@ class Ru5600Reader:
                 raise ReaderError("the reader is not open")
             if (cmd & 0xFF) in FORBIDDEN_COMMANDS:
                 raise ReaderError(
-                    f"command 0x{cmd & 0xFF:02X} is blocked: it starts a "
-                    f"firmware update of the reader (or kills a tag)")
+                    f"command 0x{cmd & 0xFF:02X} is blocked: it updates "
+                    f"the firmware of the reader (or kills a tag)")
+            if (cmd & 0xFF) in RESERVED_COMMANDS:
+                raise ReaderError(
+                    f"command 0x{cmd & 0xFF:02X} is reserved: it starts or "
+                    f"stops the continuous reading of the reader. Use the "
+                    f"ActiveMode tab.")
             self._pace()
             buf = (ctypes.c_ubyte * max(1, len(payload)))(*payload) \
                 if payload else None

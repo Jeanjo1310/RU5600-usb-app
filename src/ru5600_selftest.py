@@ -116,6 +116,18 @@ def test_tag_records() -> None:
         check("96 bit slot length", len(t.raw_id), 12)
 
 
+def test_safety() -> None:
+    """The commands that must never reach the reader."""
+    print("safety")
+    from ru5600_core import FORBIDDEN_COMMANDS, RESERVED_COMMANDS
+    check("firmware update blocked", 0x2B in FORBIDDEN_COMMANDS, True)
+    check("upgrade data in blocked", 0x2C in FORBIDDEN_COMMANDS, True)
+    check("upgrade end blocked", 0x2D in FORBIDDEN_COMMANDS, True)
+    check("kill blocked", 0x65 in FORBIDDEN_COMMANDS, True)
+    check("start read reserved", 0x41 in RESERVED_COMMANDS, True)
+    check("stop read reserved", 0x40 in RESERVED_COMMANDS, True)
+
+
 def test_tid_decode() -> None:
     """The GS1 TDS decoding of the TID."""
     print("TID decoding")
@@ -137,6 +149,7 @@ def main() -> int:
     test_response_layout()
     test_tag_records()
     test_tid_decode()
+    test_safety()
     if FAILS:
         print(f"\n{len(FAILS)} FAILED: {', '.join(FAILS)}")
         return 1
