@@ -238,7 +238,7 @@ def _declare_signatures(lib) -> None:
         "CFHid_GetTagBuf": ([u8p, u16p, u16p], ctypes.c_ubyte),
         "CFHid_ClearTagBuf": ([], ctypes.c_ubyte),
         "CFHid_RebootDevice": ([u8], ctypes.c_ubyte),
-        "CFHid_LockCardG2": ([u8, u8p, u8, u8, u8, u8p, u8], ctypes.c_ubyte),
+        "CFHid_LockCardG2": ([u8p, u8], ctypes.c_ubyte),
         "CFHid_ReadDeviceID": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_SetDeviceID": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_ReadDeviceTime": ([u8, u8p], ctypes.c_ubyte),
@@ -704,15 +704,32 @@ class Ru5600Reader:
             raise ReaderError("RebootDevice failed")
         return True
 
-    def lock_card(self, mem: int = MEM_EPC, word_ptr: int = 0,
-                  word_count: int = 2, password: bytes = b"\x00" * 4,
-                  lock_level: int = 0) -> bool:
-        data = (ctypes.c_ubyte * 256)()
-        pwd = (ctypes.c_ubyte * 4)(*password)
-        if self._lib.CFHid_LockCardG2(
-            DEV_ADDR, pwd, mem, word_ptr, word_count, data, lock_level
-        ) != 1:
-            raise ReaderError("LockCardG2 failed")
+    def lock_card(self, lock_data: bytes, action: int,
+                  confirm: bool = False) -> bool:
+        """Gen2 block lock (the real memory protection of a tag).
+
+        Signature taken from the library itself, not guessed:
+        ``CFHid_LockCardG2(const void *lock4, unsigned char action)`` builds
+        the payload ``[action][4 bytes of lock_data]`` and sends command
+        0x05 - the same as the Windows ``SWHid_LockCardG2``, whose payload
+        is ``[action][*lock_ptr]``.
+
+        A block lock is **not** reversible: it is the way to make a tag
+        read only for a reader that knows the password.  The library
+        exposes no way to read a lock back, so check the arguments
+        before calling it - hence the mandatory ``confirm=True``.
+        """
+        if len(lock_data) != 4:
+            raise ReaderError("lock data must be exactly 4 bytes")
+        if not confirm:
+            raise ReaderError(
+                "LockCardG2 needs confirm=True: a block lock is "
+                "permanent and cannot be read back.")
+        buf = (ctypes.c_ubyte * 4)(*lock_data)
+        self._pace()
+        if self._lib.CFHid_LockCardG2(buf, action) != 1:
+            raise ReaderError("LockCardG2 failed") from None
+        self._pace(settle=True)
         return True
 
 
