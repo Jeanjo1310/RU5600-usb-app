@@ -183,7 +183,8 @@ class ChipReport:
 
 def decode_tid(tid: bytes) -> TidInfo:
     """Decode a TID according to the GS1 EPC Tag Data Standard."""
-    info = TidInfo(raw=tid)
+    info = TidInfo(raw=tid or b"")
+    tid = tid or b""
     if len(tid) < 4:
         info.notes = "TID too short"
         return info

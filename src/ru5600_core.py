@@ -811,28 +811,114 @@ class Ru5600Reader:
         ) from None
 
     def probe_bank(self, mem: int, password: bytes = b"\x00" * 4,
-                   max_words: int = 64, chunk: int = MAX_READ_WORDS):
-        """Discover how much of a memory bank the tag really has.
+                   max_words: int = 64, chunk: int = MAX_READ_WORDS,
+                   bank_budget: float = 5.0, chunk_budget: float = 1.2):
+        """Find out how much of a memory bank the tag really has.
 
-        Reads chunk by chunk until the tag stops answering, so the size
-        belongs to the chip in the field and not to a table.  Returns
-        ``(bytes, words)``.
+        The reader answers a read only intermittently (measured between
+        25 % and 100 % depending on the moment), so "it refused once" does
+        not mean "the memory ended".
+
+        Instead of walking the bank chunk by chunk (slow, and it stops at
+        the first refusal), the offsets are **sampled**: the bank is read
+        at several offsets and the highest one that answers gives the
+        size.  The result is a **lower bound** - the reader may have
+        refused an offset that really exists - and that is what tells
+        "the bank answers beyond the first chunk" (not locked) from "the
+        bank does not answer at all" (locked or absent).
+
+        Returns ``(bytes, words)``.
         """
+        deadline = time.monotonic() + bank_budget
         out = b""
         words = 0
-        while words < max_words:
-            size = min(chunk, max_words - words)
-            # the first chunk gets more attempts: if it fails the bank may
-            # not exist, or the reader was just refusing commands
-            tries = 12 if words == 0 else 6
+        step = max(chunk, 4)
+        offset = 0
+        while offset < max_words and time.monotonic() < deadline:
+            size = min(chunk, max_words - offset)
+            limit = time.monotonic() + min(chunk_budget,
+                                          deadline - time.monotonic())
+            part = None
+            while time.monotonic() < limit:
+                try:
+                    part = self.read_card(mem, offset, size, password,
+                                          retries=1, pace=True)
+                    break
+                except ReaderError:
+                    time.sleep(0.04)
+            if part is None:
+                # the reader refused here: try further ahead before
+                # concluding that the memory ends
+                offset += step
+                continue
+            if out and part == out[-len(part):] and not any(part):
+                # could be the reader repeating the previous chunk
+                try:
+                    self.read_card(MEM_TID, 0, 2, password, retries=1)
+                except ReaderError:
+                    pass
+                try:
+                    again = self.read_card(mem, offset, size, password,
+                                           retries=3, pace=True)
+                except ReaderError:
+                    again = b""
+                if again != part:
+                    part = again
+                else:
+                    offset += step
+                    continue
+            if offset == 0:
+                out = part
+                words = size
+            elif offset + size > words:
+                if offset < words:
+                    part = part[words - offset:]
+                out += part
+                words = offset + size
+            offset += step
+        return out[:words * 2], words
+
+    def read_card_checked(self, mem: int, word_ptr: int, word_count: int,
+                         password: bytes = b"\x00" * 4, expect: bytes = b"",
+                         retries: int = 12, delay: float = 0.05) -> bytes:
+        """Read a bank and check the answer against what must be there.
+
+        The reader can answer a command with the response of a *previous*
+        command of the same type, and the library hands that stale frame
+        over as if it were fresh.  With several tags on the antenna that
+        shows up as the EPC of another tag.
+
+        ``expect`` is the byte string the answer has to contain (for the
+        EPC bank: the EPC the inventory reported).  When it is given, a
+        stale answer is rejected and the read is retried.
+        """
+        last = b""
+        for attempt in range(max(1, retries)):
             try:
-                part = self.read_card(mem, words, size, password,
-                                       retries=tries, pace=True)
+                data = self.read_card(mem, word_ptr, word_count, password)
             except ReaderError:
-                break
-            out += part
-            words += size
-        return out, words
+                time.sleep(delay)
+                continue
+            last = data
+            if not expect or expect in data:
+                return data
+            time.sleep(delay)
+        raise ReaderError(
+            f"the reader answered with stale data ({last.hex().upper()}), "
+            f"it does not contain the expected {expect.hex().upper()}"
+        ) from None
+
+    def bank_responds(self, mem: int, password: bytes = b"\x00" * 4,
+                      budget: float = 2.0) -> bool:
+        """Does the bank answer at all?  (locked vs present)"""
+        limit = time.monotonic() + budget
+        while time.monotonic() < limit:
+            try:
+                self.read_card(mem, 0, 2, password, retries=1)
+                return True
+            except ReaderError:
+                time.sleep(0.04)
+        return False
 
     def write_card(self, data: bytes, mem: int = MEM_EPC, word_ptr: int = 0,
                    password: bytes = b"\x00" * 4, retries: int = 3) -> bool:
