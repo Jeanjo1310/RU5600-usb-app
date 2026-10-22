@@ -96,32 +96,50 @@ def read_tid_stable(reader, rounds=3):
     return max(votes.items(), key=lambda kv: kv[1])[0]
 
 
-def probe(reader, bank, pwd=ZERO):
-    """How much of a bank answers (a lower bound: the reader is flaky)."""
+def probe(reader, bank, pwd=ZERO, stale=""):
+    """How much of a bank answers (a lower bound: the reader is flaky).
+
+    ``stale`` is the hex of the EPC bank: if the bank answers with
+    exactly that, the answer is a stale repeat and it is discarded.
+    """
     try:
         data, words = reader.probe_bank(bank, pwd, bank_budget=4.0,
                                         offset_budget=0.7)
     except ReaderError:
         return b"", 0
+    if stale and data.hex().upper() == stale.upper():
+        return b"", 0
     return data, words
 
 
-def describe(reader, epc: bytes, rssi: int, ant: int) -> dict:
-    """Everything about one tag, with every read validated."""
-    rep = {"epc": epc.hex().upper(), "epc_len": len(epc),
-           "rssi": rssi, "ant": ant}
+def describe(reader, epc: bytes, rssi: int, ant: int,
+             tags_on_antenna: int = 1) -> dict:
+    """Everything about one tag, with every read validated.
 
-    # 1. the EPC bank, validated against the inventoried EPC: this is what
-    #    tells us the reader is really pointing at THIS tag
+    The reader keeps a **cache** of the tags it saw and its active mode
+    stream contains that history, so the stream cannot be used to tell
+    what is in the field.  A memory read can: the reader answers with
+    the tag it has selected.  The cache is dropped first (command 0x44)
+    and the EPC is taken from the EPC bank (two agreeing reads).
+    """
+    rep = {"epc": epc.hex().upper(), "epc_len": len(epc),
+           "rssi": rssi, "ant": ant, "tags_seen": tags_on_antenna}
+
+    # 0. drop the reader's cache of the tags it saw before
     try:
-        bank = reader.read_card_checked(MEM_EPC, 0, 8, ZERO, expect=epc,
-                                       retries=12)
-        rep["epc_bank"] = bank.hex().upper()
-        rep["epc_crc"] = bank[0:2].hex().upper()
-        rep["epc_pc"] = bank[2:4].hex().upper()
-        rep["epc_ok"] = "si"
+        reader.del_dev_cache()
+    except Exception:
+        pass
+
+    # 1. the tag really in front of the reader
+    try:
+        cur, crc, pc = reader.read_current_epc()
+        rep["epc_bank"] = (crc + pc + cur).hex().upper()
+        rep["epc_crc"] = crc.hex().upper()
+        rep["epc_pc"] = pc.hex().upper()
+        rep["epc_ok"] = "si" if cur == epc else \
+            f"si (el lector apunta a {cur.hex().upper()})"
     except ReaderError as exc:
-        bank = b""
         rep["epc_bank"] = ""
         rep["epc_ok"] = f"NO ({exc})"
 
@@ -141,10 +159,10 @@ def describe(reader, epc: bytes, rssi: int, ant: int) -> dict:
     rep["expected_user"] = exp[1] if exp else ""
 
     # 3. the other banks
-    res, res_words = probe(reader, MEM_RESERVED)
+    res, res_words = probe(reader, MEM_RESERVED, stale=rep["epc_bank"])
     rep["reserved"] = res.hex().upper()
     rep["reserved_len"] = res_words * 2
-    usr, usr_words = probe(reader, MEM_USER)
+    usr, usr_words = probe(reader, MEM_USER, stale=rep["epc_bank"])
     rep["user"] = usr.hex().upper()
     rep["user_len"] = usr_words * 2
 
@@ -158,6 +176,9 @@ def describe(reader, epc: bytes, rssi: int, ant: int) -> dict:
         rep["verdict"] = "USER no responde: bloqueado o inexistente"
     elif exp and rep["user_len"] >= exp[1]:
         rep["verdict"] = f"USER completo ({rep['user_len']} B) - sin lock"
+    elif exp and rep["user_len"] >= exp[1] * 0.75:
+        rep["verdict"] = (f"USER {rep['user_len']} B de {exp[1]} B: el lector "
+                          f"no alcanza el final, no es un lock")
     else:
         rep["verdict"] = (f"USER {rep['user_len']} B leidos (esperados "
                           f"{exp[1] if exp else '?'} B): lock parcial o "
@@ -241,12 +262,14 @@ def main():
                     print(f"EPC {rep['epc']}  {rep['chip']}  [{rep['prefix']}]  "
                           f"user {rep['user_len']}B  pwd {rep['pwd']}")
         else:
+            reader.del_dev_cache()
             found = scan_tags(reader)
             if not found:
                 print("no se detecto ningun tag", file=sys.stderr)
                 return 1
             for epc, (rssi, ant) in found.items():
-                rep = describe(reader, bytes.fromhex(epc), rssi, ant)
+                rep = describe(reader, bytes.fromhex(epc), rssi, ant,
+                               tags_on_antenna=len(found))
                 rows.append(rep)
                 print_report(rep)
     except KeyboardInterrupt:

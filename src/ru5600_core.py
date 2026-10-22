@@ -876,10 +876,72 @@ class Ru5600Reader:
                 low = mid
             else:
                 high = mid
-        words = min(max_words, low + size)
+        # 3. refine in steps of 4 words: a one word read is the least
+        #    reliable one (measured 1/8), so the size is given in steps
+        #    of 8 bytes
+        probe = low + 4
+        while probe < min(low + size, max_words) and time.monotonic() < deadline:
+            if self._read_at(self, mem, probe, 4, password, 0.6) is not None:
+                low = probe
+                probe += 4
+            else:
+                break
+        words = min(max_words, low + 4) if low else 0
         data = self._read_at(self, mem, 0, min(words, size), password,
                             offset_budget) or b""
         return data, words
+
+    def read_current_epc(self, retries: int = 14):
+        """The EPC of the tag that is really in front of the reader.
+
+        The active mode stream of the reader also contains **history**
+        (tags it saw earlier, with their old RSSI), so it cannot be used
+        to tell what is in the field.  A memory read does: the reader
+        answers with the tag it has selected, which is the one in the
+        field.
+
+        Two consecutive reads have to agree, which also rules out a
+        stale answer.  Returns ``(epc, crc, pc)`` with the EPC without
+        the CRC/PC header.
+        """
+        last = b""
+        for _ in range(max(1, retries)):
+            try:
+                data = self.read_card(MEM_EPC, 0, 8, b"\x00" * 4, retries=1)
+            except ReaderError:
+                time.sleep(0.05)
+                continue
+            if len(data) < 6:
+                continue
+            epc = data[4:]
+            if not any(epc):
+                continue
+            if last and last != epc:
+                # the reader answered with a different tag: try again
+                last = b""
+                time.sleep(0.05)
+                continue
+            if last == epc:
+                return epc, data[0:2], data[2:4]
+            last = epc
+            time.sleep(0.05)
+        raise ReaderError(
+            "the reader did not give a consistent EPC for the tag in "
+            "front of it") from None
+
+    def del_dev_cache(self) -> bool:
+        """Drop the reader's cache of the tags it saw (command 0x44).
+
+        The cache is what makes the reader report tags that are no longer
+        in the field.
+        """
+        with self._lock:
+            if not self._open:
+                return False
+            self._pace()
+            ok = bool(self._lib.CFHid_SendCommand(0x44, None, 0))
+            self._pace()
+            return ok
 
     def read_card_checked(self, mem: int, word_ptr: int, word_count: int,
                          password: bytes = b"\x00" * 4, expect: bytes = b"",
