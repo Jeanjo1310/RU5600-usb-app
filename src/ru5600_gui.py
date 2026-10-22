@@ -828,7 +828,12 @@ class ReaderApp(Gtk.Window):
         self.entry_bw_total = Gtk.Entry(text="10")
         self.entry_bw_total.set_width_chars(5)
         self.chk_bw_check = Gtk.CheckButton(label="Verify after writing")
-        self.chk_bw_lock = Gtk.CheckButton(label="Lock the tag after writing")
+        self.chk_bw_lock = Gtk.CheckButton(
+            label="Lock the tag after writing (irreversible)")
+        self.chk_bw_lock.set_tooltip_text(
+            "A block lock cannot be undone and the vendor does not "
+            "document its parameters. Prefer locking one tag at a time "
+            "from the Risky tab.")
         g.attach(Gtk.Label(label="FastWriteEPC:", xalign=0), 0, 0, 1, 1)
         g.attach(self.entry_bw_epc, 1, 0, 2, 1)
         g.attach(Gtk.Label(label="TotalCnt.:", xalign=0), 3, 0, 1, 1)
@@ -1044,9 +1049,9 @@ class ReaderApp(Gtk.Window):
                         if back != epc:
                             result = "verify FAILED"
                     if lock:
-                        self.reader.lock_card(epc[:4].ljust(4, b"\x00"), 0,
-                                              confirm=True)
-                        result += " + locked"
+                        # un lock automatico destruye el tag sin permiso
+                        # explicito: queda registrado, no se ejecuta solo
+                        result += " (lock: hacelo en la tab Risky)"
                 except Exception as exc:
                     result = f"ERROR: {exc}"
                 self.bw_store.append([key, result, str(tag.rssi),

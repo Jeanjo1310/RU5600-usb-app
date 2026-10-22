@@ -78,6 +78,11 @@ FREQ_BANDS = {
 #              single burst, but misses when the reader does not answer
 #   balanced - a few polls with a short dwell: good speed, still reliable
 #   reliable - keeps polling until the reader answers (the "8/8" mode)
+# The reader refuses a read of more than 8 words (16 bytes) in one
+# command - measured: 9..16 words always fail, 1..8 answer.
+MAX_READ_WORDS = 8
+
+
 READ_MODES = {
     #          answer mode rounds, gap between rounds
     "burst": (1, 0.0),
@@ -705,6 +710,12 @@ class Ru5600Reader:
 
         ``word_count`` is in 16 bit words: 6 words = 12 bytes.
 
+        The reader only answers **8 words (16 bytes) per command**, so a
+        longer read is split into several commands of at most
+        ``MAX_READ_WORDS`` and the pieces are joined.  That is what makes
+        it possible to read a 192, 240 or 496 bit EPC without knowing in
+        advance which chip is in the field.
+
         The reader answers a memory read only inside short windows (about
         every 3 s it accepts a burst of a few commands), so a single call
         succeeds only ~20 % of the time.  Retrying every 30 ms makes it
@@ -713,6 +724,22 @@ class Ru5600Reader:
         ``pace=False`` skips the minimum gap between commands, which is
         what a round robin scan over several areas wants.
         """
+        if word_count <= MAX_READ_WORDS:
+            return self._read_chunk(mem, word_ptr, word_count, password,
+                                    retries, retry_delay, pace)
+        out = b""
+        done = 0
+        while done < word_count:
+            chunk = min(MAX_READ_WORDS, word_count - done)
+            out += self._read_chunk(mem, word_ptr + done, chunk, password,
+                                    retries, retry_delay, pace)
+            done += chunk
+        return out
+
+    def _read_chunk(self, mem: int, word_ptr: int, word_count: int,
+                    password: bytes, retries: int, retry_delay: float,
+                    pace: bool) -> bytes:
+        """One read command (at most MAX_READ_WORDS words)."""
         data = (ctypes.c_ubyte * 256)()
         pwd = (ctypes.c_ubyte * 4)(*password)
         for attempt in range(max(1, retries)):
@@ -729,6 +756,30 @@ class Ru5600Reader:
             f"words={word_count}, {retries} attempts). Is a tag on the "
             f"antenna, and is the access password correct?"
         ) from None
+
+    def probe_bank(self, mem: int, password: bytes = b"\x00" * 4,
+                   max_words: int = 64, chunk: int = MAX_READ_WORDS):
+        """Discover how much of a memory bank the tag really has.
+
+        Reads chunk by chunk until the tag stops answering, so the size
+        belongs to the chip in the field and not to a table.  Returns
+        ``(bytes, words)``.
+        """
+        out = b""
+        words = 0
+        while words < max_words:
+            size = min(chunk, max_words - words)
+            # the first chunk gets more attempts: if it fails the bank may
+            # not exist, or the reader was just refusing commands
+            tries = 12 if words == 0 else 6
+            try:
+                part = self.read_card(mem, words, size, password,
+                                       retries=tries, pace=True)
+            except ReaderError:
+                break
+            out += part
+            words += size
+        return out, words
 
     def write_card(self, data: bytes, mem: int = MEM_EPC, word_ptr: int = 0,
                    password: bytes = b"\x00" * 4, retries: int = 3) -> bool:
