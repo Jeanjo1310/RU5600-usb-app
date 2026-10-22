@@ -10,6 +10,7 @@ See PROTOCOL.md for the wire format and the reverse-engineering evidence.
 """
 from __future__ import annotations
 
+import atexit
 import ctypes
 import ctypes.util
 import os
@@ -34,6 +35,21 @@ DEV_ADDR = 0xFF
 # Device parameter addresses (documented in the SDK demos).
 PARAM_TRANSPORT = 0x01
 RESP_READ = 0x02          # tipo de frame de respuesta de una lectura
+# The vendor library and the preloaded libusb both tear the USB context
+# down when the process ends, and the second one aborts with a libusb
+# mutex error ("pthread_mutex_lock(mutex) == 0 no se cumple").  When the
+# reader was closed properly the process is ended right away, before that
+# teardown runs.
+_clean_close = False
+
+
+def _exit_without_broken_teardown():
+    if _clean_close:
+        os._exit(0)
+
+
+atexit.register(_exit_without_broken_teardown)
+
 PARAM_WORKMODE = 0x02
 PARAM_DEVADDR = 0x03
 PARAM_FILTERTIME = 0x04
@@ -503,6 +519,8 @@ class Ru5600Reader:
                 pass
             self._lib.CFHid_CloseDevice()
             self._open = False
+            global _clean_close
+            _clean_close = True
             return True
 
     @property
@@ -898,13 +916,22 @@ class Ru5600Reader:
                                  budget or offset_budget) is not None
 
         # 1. the read size that answers most reliably
+        # The size is chosen by how reliably it answers, not by the first
+        # answer: a read that does not fit the bank is refused by the tag
+        # (the reserved bank answers 4 bytes and refuses 8), and a single
+        # answer is not enough to tell a fitting read from a lucky one.
+        # Two short windows per candidate keep the number of commands
+        # low: the reader refuses a lot of them anyway.
         best_size, best_hits = 0, 0
         for _pass in range(2):
             for candidate in (size, max(2, size // 2), 2, 1):
-                # one short window per candidate: the reader refuses a
-                # lot of commands and every probe is one order
-                if answers(0, 0.3, at=candidate):
-                    best_size, best_hits = candidate, 1
+                hits = 0
+                for _ in range(2):
+                    if answers(0, 0.3, at=candidate):
+                        hits += 1
+                if hits > best_hits:
+                    best_size, best_hits = candidate, hits
+                if hits == 2:
                     break
             if best_size:
                 break
