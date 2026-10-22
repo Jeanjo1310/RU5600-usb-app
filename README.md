@@ -79,6 +79,7 @@ python3 src/ru5600_cli.py freq --band USA
 | **Read/Write** | Read a Gen2 memory bank (EPC/TID/USER) and write the EPC. |
 | **ActiveMode** | Continuous read with a live tag table (antenna, EPC, RSSI, hit count, last seen). |
 | **AdvanceSet** | Read/set the frequency band, reboot the reader. |
+| **Chip info** | Chip identification from the TID (GS1 TDS: manufacturer + model), memory map and access password test. |
 | **BatchWrite / WhiteList** | Not exposed by the vendor Linux API — not implemented. |
 
 The **Read** button performs a one-shot inventory (answer mode).
