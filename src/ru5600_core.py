@@ -473,12 +473,16 @@ class Ru5600Reader:
             except Exception:
                 pass
             self._cb = None
-            for cmd, payload in ((0x40, b""), (0x00, b"")):
+            for cmd, payload in ((0x40, b""),):
                 try:
                     self._lib.CFHid_SendCommand(cmd, None, 0)
                     time.sleep(0.05)
                 except Exception:
                     break
+            # give the vendor's reader thread time to finish before the
+            # library tears the libusb context down: closing while the
+            # thread is still active aborts with a libusb mutex error
+            time.sleep(0.3)
             try:
                 self._lib.CFHid_ClearTagBuf()
             except Exception:
@@ -810,73 +814,72 @@ class Ru5600Reader:
             f"antenna, and is the access password correct?"
         ) from None
 
+    def _read_at(self, reader, mem, offset, size, password, budget):
+        """Read a chunk at an offset, retrying until the budget is spent."""
+        limit = time.monotonic() + budget
+        while time.monotonic() < limit:
+            try:
+                return reader.read_card(mem, offset, size, password,
+                                        retries=1, pace=True)
+            except ReaderError:
+                time.sleep(0.04)
+        return None
+
     def probe_bank(self, mem: int, password: bytes = b"\x00" * 4,
                    max_words: int = 64, chunk: int = MAX_READ_WORDS,
-                   bank_budget: float = 5.0, chunk_budget: float = 1.2):
+                   bank_budget: float = 8.0, offset_budget: float = 0.8):
         """Find out how much of a memory bank the tag really has.
 
         The reader answers a read only intermittently (measured between
         25 % and 100 % depending on the moment), so "it refused once" does
         not mean "the memory ended".
 
-        Instead of walking the bank chunk by chunk (slow, and it stops at
-        the first refusal), the offsets are **sampled**: the bank is read
-        at several offsets and the highest one that answers gives the
-        size.  The result is a **lower bound** - the reader may have
-        refused an offset that really exists - and that is what tells
-        "the bank answers beyond the first chunk" (not locked) from "the
-        bank does not answer at all" (locked or absent).
+        The offsets are **sampled** with a coarse sweep and then narrowed
+        down, which is far quicker than walking the bank chunk by chunk
+        (that stops at the first refusal) and gives a tight bound.
+
+        The result is a **lower bound** - the reader may have refused an
+        offset that really exists - and that is what tells "the bank
+        answers beyond the first chunk" (not locked) from "the bank does
+        not answer at all" (locked or absent).
 
         Returns ``(bytes, words)``.
         """
         deadline = time.monotonic() + bank_budget
-        out = b""
-        words = 0
-        step = max(chunk, 4)
-        offset = 0
+        size = min(chunk, max_words)
+
+        def answers(offset, budget=None):
+            if offset >= max_words:
+                return False
+            return self._read_at(self, mem, offset, size, password,
+                                 budget or offset_budget) is not None
+
+        # 1. coarse sweep: find the last offset that answers
+        step = max(size, 4)
+        # the first offset decides if the bank exists at all: give it more
+        # patience, the reader refuses long stretches at a time
+        good = 0 if answers(0, max(1.5, offset_budget * 2)) else None
+        if good is None:
+            return b"", 0
+        offset = step
         while offset < max_words and time.monotonic() < deadline:
-            size = min(chunk, max_words - offset)
-            limit = time.monotonic() + min(chunk_budget,
-                                          deadline - time.monotonic())
-            part = None
-            while time.monotonic() < limit:
-                try:
-                    part = self.read_card(mem, offset, size, password,
-                                          retries=1, pace=True)
-                    break
-                except ReaderError:
-                    time.sleep(0.04)
-            if part is None:
-                # the reader refused here: try further ahead before
-                # concluding that the memory ends
+            if answers(offset):
+                good = offset
                 offset += step
-                continue
-            if out and part == out[-len(part):] and not any(part):
-                # could be the reader repeating the previous chunk
-                try:
-                    self.read_card(MEM_TID, 0, 2, password, retries=1)
-                except ReaderError:
-                    pass
-                try:
-                    again = self.read_card(mem, offset, size, password,
-                                           retries=3, pace=True)
-                except ReaderError:
-                    again = b""
-                if again != part:
-                    part = again
-                else:
-                    offset += step
-                    continue
-            if offset == 0:
-                out = part
-                words = size
-            elif offset + size > words:
-                if offset < words:
-                    part = part[words - offset:]
-                out += part
-                words = offset + size
-            offset += step
-        return out[:words * 2], words
+            else:
+                break
+        # 2. narrow it down between the last good and the first bad
+        low, high = good, min(good + step, max_words)
+        while high - low > 1 and time.monotonic() < deadline:
+            mid = (low + high) // 2
+            if answers(mid):
+                low = mid
+            else:
+                high = mid
+        words = min(max_words, low + size)
+        data = self._read_at(self, mem, 0, min(words, size), password,
+                            offset_budget) or b""
+        return data, words
 
     def read_card_checked(self, mem: int, word_ptr: int, word_count: int,
                          password: bytes = b"\x00" * 4, expect: bytes = b"",

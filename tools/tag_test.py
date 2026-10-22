@@ -40,22 +40,24 @@ from ru5600_chip import decode_tid  # noqa: E402
 
 ZERO = b"\x00\x00\x00\x00"
 
-# TID prefix -> (chip name, USER bytes) as published
+# TID prefix -> (chip name, USER memory in BYTES) as published
+# (the sources give the user memory in bits: 688 bits = 86 bytes, ...)
 EXPECTED = {
     "E2803813": ("Alien Higgs-10 (H10/7320)", 4),
-    "E2003412": ("Alien Higgs-3", 512),
-    "E2003414": ("Alien Higgs-4", 128),
+    "E2003412": ("Alien Higgs-3", 64),
+    "E2003414": ("Alien Higgs-4", 16),
     "E2003411": ("Alien Higgs-2", 0),
-    "E2803821": ("Alien Higgs-9", 688),
-    "E2003811": ("Alien Higgs-EC", 128),
+    "E2803821": ("Alien Higgs-9", 86),
+    "E2003811": ("Alien Higgs-EC", 16),
     "E2806894": ("NXP UCODE 8", 0),
-    "E2806994": ("NXP UCODE 8M", 32),
+    "E2806994": ("NXP UCODE 8M", 4),
     "E2806995": ("NXP UCODE 9", 0),
+    "E2806915": ("NXP UCODE 9 (2024+)", 0),
     "E2806890": ("NXP UCODE 7", 0),
-    "E2801100": ("Impinj Monza 4D", 32),
-    "E2801114": ("Impinj Monza 4i", 480),
-    "E280110C": ("Impinj Monza 4E", 128),
-    "E2801130": ("Impinj Monza 5", 32),
+    "E2801100": ("Impinj Monza 4D", 4),
+    "E2801114": ("Impinj Monza 4i", 60),
+    "E280110C": ("Impinj Monza 4E", 16),
+    "E2801130": ("Impinj Monza 5", 4),
     "E2801160": ("Impinj Monza R6", 0),
 }
 
@@ -84,7 +86,10 @@ def read_tid_stable(reader, rounds=3):
     votes = {}
     for _ in range(rounds):
         tid = read_tid(reader, tries=4)
-        if tid:
+        # a TID always starts with the ISO class 0xE2; anything else is a
+        # stale answer (the reader sometimes answers with the response of
+        # a previous command, for example the EPC bank)
+        if tid and len(tid) >= 4 and tid[0] == 0xE2:
             votes[tid] = votes.get(tid, 0) + 1
     if not votes:
         return b""
@@ -94,8 +99,8 @@ def read_tid_stable(reader, rounds=3):
 def probe(reader, bank, pwd=ZERO):
     """How much of a bank answers (a lower bound: the reader is flaky)."""
     try:
-        data, words = reader.probe_bank(bank, pwd, bank_budget=2.5,
-                                        chunk_budget=0.8)
+        data, words = reader.probe_bank(bank, pwd, bank_budget=4.0,
+                                        offset_budget=0.7)
     except ReaderError:
         return b"", 0
     return data, words
