@@ -35,6 +35,7 @@ install -D -m 644 "$HERE/$APP_NAME.png"         "$STAGE/.DirIcon"
 
 install -D -m 644 "$ROOT/src/ru5600_core.py"    "$STAGE/usr/opt/$APP_NAME/ru5600_core.py"
 install -D -m 644 "$ROOT/src/ru5600_chip.py"    "$STAGE/usr/opt/$APP_NAME/ru5600_chip.py"
+install -D -m 644 "$ROOT/src/ru5600_net.py"     "$STAGE/usr/opt/$APP_NAME/ru5600_net.py"
 install -D -m 644 "$ROOT/src/ru5600_gui.py"     "$STAGE/usr/opt/$APP_NAME/ru5600_gui.py"
 install -D -m 644 "$ROOT/src/ru5600_cli.py"     "$STAGE/usr/opt/$APP_NAME/ru5600_cli.py"
 install -D -m 644 "$ROOT/PROTOCOL.md"           "$STAGE/usr/opt/$APP_NAME/PROTOCOL.md"

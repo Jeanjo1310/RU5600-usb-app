@@ -1,0 +1,68 @@
+evidence_id: ev_e3415f77fb077768d387e042aaca21d985443eab46f18ee911540f17763d74bd
+subject:
+  name: SWNetApi.dll
+  digest:
+    sha256: d3f3ce2b9fb5c4b163d7d89f08b05f49a2ec6c815e16a5f3c34600a518eb0099
+  local_path: /mnt/ZorinHDD/JEAN_JOSE/rea-reverse/ru5600/triage/SWNetApi.dll
+  format: pe
+  architecture: x86
+provider:
+  id: ghidra
+  name: Ghidra
+  version: 12.1.4
+analysis_profile:
+  provider:
+    id: ghidra
+    name: Ghidra
+    version: 12.1.4
+  parameters:
+    target_kind: executable
+    target_format: pe
+    executable_role: shared-library
+    managed: false
+    native_aot_metadata:
+      contract_revision: rtr-9.1-x64-pe-read-only-v3
+      source_bytes: 134217728
+      work_units: 67108864
+      working_memory_bytes: 67108864
+      report_bytes: 4194304
+    architecture: x86
+    available_architectures[1]: x86
+    import_mode: ephemeral-source-immutable
+    pdb_observations: program-info-v1
+    annotation_policy: atomic-function-entry-metadata-v1
+    load_image_observations: source-mappings-entry-context-v2
+    function_body_evidence: complete-inclusive-ranges-v1
+    function_references: complete-body-and-entry-reference-manager-v2
+    call_relationship_coverage: function-body-call-coverage-v5
+    function_dossier_coverage: observed-facets-and-call-relationships-v1
+    string_inventory_evidence: defined-data-coverage-v1
+    location_resolution: explicit-address-exact-entry-symbol-first-v3
+    procedure_file_offset_resolution: address-first-unique-target-source-mapping-v2
+    instruction_flow_evidence: decoded-return-pcode-v1
+    instruction_references: exact-address-incoming-v1
+    function_boundary_observations: ghidra-function-boundary-limitations-v3
+    no_return_repair: returning-imports-decoded-return-v2
+    process_launch: inspected-jvm-launch-support-v1
+    jump_table_evidence: typed-case-default-blocks-v1
+    decompiler_jump_loads: true
+    loader: auto-from-header
+    language_id: auto-from-header
+    compiler_spec_id: auto-default
+    analyzer_preset: ghidra-default
+  digest: 2f288fed9f5ccfb6ff84bff6765847d8990d41e5f4b3f1133cedfe4f9d8c4a4f
+predicate_type: rea.analysis
+operation: procedure_pseudo_code
+parameters:
+  procedure: SWNet_OpenDevice
+raw_result:
+  value: "\nvoid __cdecl SWNet_OpenDevice(char *param_1)\n\n{\n  char cVar1;\n  int iVar2;\n  int iVar3;\n  undefined4 uStack_2ec;\n  undefined4 *puStack_2e8;\n  undefined4 uStack_2e4;\n  int aiStack_2e0 [3];\n  undefined4 uStack_2cc;\n  undefined1 *puStack_2c8;\n  undefined1 auStack_2bc [232];\n  undefined1 auStack_1d4 [2];\n  undefined2 uStack_1d2;\n  undefined4 uStack_1cc;\n  undefined2 uStack_19c;\n  undefined1 local_194 [360];\n  uint uStack_2c;\n  undefined4 uStack_24;\n  undefined2 uStack_20;\n  uint uStack_c;\n  uint local_4;\n  \n                    /* 0x35b0  29  SWNet_OpenDevice */\n  local_4 = DAT_10010010 ^ (uint)auStack_2bc;\n  if (DAT_1001000c != -1) {\n    puStack_2c8 = (undefined1 *)DAT_1001000c;\n    uStack_2cc = 0x100035e4;\n    Ordinal_3();\n    DAT_1001000c = -1;\n    uStack_2cc = 0x100035f0;\n    Ordinal_116();\n  }\n  puStack_2c8 = local_194;\n  uStack_2cc = 0x101;\n  iVar2 = Ordinal_115();\n  if (iVar2 == 0) {\n    if (((char)uStack_19c == '\\x01') && ((char)((ushort)uStack_19c >> 8) == '\\x01')) {\n      aiStack_2e0[2] = 0;\n      aiStack_2e0[1] = 1;\n      aiStack_2e0[0] = 2;\n      uStack_2e4 = 0x1000364c;\n      iVar2 = Ordinal_23();\n      uStack_2e4 = 8;\n      puStack_2e8 = &uStack_2cc;\n      uStack_2ec = 0x1005;\n      uStack_2cc = 1;\n      puStack_2c8 = (undefined1 *)0x0;\n      iVar3 = Ordinal_21(iVar2,0xffff);\n      if ((iVar3 != -1) && (iVar3 = Ordinal_21(iVar2,0xffff,0x1006,aiStack_2e0,8), iVar3 != -1)) {\n        uStack_2e4 = 1;\n        iVar3 = Ordinal_10(iVar2,0x8004667e,&uStack_2e4);\n        if (iVar3 != -1) {\n          uStack_1cc = CONCAT22(uStack_1cc._2_2_,2);\n          uStack_1cc = Ordinal_11(param_1);\n          uStack_1d2 = Ordinal_9(uStack_24);\n          Ordinal_4(iVar2,auStack_1d4,0x10);\n          uStack_2e4 = 1;\n          uStack_2ec = 1;\n          puStack_2e8 = (undefined4 *)0x1f4;\n          aiStack_2e0[0] = iVar2;\n          iVar3 = Ordinal_18(0,0,&uStack_2e4,0,&uStack_2ec);\n          if ((iVar3 < 1) || (iVar3 = Ordinal_10(iVar2,0x8004667e,&uStack_2e4), iVar3 == -1)) {\n            Ordinal_3(iVar2);\n          }\n          else {\n            DAT_10011f0c = 1;\n            iVar3 = (int)&DAT_10034f6c - (int)param_1;\n            DAT_1001000c = iVar2;\n            do {\n              cVar1 = *param_1;\n              param_1[iVar3] = cVar1;\n              param_1 = param_1 + 1;\n            } while (cVar1 != '\\0');\n            DAT_10034f8c = uStack_20;\n            Sleep(0x14);\n            FUN_10001050();\n            FUN_10003560();\n            InitializeCriticalSection((LPCRITICAL_SECTION)&DAT_10011f14);\n            DAT_10034f68 = 0;\n            DAT_10014f42 = 0;\n            DAT_10034f64 = 0;\n            DAT_10014f40 = 0;\n          }\n        }\n      }\n      puStack_2e8 = (undefined4 *)0x10003757;\n      __security_check_cookie(uStack_2c ^ (uint)&uStack_2e4);\n      return;\n    }\n    Ordinal_116();\n    puStack_2c8 = (undefined1 *)0x100037de;\n    __security_check_cookie(uStack_c ^ (uint)&stack0xfffffd3c);\n    return;\n  }\n  puStack_2c8 = (undefined1 *)0x10003619;\n  __security_check_cookie(uStack_c ^ (uint)&stack0xfffffd3c);\n  return;\n}\n\n"
+  limitations: []
+normalized_result: "\nvoid __cdecl SWNet_OpenDevice(char *param_1)\n\n{\n  char cVar1;\n  int iVar2;\n  int iVar3;\n  undefined4 uStack_2ec;\n  undefined4 *puStack_2e8;\n  undefined4 uStack_2e4;\n  int aiStack_2e0 [3];\n  undefined4 uStack_2cc;\n  undefined1 *puStack_2c8;\n  undefined1 auStack_2bc [232];\n  undefined1 auStack_1d4 [2];\n  undefined2 uStack_1d2;\n  undefined4 uStack_1cc;\n  undefined2 uStack_19c;\n  undefined1 local_194 [360];\n  uint uStack_2c;\n  undefined4 uStack_24;\n  undefined2 uStack_20;\n  uint uStack_c;\n  uint local_4;\n  \n                    /* 0x35b0  29  SWNet_OpenDevice */\n  local_4 = DAT_10010010 ^ (uint)auStack_2bc;\n  if (DAT_1001000c != -1) {\n    puStack_2c8 = (undefined1 *)DAT_1001000c;\n    uStack_2cc = 0x100035e4;\n    Ordinal_3();\n    DAT_1001000c = -1;\n    uStack_2cc = 0x100035f0;\n    Ordinal_116();\n  }\n  puStack_2c8 = local_194;\n  uStack_2cc = 0x101;\n  iVar2 = Ordinal_115();\n  if (iVar2 == 0) {\n    if (((char)uStack_19c == '\\x01') && ((char)((ushort)uStack_19c >> 8) == '\\x01')) {\n      aiStack_2e0[2] = 0;\n      aiStack_2e0[1] = 1;\n      aiStack_2e0[0] = 2;\n      uStack_2e4 = 0x1000364c;\n      iVar2 = Ordinal_23();\n      uStack_2e4 = 8;\n      puStack_2e8 = &uStack_2cc;\n      uStack_2ec = 0x1005;\n      uStack_2cc = 1;\n      puStack_2c8 = (undefined1 *)0x0;\n      iVar3 = Ordinal_21(iVar2,0xffff);\n      if ((iVar3 != -1) && (iVar3 = Ordinal_21(iVar2,0xffff,0x1006,aiStack_2e0,8), iVar3 != -1)) {\n        uStack_2e4 = 1;\n        iVar3 = Ordinal_10(iVar2,0x8004667e,&uStack_2e4);\n        if (iVar3 != -1) {\n          uStack_1cc = CONCAT22(uStack_1cc._2_2_,2);\n          uStack_1cc = Ordinal_11(param_1);\n          uStack_1d2 = Ordinal_9(uStack_24);\n          Ordinal_4(iVar2,auStack_1d4,0x10);\n          uStack_2e4 = 1;\n          uStack_2ec = 1;\n          puStack_2e8 = (undefined4 *)0x1f4;\n          aiStack_2e0[0] = iVar2;\n          iVar3 = Ordinal_18(0,0,&uStack_2e4,0,&uStack_2ec);\n          if ((iVar3 < 1) || (iVar3 = Ordinal_10(iVar2,0x8004667e,&uStack_2e4), iVar3 == -1)) {\n            Ordinal_3(iVar2);\n          }\n          else {\n            DAT_10011f0c = 1;\n            iVar3 = (int)&DAT_10034f6c - (int)param_1;\n            DAT_1001000c = iVar2;\n            do {\n              cVar1 = *param_1;\n              param_1[iVar3] = cVar1;\n              param_1 = param_1 + 1;\n            } while (cVar1 != '\\0');\n            DAT_10034f8c = uStack_20;\n            Sleep(0x14);\n            FUN_10001050();\n            FUN_10003560();\n            InitializeCriticalSection((LPCRITICAL_SECTION)&DAT_10011f14);\n            DAT_10034f68 = 0;\n            DAT_10014f42 = 0;\n            DAT_10034f64 = 0;\n            DAT_10014f40 = 0;\n          }\n        }\n      }\n      puStack_2e8 = (undefined4 *)0x10003757;\n      __security_check_cookie(uStack_2c ^ (uint)&uStack_2e4);\n      return;\n    }\n    Ordinal_116();\n    puStack_2c8 = (undefined1 *)0x100037de;\n    __security_check_cookie(uStack_c ^ (uint)&stack0xfffffd3c);\n    return;\n  }\n  puStack_2c8 = (undefined1 *)0x10003619;\n  __security_check_cookie(uStack_c ^ (uint)&stack0xfffffd3c);\n  return;\n}\n\n"
+confidence: observed
+authority: shipped-artifact
+environment: null
+limitations[6]: The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.,The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.,Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.,"Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.","Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",External functions and functions without an analyzable body return null; other decompiler failures remain explicit.
+relationship_coverage: null
+locations: []
+evidence_links: []

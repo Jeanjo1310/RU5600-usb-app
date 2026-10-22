@@ -57,6 +57,24 @@ Produces `dist/ru5600-reader-1.0.0-x86_64.AppImage`.
 python3 src/ru5600_gui.py
 ```
 
+## Network antennas (TCP)
+
+The vendor ships a Linux library only for the USB desktop reader.  The
+**networked antennas speak the same module protocol over TCP**, which was
+confirmed by decompiling `SWNetApi.dll` from the Windows SDK: the frames,
+the command codes and the response layout are identical, only the
+transport differs.
+
+The app therefore has a second transport: pick **Net** in the connection
+panel, fill in the antenna address (192.168.1.250 by default) and the
+port (60000), and press *Open*.  Everything else - the read modes, the
+antenna measurement, the chip analysis, the read and write - works the
+same over the network.
+
+> The TCP transport is validated against `tools/mock_antenna.py`, which
+> speaks the protocol of the real reader.  It has **not** been run yet
+> against a real networked antenna - that is the one thing left to try.
+
 ## Command line client
 
 Handy for scripted tests and for checking tags without the GUI:

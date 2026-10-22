@@ -410,7 +410,83 @@ they describe how well a spot of the antenna reads.
 
 ---
 
-## 11. Hardware verification log
+## 11. The network transport (TCP)
+
+`SWNetApi.dll` from the Windows SDK was decompiled to find out how the
+networked antennas talk.  The module protocol is **identical** to the USB
+one - only the transport changes:
+
+| function | command | response type |
+|---|---|---|
+| `SWNet_InventoryG2` | 0x01 | 0x01 |
+| `SWNet_ReadCardG2` | 0x02 | 0x02 |
+| `SWNet_GetDeviceSystemInfo` | 0x10 | 0x10 |
+| `SWNet_ReadDeviceOneParam` | 0x23 | 0x23 |
+| `SWNet_SetDeviceOneParam` | 0x24 | 0x24 |
+| `SWNet_ReadFreq` | 0x3E | 0x3E |
+| `SWNet_StartRead` | 0x41 | 0x41 |
+
+Request frame (the same buffer the vendor builds):
+
+```
+[0] 53 57      magic
+[2] len        u16 BE = payload + 3
+[4] FF         fixed
+[5] cmd        the command code
+[6] payload
+..  checksum
+```
+
+The client sends it with a two byte length prefix, and parses the answer
+by looking for the `CT` magic, so a framed or an unframed answer both
+work:
+
+```
+[0] 43 54      magic
+[2] len        u16 BE, counts everything up to the checksum
+[4] 00
+[5] type       the command that is answered
+[6] status     01 = ok
+[7] count      u16 BE, number of tags (inventory)
+[9] payload
+..  checksum
+```
+
+`SWNet_OpenDevice(char *ip)` connects a TCP socket to the antenna
+(`inet_addr` + `connect`, 500 ms socket timeout), so the client is the
+one that connects - the antenna is the server.
+
+---
+
+## 12. WhiteList and batch write
+
+They are **not** missing from the protocol, only from the Linux library.
+The Windows DLL exports them and their command codes are now known:
+
+| command | function | payload |
+|---|---|---|
+| 0xE8 | `ReadWhiteListCnt` | - |
+| 0xE9 | `ReadWhiteList` | index (u16 BE) |
+| 0xEA | `WriteWhiteList` | `[len][data]` |
+| 0xEB | `DelAllWhiteList` | - |
+| 0xEC | `DelOneWhiteList` | `[len][data]` |
+
+Two ways to reach them from Linux:
+
+1. **Over TCP** - the client builds the frames itself, so the commands
+   can be sent right away.
+2. **Over USB** - `libCFHidApi.so` exports `CFHid_SendCommand(cmd, ...)`
+   and `CFHid_GetSpecificPocket(cmd, timeout)`, the raw escape hatch that
+   takes a command code instead of a typed function.
+
+So there is no need to ask the factory for anything; it is an afternoon
+of work.  What is missing is the *semantics* of the payload (what the
+white list entries look like), which the vendor does not document - that
+part would need the Windows program as a reference.
+
+---
+
+## 13. Hardware verification log
 
 | Test | Reader answer |
 |---|---|

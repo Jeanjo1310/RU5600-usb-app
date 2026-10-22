@@ -19,6 +19,7 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from ru5600_net import NetReader  # noqa: E402
 from ru5600_core import (  # noqa: E402
     FREQ_BANDS,
     READ_MODES,
@@ -86,7 +87,7 @@ class ReaderApp(Gtk.Window):
     def __init__(self):
         super().__init__(title=APP_TITLE)
         self.set_default_size(1180, 800)
-        self.reader = Ru5600Reader(on_tags=self._on_tags_threadsafe)
+        self.reader = None
         self.worker = Worker(self)
         self._tag_counts = {}
         self._tag_order = []
@@ -572,7 +573,7 @@ class ReaderApp(Gtk.Window):
         return pwd if len(pwd) == 4 else b"\x00" * 4
 
     def on_analyze_chip(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
         self.log("Analyzing chip...")
@@ -590,7 +591,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_test_password(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
         pwd = self._chip_password()
@@ -774,12 +775,27 @@ class ReaderApp(Gtk.Window):
         self.chk_buzzer.set_active(True)
         self.log("Default parameters restored")
 
-    def on_open(self, *_):
-        if self.rb_com.get_active() or self.rb_net.get_active():
-            self.log("Only the USB transport is implemented; forcing USB")
+    def _make_reader(self):
+        """Create the reader for the selected transport."""
+        if self.rb_net.get_active():
+            ip = self.entry_ip.get_text().strip() or "192.168.1.250"
+            port = int(self.entry_port.get_text().strip() or 60000)
+            self.log(f"Using the network transport: {ip}:{port}")
+            return NetReader(ip, port, on_tags=self._on_tags_threadsafe)
+        if self.rb_com.get_active():
+            self.log("The serial transport is not available in the Linux "
+                     "library - using USB")
         self.log("Opening USB reader...")
+        return Ru5600Reader(on_tags=self._on_tags_threadsafe)
+
+    def on_open(self, *_):
+        if self.rb_com.get_active():
+            self.log("The serial transport is not in the Linux library - "
+                     "using USB")
 
         def task():
+            if self.reader is None or not self.reader.is_open:
+                self.reader = self._make_reader()
             self.reader.open()
             return self.reader.system_info()
 
@@ -832,7 +848,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_read(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
         self.log("Read started...")
@@ -853,7 +869,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_set(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
 
@@ -886,7 +902,7 @@ class ReaderApp(Gtk.Window):
         return pwd
 
     def on_read_memory(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
         mem_map = {"EPC": MEM_EPC, "TID": MEM_TID, "USER": MEM_USER}
@@ -915,7 +931,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_write_epc(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
         text = self.entry_write_epc.get_text().strip().replace(" ", "")
@@ -937,7 +953,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_start_read(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
         self.reader.clear_tag_buf()
@@ -957,7 +973,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_stop_read(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             return
 
         def task():
@@ -974,7 +990,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_measure(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
         try:
@@ -1002,7 +1018,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_relay(self, on: bool, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
             return
 
@@ -1015,7 +1031,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_read_freq(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             return
 
         def task():
@@ -1028,7 +1044,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_set_freq(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             return
         band = self.cb_freq_adv.get_active_text()
 
@@ -1041,7 +1057,7 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def on_reboot(self, *_):
-        if not self.reader.is_open:
+        if self.reader is None or not self.reader.is_open:
             return
 
         def task():
