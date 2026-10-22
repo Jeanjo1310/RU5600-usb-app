@@ -383,6 +383,36 @@ TOOLTIPS = {
     "Import": {
         "en": "Loads the white list from a file.",
         "es": "Carga la lista blanca desde un archivo."},
+    "Help": {
+        "en": "Shows the manual of the app.",
+        "es": "Muestra el manual de la app."},
+    "CloseRelay": {
+        "en": "Opens the relay of the reader.",
+        "es": "Abre el rele del lector."},
+    "ReleaseRelay": {
+        "en": "Releases the relay of the reader.",
+        "es": "Libera el rele del lector."},
+    "ExportConfig": {
+        "en": "Saves the reader configuration to a file.",
+        "es": "Guarda la configuracion del lector en un archivo."},
+    "ImportConfig": {
+        "en": "Loads the reader configuration from a file.",
+        "es": "Carga la configuracion del lector de un archivo."},
+    "OutPutFormat:": {
+        "en": "The format the reader uses to report the tags it reads.",
+        "es": "El formato con que el lector reporta los tags que lee."},
+    "FastWriteEPC:": {
+        "en": "Writes the EPC without waiting for the tag to answer.",
+        "es": "Escribe el EPC sin esperar a que el tag conteste."},
+    "Mode:": {
+        "en": "How the reader reports the tags it reads.",
+        "es": "Como reporta el lector los tags que lee."},
+    "Skin": {
+        "en": "The look of the reader's own software.",
+        "es": "La apariencia del software del lector."},
+    "Accion:": {
+        "en": "What the keyboard shortcuts do.",
+        "es": "Que hacen los atajos de teclado."},
 }
 
 

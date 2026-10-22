@@ -1070,11 +1070,14 @@ class Ru5600Reader:
             # NOT the same as the tag not having the memory
             return b"", 0, "no_answer"
 
-        # 2. the walk, chunk by chunk
+        # 2. the walk, chunk by chunk.  The reader has a small budget of
+        #    commands before it stops answering (measured: about 30 to 60),
+        #    so the walk uses the biggest chunk that fits and does not
+        #    waste commands.
         data = b""
         offset = 0
         while offset < max_words and time.monotonic() < deadline:
-            outcome, chunk = probe(offset, size, tries=4)
+            outcome, chunk = probe(offset, size, tries=3)
             if outcome == "ok":
                 data += chunk
                 offset += size
@@ -1085,14 +1088,15 @@ class Ru5600Reader:
             reason = "no_answer"
             break
 
-        # 3. the last words, one at a time, each one confirmed with two
-        #    reads of different sizes
+        # 3. the last words, one at a time, each one confirmed with a
+        #    second read of a different size, so a frame that was not
+        #    fresh cannot be counted twice
         words = offset
         while offset < max_words and time.monotonic() < deadline:
-            first = probe(offset, 1, tries=3)
+            first = probe(offset, 1, tries=2)
             if first[0] != "ok":
                 break
-            second = probe(offset, 2, tries=3)
+            second = probe(offset, 2, tries=2)
             if second[0] == "ok":
                 data += second[1][:2]
                 offset += 1

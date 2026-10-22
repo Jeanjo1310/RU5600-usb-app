@@ -169,8 +169,10 @@ def describe(reader, target: bytes, rssi: int, ant: int,
     # from one run to the next, so the comparison has that tolerance.
     if rep["user_len"] == 0:
         if usr_reason == "no_answer":
-            rep["verdict"] = ("el lector no esta respondiendo: no se puede "
-                              "decir si el banco esta bloqueado")
+            rep["verdict"] = ("el lector no esta respondiendo (se queda "
+                              "mudo despues de muchas ordenes): reinicia "
+                              "el lector y proba de nuevo, no se puede decir "
+                              "si el banco esta bloqueado")
         elif usr_reason == "moved":
             rep["verdict"] = "el lector apuntaba a otro tag: no se midio"
         else:
