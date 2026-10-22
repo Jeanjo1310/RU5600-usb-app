@@ -108,6 +108,17 @@ EPC_SLOT_BYTES = 12
 """Reference size of the 96 bit EPC slot."""
 
 
+def checksum_ok(frame: bytes) -> bool:
+    """True when the last byte of the frame is the checksum of the others.
+
+    The reader's checksum is the two's complement of the byte sum, so a
+    frame is valid when ``(-sum(frame[:-1])) & 0xFF == frame[-1]``.
+    """
+    if len(frame) < 2:
+        return False
+    return ((-sum(frame[:-1])) & 0xFF) == frame[-1]
+
+
 @dataclass
 class Tag:
     """One Gen2 tag as reported by the reader.

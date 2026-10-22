@@ -50,6 +50,7 @@ from ru5600_core import (
     Detection,
     ReaderError,
     Tag,
+    checksum_ok,
     parse_tag_buffer,
 )
 
@@ -80,6 +81,9 @@ STATUS_OK = 0x01
 def checksum(data: bytes) -> int:
     """The reader's checksum: two's complement of the byte sum."""
     return (-sum(data)) & 0xFF
+
+
+
 
 
 def build_request(cmd: int, payload: bytes = b"", addr: int = 0xFF) -> bytes:
@@ -123,7 +127,7 @@ def parse_response(data: bytes) -> Optional[Tuple[int, int, int, bytes]]:
     if not body:
         return None
     # the checksum covers every byte of the frame except the last one
-    if checksum(f[:4 + length - 1]) != f[4 + length - 1]:
+    if not checksum_ok(f[:4 + length]):
         return None
     rtype = body[1] if len(body) > 1 else 0
     status = body[2] if len(body) > 2 else 0

@@ -25,6 +25,11 @@ if [ -z "$APPIMAGETOOL" ]; then
     fi
 fi
 
+# the protocol self test must pass before anything is packaged
+echo "== protocol self test =="
+( cd "$ROOT/src" && python3 ru5600_selftest.py ) || {
+    echo "self test FAILED - not packaging" >&2; exit 1; }
+
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
@@ -38,6 +43,7 @@ install -D -m 644 "$ROOT/src/ru5600_chip.py"    "$STAGE/usr/opt/$APP_NAME/ru5600
 install -D -m 644 "$ROOT/src/ru5600_net.py"     "$STAGE/usr/opt/$APP_NAME/ru5600_net.py"
 install -D -m 644 "$ROOT/src/ru5600_gui.py"     "$STAGE/usr/opt/$APP_NAME/ru5600_gui.py"
 install -D -m 644 "$ROOT/src/ru5600_cli.py"     "$STAGE/usr/opt/$APP_NAME/ru5600_cli.py"
+install -D -m 644 "$ROOT/src/ru5600_selftest.py" "$STAGE/usr/opt/$APP_NAME/ru5600_selftest.py"
 install -D -m 644 "$ROOT/PROTOCOL.md"           "$STAGE/usr/opt/$APP_NAME/PROTOCOL.md"
 install -D -m 644 "$ROOT/README.md"             "$STAGE/usr/opt/$APP_NAME/README.md"
 
