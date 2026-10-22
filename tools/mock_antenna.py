@@ -29,7 +29,11 @@ def checksum(data: bytes) -> int:
 
 def make_response(cmd: int, payload: bytes = b"", count: int = 0,
                   status: int = 0x01) -> bytes:
-    body = bytes([0x00, cmd, status]) + struct.pack(">H", count) + payload
+    # the real reader: 43 54 | len | 00 | type | status | payload | checksum
+    # the inventory puts the tag count in the first two payload bytes
+    if cmd == 0x01:
+        payload = struct.pack(">H", count) + TAG_RECORD
+    body = bytes([0x00, cmd, status]) + payload
     frame = bytearray(MAGIC_CT)
     frame += struct.pack(">H", len(body) + 1)
     frame += body

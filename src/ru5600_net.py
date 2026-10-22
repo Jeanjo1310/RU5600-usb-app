@@ -38,6 +38,7 @@ from typing import Callable, List, Optional, Tuple
 
 from ru5600_core import (
     FREQ_BANDS,
+    parse_module_response,
     MEM_EPC,
     MEM_TID,
     MEM_USER,
@@ -110,30 +111,9 @@ def build_request(cmd: int, payload: bytes = b"", addr: int = 0xFF) -> bytes:
     return bytes(frame)
 
 
-def parse_response(data: bytes) -> Optional[Tuple[int, int, int, bytes]]:
-    """Parse a response frame.
-
-    Returns ``(type, status, count, payload)`` or None when the data does
-    not hold a valid frame.
-    """
-    idx = data.find(MAGIC_CT)
-    if idx < 0 or len(data) < idx + 10:
-        return None
-    f = data[idx:]
-    length = (f[2] << 8) | f[3]
-    if len(f) < 4 + length:
-        return None
-    body = f[4:4 + length]
-    if not body:
-        return None
-    # the checksum covers every byte of the frame except the last one
-    if not checksum_ok(f[:4 + length]):
-        return None
-    rtype = body[1] if len(body) > 1 else 0
-    status = body[2] if len(body) > 2 else 0
-    count = (body[3] << 8) | body[4] if len(body) > 4 else 0
-    payload = body[5:-1]
-    return rtype, status, count, payload
+def parse_response(data: bytes):
+    """Parse a response frame -> (type, status, payload) or None."""
+    return parse_module_response(data)
 
 
 class NetReader:
@@ -234,7 +214,7 @@ class NetReader:
             self._rx += chunk
 
     def _transact(self, cmd: int, payload: bytes = b"",
-                  timeout: float = 1.0) -> Tuple[int, int, int, bytes]:
+                  timeout: float = 1.0) -> Tuple[int, int, bytes]:
         """Send a command and wait for its answer."""
         self._pace()
         self._send(cmd, payload)
@@ -246,17 +226,19 @@ class NetReader:
             parsed = parse_response(frame)
             if parsed is None:
                 continue
-            rtype, status, count, body = parsed
+            rtype, status, body = parsed
             if rtype == cmd:
                 if status != STATUS_OK:
                     raise ReaderError(
                         f"command 0x{cmd:02X} refused (status 0x{status:02X})")
-                return rtype, status, count, body
+                return rtype, status, body
             # an unsolicited frame: the reader is streaming tag data
-            self._handle_stream(count, body)
+            self._handle_stream(body)
 
-    def _handle_stream(self, count: int, body: bytes) -> None:
-        tags = parse_tag_buffer(body, count) if count else []
+    def _handle_stream(self, body: bytes) -> None:
+        # the first two bytes of a stream frame are the tag count
+        count = (body[0] << 8) | body[1] if len(body) >= 2 else 0
+        tags = parse_tag_buffer(body[2:], count) if count else []
         if tags:
             self._stream_tags.extend(tags)
             if self._on_tags:
@@ -268,7 +250,7 @@ class NetReader:
     # -- device information ------------------------------------------------
     def system_info(self):
         from ru5600_core import SystemInfo
-        _, _, _, body = self._transact(CMD_SYSTEM_INFO, timeout=1.0)
+        _, _, body = self._transact(CMD_SYSTEM_INFO, timeout=1.0)
         raw = body[:9]
         if len(raw) < 9:
             raise ReaderError("short system info answer")
@@ -279,7 +261,7 @@ class NetReader:
         )
 
     def read_param(self, addr: int) -> int:
-        _, _, _, body = self._transact(CMD_READ_PARAM, bytes([addr]))
+        _, _, body = self._transact(CMD_READ_PARAM, bytes([addr]))
         if not body:
             raise ReaderError(f"no value for parameter 0x{addr:02X}")
         return body[0]
@@ -313,7 +295,7 @@ class NetReader:
         return self.set_param(PARAM_FILTERTIME, seconds)
 
     def read_freq(self) -> bytes:
-        _, _, _, body = self._transact(CMD_READ_FREQ)
+        _, _, body = self._transact(CMD_READ_FREQ)
         return body[:2]
 
     def set_freq(self, band: str) -> bool:
@@ -328,12 +310,13 @@ class NetReader:
         tags: List[Tag] = []
         for _ in range(max(1, rounds)):
             try:
-                _, _, count, body = self._transact(CMD_INVENTORY, timeout=1.0)
+                _, _, body = self._transact(CMD_INVENTORY, timeout=1.0)
             except ReaderError:
                 if delay:
                     time.sleep(delay)
                 continue
-            for tag in parse_tag_buffer(body, count):
+            count = (body[0] << 8) | body[1] if len(body) >= 2 else 0
+            for tag in parse_tag_buffer(body[2:], count):
                 if tag.epc_hex not in [t.epc_hex for t in tags]:
                     tags.append(tag)
             if tags:
@@ -351,11 +334,12 @@ class NetReader:
         for _ in range(max(1, rounds)):
             det.rounds += 1
             try:
-                _, _, count, body = self._transact(CMD_INVENTORY, timeout=1.0)
+                _, _, body = self._transact(CMD_INVENTORY, timeout=1.0)
             except ReaderError:
                 continue
             det.hits += 1
-            for tag in parse_tag_buffer(body, count):
+            count = (body[0] << 8) | body[1] if len(body) >= 2 else 0
+            for tag in parse_tag_buffer(body[2:], count):
                 if tag.epc_hex not in [t.epc_hex for t in det.tags]:
                     det.tags.append(tag)
             if det.tags:
@@ -383,9 +367,10 @@ class NetReader:
                 parsed = parse_response(frame)
                 if parsed is None:
                     continue
-                _, _, count, body = parsed
+                _, _, body = parsed
+                count = (body[0] << 8) | body[1] if len(body) >= 2 else 0
                 if count:
-                    for tag in parse_tag_buffer(body, count):
+                    for tag in parse_tag_buffer(body[2:], count):
                         detections += 1
                         rssis.append(tag.rssi)
                         seen[tag.epc_hex] = seen.get(tag.epc_hex, 0) + 1
@@ -442,8 +427,8 @@ class NetReader:
         last = None
         for _ in range(max(1, retries)):
             try:
-                _, _, _, body = self._transact(CMD_READ_CARD, payload,
-                                               timeout=1.0)
+                _, _, body = self._transact(CMD_READ_CARD, payload,
+                                           timeout=1.0)
                 return body[:word_count * 2]
             except ReaderError as exc:
                 last = exc

@@ -55,6 +55,11 @@ def test_checksum() -> None:
     check("corrupted response rejected", checksum_ok(bytes(bad)), False)
 
 
+# frames captured from the reader itself (base + 0x230F60)
+RX_SYSINFO = bytes.fromhex("43 54 00 0D 00 10 01 71 11 D3 04 26 07 02 56 2B 42")
+RX_FREQ = bytes.fromhex("43 54 00 06 00 3E 01 31 80 73")
+
+
 def test_response_layout() -> None:
     """The response: magic, length, 00, type, status, count, payload,
     checksum."""
@@ -67,6 +72,21 @@ def test_response_layout() -> None:
     check("payload starts at +9", RX_RAW[7:9], b"\xd3\x55")
     check("frame size", len(RX_RAW), 4 + length)
     check("payload length", length - 6, 15)
+
+    # the frames the reader really answers, parsed with the shared parser
+    from ru5600_core import parse_module_response
+    parsed = parse_module_response(RX_SYSINFO)
+    check("sysinfo parses", parsed is not None, True)
+    if parsed:
+        check("sysinfo type", parsed[0], 0x10)
+        check("sysinfo status", parsed[1], 0x01)
+        check("sysinfo payload", parsed[2].hex().upper(),
+              "7111D304260702562B")
+    parsed = parse_module_response(RX_FREQ)
+    check("freq parses", parsed is not None, True)
+    if parsed:
+        check("freq type", parsed[0], 0x3E)
+        check("freq payload", parsed[2].hex().upper(), "3180")
 
 
 def test_tag_records() -> None:

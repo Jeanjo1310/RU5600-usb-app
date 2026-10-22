@@ -119,6 +119,61 @@ def checksum_ok(frame: bytes) -> bool:
     return ((-sum(frame[:-1])) & 0xFF) == frame[-1]
 
 
+
+# The response frame the reader leaves in its buffer (and that arrives on
+# the wire over TCP):
+#
+#   [0] 43 54      magic
+#   [2] len        u16 BE, counts everything up to the checksum
+#   [4] 00
+#   [5] type       the command that is answered
+#   [6] status     01 = ok
+#   [7] payload    (for the inventory the first two bytes are the tag count)
+#   ..  checksum
+#
+# The payload therefore starts at offset 7 - there is NO extra count
+# field, the count of an inventory answer is simply the first two bytes
+# of its payload.
+RESPONSE_PAYLOAD_OFFSET = 7
+
+
+def parse_module_response(frame: bytes):
+    """Parse a reader answer -> (type, status, payload) or None."""
+    if len(frame) < 8 or frame[:2] != b"\x43\x54":
+        return None
+    length = (frame[2] << 8) | frame[3]
+    if len(frame) < 4 + length:
+        return None
+    if not checksum_ok(frame[:4 + length]):
+        return None
+    rtype = frame[5]
+    status = frame[6]
+    payload = frame[RESPONSE_PAYLOAD_OFFSET:3 + length]
+    return rtype, status, payload
+
+
+
+# The vendor library keeps the last answer in its .bss.  The frame starts
+# at this offset inside the loaded library; it is located by scanning for
+# the magic and validating the checksum, so a layout change shows up as a
+# clean error instead of garbage.
+RESPONSE_BUFFER_OFFSET = 0x230F60
+RESPONSE_BUFFER_WINDOW = 0x60
+
+
+def _library_base(lib) -> int:
+    """Load address of the vendor library (it is a PIE)."""
+    path = None
+    try:
+        path = lib._name
+    except AttributeError:
+        pass
+    for line in open("/proc/self/maps"):
+        if "libCFHidApi.so" in line and "r" in line.split()[1]:
+            return int(line.split("-")[0], 16)
+    # fallback: the symbol address minus its offset in the file
+    return 0
+
 @dataclass
 class Tag:
     """One Gen2 tag as reported by the reader.
@@ -354,6 +409,7 @@ class Ru5600Reader:
                 if self._lib.CFHid_OpenDevice() == 1:
                     self._open = True
                     self._last_cmd = time.monotonic()
+                    self._lib_base = _library_base(self._lib)
                     # let a previous client finish releasing the reader:
                     # claiming it too early upsets the vendor library
                     time.sleep(0.25)
@@ -719,7 +775,7 @@ class Ru5600Reader:
         return True
 
     def raw_command(self, cmd: int, payload: bytes = b"",
-                    timeout_ms: int = 400) -> bool:
+                    timeout_ms: int = 400, want_payload: bool = False):
         """Send an arbitrary command to the reader.
 
         This is the escape hatch the vendor exposes: `CFHid_SendCommand`
@@ -740,11 +796,81 @@ class Ru5600Reader:
                 if payload else None
             if not self._lib.CFHid_SendCommand(cmd & 0xFF, buf,
                                                len(payload)):
-                return False
+                return (False, b"") if want_payload else False
             self._pace()
             answer = self._lib.CFHid_GetSpecificPocket(cmd & 0xFF,
                                                        timeout_ms)
-            return answer == 1
+            if not want_payload:
+                return answer == 1
+            frame = self._read_response_frame()
+            if frame is None:
+                return (False, b"")
+            parsed = parse_module_response(frame)
+            if parsed is None:
+                return (False, b"")
+            rtype, status, body = parsed
+            return (rtype == (cmd & 0xFF) and status == 0x01), body
+
+
+    def _read_response_frame(self):
+        """The last answer the vendor library received, from its .bss."""
+        base = getattr(self, "_lib_base", 0)
+        if not base:
+            return None
+        try:
+            window = ctypes.string_at(
+                base + RESPONSE_BUFFER_OFFSET, RESPONSE_BUFFER_WINDOW)
+        except (OSError, ValueError):
+            return None
+        for i in range(len(window) - 8):
+            if window[i:i + 2] != b"\x43\x54":
+                continue
+            length = (window[i + 2] << 8) | window[i + 3]
+            if 4 + length > len(window):
+                continue
+            frame = window[i:i + 4 + length]
+            if parse_module_response(frame) is not None:
+                return frame
+        return None
+
+    # -- white list --------------------------------------------------------
+    def whitelist_count(self) -> int:
+        """How many entries the reader's white list holds."""
+        ok, body = self.raw_command(0xE8, b"", want_payload=True)
+        if not ok or len(body) < 2:
+            raise ReaderError("the reader did not answer the white list count")
+        return (body[0] << 8) | body[1]
+
+    def whitelist_read(self, index: int) -> bytes:
+        """One white list entry (32 bytes)."""
+        ok, body = self.raw_command(0xE9, bytes([index >> 8, index & 0xFF]),
+                                    want_payload=True)
+        if not ok:
+            raise ReaderError(f"the reader did not answer entry {index}")
+        return body[:32]
+
+    def whitelist_write(self, entry: bytes) -> bool:
+        """Add an entry (the payload is [len][data])."""
+        ok, _ = self.raw_command(0xEA, bytes([len(entry) & 0xFF]) + entry,
+                                 want_payload=True)
+        if not ok:
+            raise ReaderError("the reader refused the white list entry")
+        return True
+
+    def whitelist_delete(self, entry: bytes) -> bool:
+        """Delete one entry."""
+        ok, _ = self.raw_command(0xEC, bytes([len(entry) & 0xFF]) + entry,
+                                 want_payload=True)
+        if not ok:
+            raise ReaderError("the reader refused to delete the entry")
+        return True
+
+    def whitelist_clear(self) -> bool:
+        """Delete every entry."""
+        ok, _ = self.raw_command(0xEB, b"", want_payload=True)
+        if not ok:
+            raise ReaderError("the reader refused to clear the white list")
+        return True
 
     def lock_card(self, lock_data: bytes, action: int,
                   confirm: bool = False) -> bool:

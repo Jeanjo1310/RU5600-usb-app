@@ -257,7 +257,8 @@ class ReaderApp(Gtk.Window):
         self._build_advance_tab()
         self._build_chip_tab()
         self._build_risky_tab()
-        self._build_batch_tab()
+        self._build_whitelist_tab()
+        self._build_batchwrite_tab()
 
         # ---------------- bottom action row ------------------------------
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
@@ -769,18 +770,298 @@ class ReaderApp(Gtk.Window):
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
-    def _build_batch_tab(self):
-        for title in ("BatchWrite", "WhiteList"):
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            box.set_border_width(8)
-            lbl = Gtk.Label(
-                label=f"{title} is not exposed by the vendor Linux API "
-                      "(libCFHidApi) and is not implemented here.",
-                wrap=True)
-            box.pack_start(lbl, False, False, 0)
-            self.nb.append_page(box, Gtk.Label(label=title))
 
-    # ------------------------------------------------------------ actions
+    def _build_whitelist_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(8)
+
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        box.pack_start(bar, False, False, 0)
+        self.btn_wl_refresh = Gtk.Button(label="Refresh")
+        self.btn_wl_refresh.connect("clicked", lambda *_: self.on_wl_refresh())
+        self.btn_wl_clear = Gtk.Button(label="Delete all")
+        self.btn_wl_clear.connect("clicked", lambda *_: self.on_wl_clear())
+        self.btn_wl_import = Gtk.Button(label="Import")
+        self.btn_wl_import.connect("clicked", lambda *_: self.on_wl_import())
+        for b in (self.btn_wl_refresh, self.btn_wl_clear, self.btn_wl_import):
+            bar.pack_start(b, False, False, 0)
+        self.lbl_wl_count = Gtk.Label(label="entries: -")
+        bar.pack_start(self.lbl_wl_count, False, False, 0)
+
+        add = Gtk.Frame(label="Add one entry (32 bytes hex)")
+        ag = Gtk.Grid(column_spacing=8, row_spacing=6)
+        add.add(ag)
+        self.entry_wl_data = Gtk.Entry(text="")
+        self.entry_wl_data.set_placeholder_text(
+            "32 bytes in hex, eg the EPC padded with zeros")
+        ag.attach(Gtk.Label(label="Entry:", xalign=0), 0, 0, 1, 1)
+        ag.attach(self.entry_wl_data, 1, 0, 3, 1)
+        b_add = Gtk.Button(label="Add")
+        b_add.connect("clicked", lambda *_: self.on_wl_add())
+        ag.attach(b_add, 0, 1, 1, 1)
+        b_del = Gtk.Button(label="Delete one")
+        b_del.connect("clicked", lambda *_: self.on_wl_delete())
+        ag.attach(b_del, 1, 1, 1, 1)
+        box.pack_start(add, False, False, 0)
+
+        self.wl_store = Gtk.ListStore(str, str)
+        view = Gtk.TreeView(model=self.wl_store)
+        view.append_column(Gtk.TreeViewColumn("Index", Gtk.CellRendererText(),
+                                               text=0))
+        view.append_column(Gtk.TreeViewColumn("Entry (hex)",
+                                               Gtk.CellRendererText(), text=1))
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.add(view)
+        box.pack_start(scroll, True, True, 0)
+        self.nb.append_page(box, Gtk.Label(label="WhiteList"))
+
+    def _build_batchwrite_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(8)
+
+        frame = Gtk.Frame(label="Write the same EPC to a batch of tags")
+        g = Gtk.Grid(column_spacing=8, row_spacing=6)
+        frame.add(g)
+        self.entry_bw_epc = Gtk.Entry(text="")
+        self.entry_bw_epc.set_placeholder_text("EPC in hex, eg 3034333234")
+        self.entry_bw_total = Gtk.Entry(text="10")
+        self.entry_bw_total.set_width_chars(5)
+        self.chk_bw_check = Gtk.CheckButton(label="Verify after writing")
+        self.chk_bw_lock = Gtk.CheckButton(label="Lock the tag after writing")
+        g.attach(Gtk.Label(label="FastWriteEPC:", xalign=0), 0, 0, 1, 1)
+        g.attach(self.entry_bw_epc, 1, 0, 2, 1)
+        g.attach(Gtk.Label(label="TotalCnt.:", xalign=0), 3, 0, 1, 1)
+        g.attach(self.entry_bw_total, 4, 0, 1, 1)
+        g.attach(self.chk_bw_check, 0, 1, 1, 1)
+        g.attach(self.chk_bw_lock, 2, 1, 1, 1)
+        self.btn_bw_start = Gtk.Button(label="Start")
+        self.btn_bw_start.connect("clicked", lambda *_: self.on_bw_start())
+        g.attach(self.btn_bw_start, 4, 1, 1, 1)
+        self.btn_bw_stop = Gtk.Button(label="Stop")
+        self.btn_bw_stop.set_sensitive(False)
+        self.btn_bw_stop.connect("clicked", lambda *_: self.on_bw_stop())
+        g.attach(self.btn_bw_stop, 5, 1, 1, 1)
+        box.pack_start(frame, False, False, 0)
+
+        self.bw_store = Gtk.ListStore(str, str, str, str)
+        view = Gtk.TreeView(model=self.bw_store)
+        for i, t in enumerate(("Tag EPC", "Result", "RSSI", "Time")):
+            view.append_column(Gtk.TreeViewColumn(t, Gtk.CellRendererText(),
+                                                  text=i))
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.add(view)
+        box.pack_start(scroll, True, True, 0)
+        self.nb.append_page(box, Gtk.Label(label="BatchWrite"))
+
+
+    # -- white list -------------------------------------------------------
+    def on_wl_refresh(self, *_):
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+
+        def task():
+            count = self.reader.whitelist_count()
+            entries = []
+            for i in range(min(count, 64)):
+                try:
+                    entries.append(self.reader.whitelist_read(i))
+                except Exception:
+                    break
+            return count, entries
+
+        def ok(res):
+            count, entries = res
+            self.wl_store.clear()
+            for i, e in enumerate(entries):
+                self.wl_store.append([str(i), e.hex().upper()])
+            self.lbl_wl_count.set_text(f"entries: {count}")
+            if count > 1024:
+                self.log(f"White list: {count} entries - that count is not "
+                         f"credible, this reader's firmware does not "
+                         f"implement the white list (the answer is stale "
+                         f"data).")
+            else:
+                self.log(f"White list: {count} entries")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_wl_add(self, *_):
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        text = self.entry_wl_data.get_text().strip().replace(" ", "")
+        try:
+            entry = bytes.fromhex(text)
+        except ValueError:
+            self.log("ERROR: the entry must be hex")
+            return
+        if not entry:
+            self.log("ERROR: the entry is empty")
+            return
+
+        def task():
+            return self.reader.whitelist_write(entry)
+
+        def ok(_):
+            self.log(f"White list entry added ({len(entry)} bytes)")
+            self.on_wl_refresh()
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_wl_delete(self, *_):
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        text = self.entry_wl_data.get_text().strip().replace(" ", "")
+        try:
+            entry = bytes.fromhex(text)
+        except ValueError:
+            self.log("ERROR: the entry must be hex")
+            return
+        if not entry:
+            self.log("ERROR: the entry is empty")
+            return
+
+        def task():
+            return self.reader.whitelist_delete(entry)
+
+        def ok(_):
+            self.log("White list entry deleted")
+            self.on_wl_refresh()
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_wl_clear(self, *_):
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        dlg = Gtk.MessageDialog(
+            self, Gtk.DialogFlags.MODAL, Gtk.MessageType.WARNING,
+            Gtk.ButtonsType.OK_CANCEL,
+            "Delete every entry of the reader's white list?")
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return
+        dlg.destroy()
+
+        def task():
+            return self.reader.whitelist_clear()
+
+        def ok(_):
+            self.log("White list cleared")
+            self.on_wl_refresh()
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_wl_import(self, *_):
+        dlg = Gtk.FileChooserDialog(
+            title="Import white list", parent=self,
+            action=Gtk.FileChooserAction.OPEN)
+        dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                        Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return
+        path = dlg.get_filename()
+        dlg.destroy()
+        try:
+            with open(path) as fh:
+                entries = [ln.strip() for ln in fh if ln.strip()]
+        except OSError as exc:
+            self.log_error(str(exc))
+            return
+        if not self.reader or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+
+        def task():
+            done = 0
+            for line in entries:
+                try:
+                    self.reader.whitelist_write(bytes.fromhex(line))
+                    done += 1
+                except Exception:
+                    break
+            return done
+
+        def ok(done):
+            self.log(f"Imported {done}/{len(entries)} white list entries")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    # -- batch write ------------------------------------------------------
+    def on_bw_start(self, *_):
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+        text = self.entry_bw_epc.get_text().strip().replace(" ", "")
+        try:
+            epc = bytes.fromhex(text)
+        except ValueError:
+            self.log("ERROR: the EPC must be hex")
+            return
+        if not epc:
+            self.log("ERROR: the EPC is empty")
+            return
+        try:
+            total = int(self.entry_bw_total.get_text() or "10")
+        except ValueError:
+            total = 10
+        total = max(1, min(999, total))
+        check = self.chk_bw_check.get_active()
+        lock = self.chk_bw_lock.get_active()
+        self.bw_store.clear()
+        self._bw_state = {"stop": False, "done": 0, "seen": set()}
+        self.btn_bw_start.set_sensitive(False)
+        self.btn_bw_stop.set_sensitive(True)
+
+        def step():
+            if self._bw_state["stop"] or self._bw_state["done"] >= total:
+                self.btn_bw_start.set_sensitive(True)
+                self.btn_bw_stop.set_sensitive(False)
+                self.log(f"Batch write finished: {self._bw_state['done']} "
+                         f"tag(s)")
+                return False
+            try:
+                tags = self.reader.scan(dwell=0.25, attempts=2)
+            except Exception as exc:
+                self.log_error(str(exc))
+                return False
+            for tag in tags:
+                key = tag.epc_hex
+                if key in self._bw_state["seen"]:
+                    continue
+                self._bw_state["seen"].add(key)
+                result = "written"
+                try:
+                    self.reader.write_epc(epc)
+                    self._bw_state["done"] += 1
+                    if check:
+                        back = self.reader.read_card(MEM_EPC, 2, 6)
+                        if back != epc:
+                            result = "verify FAILED"
+                    if lock:
+                        self.reader.lock_card(epc[:4].ljust(4, b"\x00"), 0,
+                                              confirm=True)
+                        result += " + locked"
+                except Exception as exc:
+                    result = f"ERROR: {exc}"
+                self.bw_store.append([key, result, str(tag.rssi),
+                                      time.strftime("%H:%M:%S")])
+            return True
+
+        GLib.timeout_add(500, step)
+
+    def on_bw_stop(self, *_):
+        if hasattr(self, "_bw_state"):
+            self._bw_state["stop"] = True
+        self.btn_bw_start.set_sensitive(True)
+        self.btn_bw_stop.set_sensitive(False)
+        self.log("Batch write stopped")
+
     def refresh_devices(self):
         self.cb_device.remove_all()
         devices = _usb_readers()
