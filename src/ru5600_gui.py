@@ -708,6 +708,31 @@ class ReaderApp(Gtk.Window):
         rg.attach(b_raw, 3, 1, 1, 1)
         box.pack_start(raw, False, False, 0)
 
+        crypt = Gtk.Frame(label="C - CryptWrite (EXPERIMENTAL, en desarrollo)")
+        cg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        crypt.add(cg)
+        self.entry_cw_mode = Gtk.Entry(text="0")
+        self.entry_cw_mode.set_max_length(4)
+        self.entry_cw_mode.set_width_chars(6)
+        self.entry_cw_pass = Gtk.Entry(text="")
+        self.entry_cw_pass.set_placeholder_text("password del cifrado")
+        cg.attach(Gtk.Label(label="Mode:", xalign=0), 0, 0, 1, 1)
+        cg.attach(self.entry_cw_mode, 1, 0, 1, 1)
+        cg.attach(Gtk.Label(label="Pass:", xalign=0), 2, 0, 1, 1)
+        cg.attach(self.entry_cw_pass, 3, 0, 1, 1)
+        b_cw = Gtk.Button(label="Aplicar CryptWrite")
+        b_cw.connect("clicked", lambda *_: self.on_cryptwrite())
+        cg.attach(b_cw, 0, 1, 2, 1)
+        cw_note = Gtk.Label(
+            label="El comando es 0x2F con el payload [mode][0x55][pass]. "
+                  "Este firmware (7.1 / HW 1.1) no responde a 0x2E/0x2F, "
+                  "asi que la funcion todavia no esta disponible: queda "
+                  "como area en desarrollo.")
+        cw_note.set_xalign(0.0)
+        cw_note.set_line_wrap(True)
+        cg.attach(cw_note, 0, 2, 4, 1)
+        box.pack_start(crypt, False, False, 0)
+
         table = Gtk.Frame(label="Comandos conocidos del lector RU5600")
         tl = Gtk.Label(
             label="0x01 inventario   0x02 leer memoria   0x03 escribir "
@@ -789,6 +814,37 @@ class ReaderApp(Gtk.Window):
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
+
+    def on_cryptwrite(self, *_):
+        """CryptWrite (experimental).
+
+        Sets the reader's encrypted-write mode: command 0x2F with the
+        payload [mode][0x55][password].  The firmware of this reader
+        (7.1) does not answer 0x2E/0x2F, so this is kept as an area in
+        development instead of a working feature.
+        """
+        if not self._risk_ok():
+            return
+        try:
+            mode = int(self.entry_cw_mode.get_text().strip() or "0", 16)
+            pwd = self.entry_cw_pass.get_text().strip().encode()
+        except ValueError:
+            self.log("ERROR: the mode must be hex")
+            return
+        payload = bytes([mode & 0xFF, 0x55]) + pwd
+
+        def task():
+            return self.reader.raw_command(0x2F, payload, want_payload=True)
+
+        def ok(res):
+            good = res[0] if isinstance(res, tuple) else res
+            if good:
+                self.log("CryptWrite accepted by the reader")
+            else:
+                self.log("CryptWrite: the reader did not answer - this "
+                         "firmware does not implement it yet")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def _build_whitelist_tab(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)

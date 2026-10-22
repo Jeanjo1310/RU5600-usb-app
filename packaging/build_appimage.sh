@@ -62,6 +62,11 @@ install -D -m 644 "$ROOT/packaging/99-inveton-ru5600.rules" \
 
 mkdir -p "$OUT"
 OUT="$(realpath "$OUT")"
+# el instalador va junto a la AppImage
+if [ -f "$HERE/install.sh" ]; then
+    cp "$HERE/install.sh" "$OUT/install.sh"
+    chmod +x "$OUT/install.sh"
+fi
 
 ARCH=x86_64 "$APPIMAGETOOL" "$STAGE" "$OUT/$APPIMAGE"
 chmod +x "$OUT/$APPIMAGE"

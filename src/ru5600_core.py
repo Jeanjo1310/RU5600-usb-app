@@ -78,6 +78,14 @@ FREQ_BANDS = {
 #              single burst, but misses when the reader does not answer
 #   balanced - a few polls with a short dwell: good speed, still reliable
 #   reliable - keeps polling until the reader answers (the "8/8" mode)
+def _env_num(name, default, cast=float):
+    """A tunable from the environment, with the default as fallback."""
+    try:
+        return cast(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
 # The reader refuses a read of more than 8 words (16 bytes) in one
 # command - measured: 9..16 words always fail, 1..8 answer.
 MAX_READ_WORDS = 8
@@ -378,8 +386,15 @@ class Ru5600Reader:
     (set parameter, set frequency, start/stop reading, write).
     """
 
-    MIN_GAP = 0.06   # seconds between two consecutive commands
-    SETTLE = 0.45   # seconds to wait after a state changing command
+    # Timings, all tunable from the environment so nothing is hardcoded:
+    #   RU5600_MIN_GAP      seconds between two consecutive commands
+    #   RU5600_SETTLE       seconds to wait after a state changing command
+    #   RU5600_READ_RETRIES attempts per memory read
+    #   RU5600_READ_DELAY   seconds between those attempts
+    MIN_GAP = _env_num("RU5600_MIN_GAP", 0.06)
+    SETTLE = _env_num("RU5600_SETTLE", 0.45)
+    READ_RETRIES = _env_num("RU5600_READ_RETRIES", 40, int)
+    READ_DELAY = _env_num("RU5600_READ_DELAY", 0.03)
 
     def __init__(self, on_tags: Optional[Callable[[List[Tag]], None]] = None,
                  on_event: Optional[Callable[[str], None]] = None):
@@ -704,7 +719,7 @@ class Ru5600Reader:
 
     def read_card(self, mem: int = MEM_EPC, word_ptr: int = 0,
                   word_count: int = 6, password: bytes = b"\x00" * 4,
-                  retries: int = 40, retry_delay: float = 0.03,
+                  retries: int = None, retry_delay: float = None,
                   pace: bool = True) -> bytes:
         """Read a Gen2 memory bank.
 
@@ -724,6 +739,10 @@ class Ru5600Reader:
         ``pace=False`` skips the minimum gap between commands, which is
         what a round robin scan over several areas wants.
         """
+        if retries is None:
+            retries = self.READ_RETRIES
+        if retry_delay is None:
+            retry_delay = self.READ_DELAY
         if word_count <= MAX_READ_WORDS:
             return self._read_chunk(mem, word_ptr, word_count, password,
                                     retries, retry_delay, pace)
