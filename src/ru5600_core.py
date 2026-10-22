@@ -848,19 +848,28 @@ class Ru5600Reader:
         deadline = time.monotonic() + bank_budget
         size = min(chunk, max_words)
 
-        def answers(offset, budget=None):
+        def answers(offset, budget=None, at=None):
             if offset >= max_words:
                 return False
-            return self._read_at(self, mem, offset, size, password,
+            return self._read_at(self, mem, offset, at or size, password,
                                  budget or offset_budget) is not None
+
+        # the size of the read has to fit the bank: the reserved bank is
+        # only 8 bytes and the reader refuses a longer read, so the chunk
+        # is chosen by trying the usual sizes from the biggest
+        for candidate in (size, max(2, size // 2), 2, 1):
+            if answers(0, 1.0, at=candidate):
+                size = candidate
+                break
+        else:
+            return b"", 0
+        step = max(size, 1)
 
         # 1. coarse sweep: find the last offset that answers
         step = max(size, 4)
         # the first offset decides if the bank exists at all: give it more
         # patience, the reader refuses long stretches at a time
-        good = 0 if answers(0, max(1.5, offset_budget * 2)) else None
-        if good is None:
-            return b"", 0
+        good = 0
         offset = step
         while offset < max_words and time.monotonic() < deadline:
             if answers(offset):
@@ -879,14 +888,15 @@ class Ru5600Reader:
         # 3. refine in steps of 4 words: a one word read is the least
         #    reliable one (measured 1/8), so the size is given in steps
         #    of 8 bytes
-        probe = low + 4
-        while probe < min(low + size, max_words) and time.monotonic() < deadline:
-            if self._read_at(self, mem, probe, 4, password, 0.6) is not None:
+        probe = low + size
+        while probe < min(low + size * 2, max_words) and \
+                time.monotonic() < deadline:
+            if self._read_at(self, mem, probe, size, password, 0.6) is not None:
                 low = probe
                 probe += 4
             else:
                 break
-        words = min(max_words, low + 4) if low else 0
+        words = min(max_words, low + size) if low else 0
         data = self._read_at(self, mem, 0, min(words, size), password,
                             offset_budget) or b""
         return data, words

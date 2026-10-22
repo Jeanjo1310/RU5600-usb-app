@@ -125,9 +125,15 @@ def describe(reader, epc: bytes, rssi: int, ant: int,
     rep = {"epc": epc.hex().upper(), "epc_len": len(epc),
            "rssi": rssi, "ant": ant, "tags_seen": tags_on_antenna}
 
-    # 0. drop the reader's cache of the tags it saw before
+    # 0. drop the reader's cache and go back to answer mode: the reader
+    #    answers the memory reads much better in answer mode (measured
+    #    86 % against 43 % in active mode) and the scan left it active
     try:
         reader.del_dev_cache()
+    except Exception:
+        pass
+    try:
+        reader.set_work_mode(0)
     except Exception:
         pass
 
