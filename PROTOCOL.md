@@ -486,7 +486,53 @@ part would need the Windows program as a reference.
 
 ---
 
-## 13. Hardware verification log
+## 13. The raw command path and the block lock
+
+`libCFHidApi.so` exports the escape hatch the typed API does not wrap:
+
+```c
+char CFHid_SendCommand(unsigned char cmd, const void *payload, int len);
+char CFHid_GetSpecificPocket(unsigned char cmd, unsigned short timeout);
+```
+
+`CFHid_SendCommand` builds **exactly the frame of section 2** - the
+disassembly of the library shows it writing `53 57`, the length
+`payload+3`, `FF`, the command byte, the payload and the checksum:
+
+```
+53 57 | len(u16 BE = payload+3) | FF | cmd | payload | checksum
+```
+
+That is the same frame the TCP transport of this client builds by hand,
+which confirms the network framing byte for byte.
+
+The white list (0xE8-0xEC) and any other command the Linux library does
+not wrap are reachable through it.  The catch: `CFHid_SendCommand` does
+no argument checking, and `CFHid_GetSpecificPocket` only tells that the
+reader **answered**, not that the command did what was wanted - an
+unknown command also gets an answer.
+
+### The block lock (command 0x05)
+
+```
+CFHid_LockCardG2(const void *lock4, unsigned char action)
+    -> payload [action][4 bytes of lock4]
+```
+
+The Windows API has the same shape (`SWHid_LockCardG2` builds
+`[action][*lock_ptr]`).  **The vendor does not document what the 4 bytes
+are** - the generic Gen2 block lock is a lock action code plus a 2 byte
+lock parameter (the password), so the 4 bytes most likely carry the
+target and/or the password.  The client therefore exposes them raw and
+marks the operation as experimental, behind a mandatory confirmation.
+
+A block lock **cannot be undone** and the library cannot read it back:
+that is why the app asks for an explicit confirmation and why the
+operation is not reachable without ticking the risk box.
+
+---
+
+## 14. Hardware verification log
 
 | Test | Reader answer |
 |---|---|

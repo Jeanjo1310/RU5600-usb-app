@@ -98,7 +98,8 @@ python3 src/ru5600_cli.py freq --band USA
 | **ActiveMode** | Continuous read with a live tag table (antenna, EPC, RSSI, hit count, last seen). |
 | **AdvanceSet** | Read/set the frequency band, reboot the reader. |
 | **Chip info** | Chip identification from the TID (GS1 TDS: manufacturer + model), memory map and access password test. |
-| **BatchWrite / WhiteList** | Not exposed by the vendor Linux API — not implemented. |
+| **Risky** | Irreversible operations: Gen2 block lock and raw commands. Both need the *Entiendo el riesgo* box and a confirmation. |
+| **BatchWrite / WhiteList** | Not exposed by the vendor Linux API — reachable through the raw command path (0xE8-0xEC). |
 
 The **Read** button performs a one-shot inventory (answer mode).
 The **Set** button applies the ParameterSet page to the reader.

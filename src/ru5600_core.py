@@ -250,6 +250,9 @@ def _declare_signatures(lib) -> None:
         "CFHid_ClearTagBuf": ([], ctypes.c_ubyte),
         "CFHid_RebootDevice": ([u8], ctypes.c_ubyte),
         "CFHid_LockCardG2": ([u8p, u8], ctypes.c_ubyte),
+        "CFHid_SendCommand": ([u8, u8p, ctypes.c_int], ctypes.c_ubyte),
+        "CFHid_GetSpecificPocket": ([u8, ctypes.c_ushort],
+                                    ctypes.c_ubyte),
         "CFHid_ReadDeviceID": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_SetDeviceID": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_ReadDeviceTime": ([u8, u8p], ctypes.c_ubyte),
@@ -715,6 +718,34 @@ class Ru5600Reader:
             raise ReaderError("RebootDevice failed")
         return True
 
+    def raw_command(self, cmd: int, payload: bytes = b"",
+                    timeout_ms: int = 400) -> bool:
+        """Send an arbitrary command to the reader.
+
+        This is the escape hatch the vendor exposes: `CFHid_SendCommand`
+        builds the very same frame the typed API uses
+        (`53 57 | len+3 | FF | cmd | payload | checksum`) and
+        `CFHid_GetSpecificPocket` waits for the answer.
+
+        It reaches the commands the Linux library does not wrap - the
+        white list (0xE8-0xEC), the block lock (0x05), the batch write -
+        but it also skips the argument checking the typed functions do, so
+        a wrong payload can leave the reader in a bad state.
+        """
+        with self._lock:
+            if not self._open:
+                raise ReaderError("the reader is not open")
+            self._pace()
+            buf = (ctypes.c_ubyte * max(1, len(payload)))(*payload) \
+                if payload else None
+            if not self._lib.CFHid_SendCommand(cmd & 0xFF, buf,
+                                               len(payload)):
+                return False
+            self._pace()
+            answer = self._lib.CFHid_GetSpecificPocket(cmd & 0xFF,
+                                                       timeout_ms)
+            return answer == 1
+
     def lock_card(self, lock_data: bytes, action: int,
                   confirm: bool = False) -> bool:
         """Gen2 block lock (the real memory protection of a tag).
@@ -724,6 +755,12 @@ class Ru5600Reader:
         the payload ``[action][4 bytes of lock_data]`` and sends command
         0x05 - the same as the Windows ``SWHid_LockCardG2``, whose payload
         is ``[action][*lock_ptr]``.
+
+        **The vendor does not document what the 4 bytes are.**  The
+        layout of the generic Gen2 block lock is a 2 byte lock parameter
+        (the password) plus the lock action code, so the 4 bytes most
+        likely carry the target and/or the password; treat them as
+        "whatever the Windows program sends".
 
         A block lock is **not** reversible: it is the way to make a tag
         read only for a reader that knows the password.  The library
@@ -736,12 +773,8 @@ class Ru5600Reader:
             raise ReaderError(
                 "LockCardG2 needs confirm=True: a block lock is "
                 "permanent and cannot be read back.")
-        buf = (ctypes.c_ubyte * 4)(*lock_data)
-        self._pace()
-        if self._lib.CFHid_LockCardG2(buf, action) != 1:
-            raise ReaderError("LockCardG2 failed") from None
-        self._pace(settle=True)
-        return True
+        return self.raw_command(0x05, bytes([action & 0xFF]) + lock_data,
+                                timeout_ms=350)
 
 
 if __name__ == "__main__":  # quick smoke test

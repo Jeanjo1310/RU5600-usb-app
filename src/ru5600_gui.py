@@ -256,6 +256,7 @@ class ReaderApp(Gtk.Window):
         self._build_active_tab()
         self._build_advance_tab()
         self._build_chip_tab()
+        self._build_risky_tab()
         self._build_batch_tab()
 
         # ---------------- bottom action row ------------------------------
@@ -614,6 +615,157 @@ class ReaderApp(Gtk.Window):
             else:
                 self.log(f"Password {pwd.hex().upper()} is WRONG "
                          f"(every read was refused)")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+
+    def _build_risky_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(8)
+
+        warn = Gtk.Label()
+        warn.set_markup(
+            "<b><span foreground='#cc0000'>OPERACIONES IRREVERSIBLES</span></b>")
+        warn.set_xalign(0.0)
+        box.pack_start(warn, False, False, 0)
+
+        text = Gtk.Label(
+            label="Un lock mal hecho deja el tag inutilizable para siempre y "
+                  "un comando crudo puede dejar el lector en un estado "
+                  "inconsistente. El vendor no documenta la semantica del "
+                  "lock; tomalo como experimental.")
+        text.set_xalign(0.0)
+        text.set_line_wrap(True)
+        box.pack_start(text, False, False, 0)
+
+        self.chk_risk = Gtk.CheckButton(
+            label="Entiendo el riesgo de estas operaciones")
+        box.pack_start(self.chk_risk, False, False, 0)
+
+        # --- A: bloqueo Gen2 -------------------------------------------
+        lock = Gtk.Frame(label="A - Bloquear tag (Gen2 block lock, cmd 0x05)")
+        lg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        lock.add(lg)
+        self.entry_lock_data = Gtk.Entry(text="00000000")
+        self.entry_lock_data.set_max_length(8)
+        self.entry_lock_data.set_width_chars(12)
+        self.entry_lock_data.set_tooltip_text(
+            "4 bytes en hex: el target y/o el password del lock. El vendor "
+            "no lo documenta.")
+        self.entry_lock_action = Gtk.Entry(text="00")
+        self.entry_lock_action.set_max_length(2)
+        self.entry_lock_action.set_width_chars(4)
+        self.entry_lock_action.set_tooltip_text(
+            "Byte de la accion de lock (0x00-0xFF). No documentado.")
+        lg.attach(Gtk.Label(label="Lock data (4 bytes):", xalign=0), 0, 0, 1, 1)
+        lg.attach(self.entry_lock_data, 1, 0, 1, 1)
+        lg.attach(Gtk.Label(label="Accion:", xalign=0), 2, 0, 1, 1)
+        lg.attach(self.entry_lock_action, 3, 0, 1, 1)
+        b_lock = Gtk.Button(label="Bloquear tag")
+        b_lock.connect("clicked", lambda *_: self.on_lock())
+        lg.attach(b_lock, 0, 1, 2, 1)
+        box.pack_start(lock, False, False, 0)
+
+        # --- B: comando crudo -------------------------------------------
+        raw = Gtk.Frame(label="B - Comando crudo (CFHid_SendCommand)")
+        rg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        raw.add(rg)
+        self.entry_raw_cmd = Gtk.Entry(text="10")
+        self.entry_raw_cmd.set_max_length(4)
+        self.entry_raw_cmd.set_width_chars(6)
+        self.entry_raw_payload = Gtk.Entry(text="")
+        self.entry_raw_timeout = Gtk.Entry(text="400")
+        self.entry_raw_timeout.set_max_length(5)
+        self.entry_raw_timeout.set_width_chars(6)
+        rg.attach(Gtk.Label(label="Comando:", xalign=0), 0, 0, 1, 1)
+        rg.attach(self.entry_raw_cmd, 1, 0, 1, 1)
+        rg.attach(Gtk.Label(label="Payload (hex):", xalign=0), 2, 0, 1, 1)
+        rg.attach(self.entry_raw_payload, 3, 0, 1, 1)
+        rg.attach(Gtk.Label(label="Timeout (ms):", xalign=0), 0, 1, 1, 1)
+        rg.attach(self.entry_raw_timeout, 1, 1, 1, 1)
+        b_raw = Gtk.Button(label="Enviar comando crudo")
+        b_raw.connect("clicked", lambda *_: self.on_raw_command())
+        rg.attach(b_raw, 3, 1, 1, 1)
+        box.pack_start(raw, False, False, 0)
+
+        table = Gtk.Frame(label="Comandos conocidos del lector RU5600")
+        tl = Gtk.Label(
+            label="0x01 inventario   0x02 leer memoria   0x03 escribir "
+                  "memoria   0x04 escribir EPC   0x05 lock   "
+                  "0x10 informacion   0x20/0x21 parametro   "
+                  "0x23/0x24 un parametro   0x3E/0x3F frecuencia   "
+                  "0x30 reiniciar   0x40/0x41 start/stop read   "
+                  "0x85/0x86 relay   0xE8-0xEC whitelist")
+        tl.set_xalign(0.0)
+        tl.set_line_wrap(True)
+        table.add(tl)
+        box.pack_start(table, False, False, 0)
+
+        self.nb.append_page(box, Gtk.Label(label="Risky"))
+
+
+    def _risk_ok(self):
+        if not self.chk_risk.get_active():
+            self.log("Mark 'Entiendo el riesgo' to use these operations")
+            return False
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return False
+        return True
+
+    def on_lock(self, *_):
+        if not self._risk_ok():
+            return
+        try:
+            data = bytes.fromhex(self.entry_lock_data.get_text().strip())
+            action = int(self.entry_lock_action.get_text().strip() or "0", 16)
+        except ValueError:
+            self.log("ERROR: lock data must be 4 hex bytes and the action "
+                     "a hex byte")
+            return
+        if len(data) != 4:
+            self.log("ERROR: the lock data must be exactly 4 bytes")
+            return
+        dlg = Gtk.MessageDialog(
+            self, Gtk.DialogFlags.MODAL, Gtk.MessageType.WARNING,
+            Gtk.ButtonsType.OK_CANCEL,
+            f"Lock the tag permanently?\n\n"
+            f"lock data : {data.hex().upper()}\n"
+            f"action    : 0x{action:02X}\n\n"
+            "A block lock cannot be undone and the library cannot read it "
+            "back. If the tag must still be read, it will only be with a "
+            "reader that knows the password.")
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return
+        dlg.destroy()
+
+        def task():
+            return self.reader.lock_card(data, action, confirm=True)
+
+        def ok(res):
+            self.log("Lock sent: " + ("accepted" if res else "refused"))
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
+    def on_raw_command(self, *_):
+        if not self._risk_ok():
+            return
+        try:
+            cmd = int(self.entry_raw_cmd.get_text().strip() or "0", 16)
+            payload = bytes.fromhex(self.entry_raw_payload.get_text().strip()
+                                    or "")
+            timeout = int(self.entry_raw_timeout.get_text().strip() or 400)
+        except ValueError:
+            self.log("ERROR: the command and the payload are hex")
+            return
+
+        def task():
+            return self.reader.raw_command(cmd, payload, timeout)
+
+        def ok(res):
+            self.log(f"Raw command 0x{cmd:02X} ({len(payload)} bytes): "
+                     + ("the reader answered" if res else "no answer"))
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
