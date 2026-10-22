@@ -23,6 +23,8 @@ from ru5600_net import NetReader  # noqa: E402
 from ru5600_core import (  # noqa: E402
     FREQ_BANDS,
     READ_MODES,
+    check_fingerprint,
+    learn_fingerprint,
     MEM_EPC,
     MEM_TID,
     MEM_USER,
@@ -456,6 +458,23 @@ class ReaderApp(Gtk.Window):
         self.mem_output = Gtk.Label(label="-")
         self.mem_output.set_selectable(True)
         box.pack_start(self.mem_output, False, False, 0)
+
+        fp = Gtk.Frame(label="Huella (anti-clonado)")
+        fg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        fp.add(fg)
+        self.chk_fp = Gtk.CheckButton(
+            label="Verificar la huella antes de escribir")
+        self.chk_fp.set_tooltip_text(
+            "El EPC se puede copiar a cualquier tag; el TID no.  La huella "
+            "guarda que EPC corresponde a que TID y el cliente se niega a "
+            "escribir si no coinciden.")
+        self.btn_fp_learn = Gtk.Button(label="Aprender huella del tag actual")
+        self.btn_fp_learn.connect("clicked", lambda *_: self.on_fp_learn())
+        fg.attach(self.chk_fp, 0, 0, 1, 1)
+        fg.attach(self.btn_fp_learn, 0, 1, 1, 1)
+        self.lbl_fp = Gtk.Label(label="")
+        fg.attach(self.lbl_fp, 1, 0, 1, 2)
+        box.pack_start(fp, False, False, 0)
         self.nb.append_page(box, Gtk.Label(label="Read/Write"))
 
     def _build_active_tab(self):
@@ -1368,6 +1387,24 @@ class ReaderApp(Gtk.Window):
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
+    def on_fp_learn(self, *_):
+        if self.reader is None or not self.reader.is_open:
+            self.log("Open the reader first")
+            return
+
+        def task():
+            tags = self.reader.scan()
+            if not tags:
+                raise ReaderError("no tag detected")
+            return tags[0].epc, learn_fingerprint(self.reader, tags[0].epc)
+
+        def ok(res):
+            epc, tid = res
+            self.lbl_fp.set_text(f"{epc.hex().upper()} -> {tid}")
+            self.log(f"Fingerprint learned: {epc.hex().upper()} -> {tid}")
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
+
     def on_write_epc(self, *_):
         if self.reader is None or not self.reader.is_open:
             self.log("Open the reader first")
@@ -1383,6 +1420,14 @@ class ReaderApp(Gtk.Window):
             return
 
         def task():
+            if self.chk_fp.get_active():
+                tags = self.reader.scan()
+                if not tags:
+                    raise ReaderError("no tag detected")
+                ok, msg = check_fingerprint(self.reader, tags[0].epc)
+                if not ok:
+                    raise ReaderError("fingerprint check failed: " + msg)
+                self.log("Fingerprint: " + msg)
             return self.reader.write_epc(data, self._access_password())
 
         def ok(_):

@@ -969,3 +969,65 @@ if __name__ == "__main__":  # quick smoke test
     for t in tags:
         print("  ", t.ant, t.epc_hex, t.rssi)
     r.close()
+
+
+# --- fingerprint (huella) -------------------------------------------------
+# The EPC can be written to any tag, so a clone is trivial.  The TID is
+# read only in the chip and unique, so the pair (EPC, TID) identifies the
+# physical tag.  The store below remembers that pair and the client can
+# refuse to write to a tag whose TID does not match the expected one.
+
+FINGERPRINT_FILE = os.path.join(
+    os.path.expanduser("~"), ".config", "ru5600-reader", "fingerprints.json")
+
+
+def fingerprint_path() -> str:
+    return os.environ.get("RU5600_FINGERPRINTS", FINGERPRINT_FILE)
+
+
+def load_fingerprints() -> dict:
+    """The known (EPC -> TID) pairs."""
+    import json
+    try:
+        with open(fingerprint_path()) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_fingerprints(data: dict) -> None:
+    import json
+    path = fingerprint_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump(data, fh, indent=1, sort_keys=True)
+
+
+def learn_fingerprint(reader, epc: bytes) -> str:
+    """Read the TID of the tag in front of the reader and remember it."""
+    tid, _ = reader.probe_bank(MEM_TID)
+    if not tid:
+        raise ReaderError("the TID could not be read")
+    data = load_fingerprints()
+    data[epc.hex().upper()] = tid.hex().upper()
+    save_fingerprints(data)
+    return tid.hex().upper()
+
+
+def check_fingerprint(reader, epc: bytes):
+    """Verify the tag against the stored fingerprint.
+
+    Returns ``(ok, message)``.  A tag that is not in the store passes
+    (nothing is known about it yet), a tag whose TID does not match fails.
+    """
+    data = load_fingerprints()
+    expected = data.get(epc.hex().upper())
+    if not expected:
+        return True, "sin huella registrada"
+    tid, _ = reader.probe_bank(MEM_TID)
+    if not tid:
+        return False, "no se pudo leer el TID para verificar la huella"
+    if tid.hex().upper() != expected.upper():
+        return False, (f"huella no coincide: TID {tid.hex().upper()} "
+                        f"!= {expected.upper()}")
+    return True, "huella verificada"
