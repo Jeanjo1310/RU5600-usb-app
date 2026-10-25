@@ -203,6 +203,7 @@ class ReaderApp(Gtk.Window):
         self.rb_usb.set_active(True)
 
         grid = Gtk.Grid(column_spacing=8, row_spacing=6)
+        grid.set_border_width(8)
         grid.set_column_homogeneous(False)
         grid.set_border_width(8)
         lv.pack_start(grid, False, False, 0)
@@ -502,6 +503,7 @@ class ReaderApp(Gtk.Window):
 
         frame = Gtk.Frame(label="Read tag memory")
         g = Gtk.Grid(column_spacing=8, row_spacing=6)
+        g.set_border_width(8)
         frame.add(g)
         self.cb_mem = Gtk.ComboBoxText()
         for m in ("EPC", "TID", "USER"):
@@ -528,6 +530,7 @@ class ReaderApp(Gtk.Window):
 
         frame3 = Gtk.Frame(label="Write memory (USER, EPC...)")
         g3 = Gtk.Grid(column_spacing=8, row_spacing=6)
+        g3.set_border_width(8)
         frame3.add(g3)
         self.cb_write_bank = Gtk.ComboBoxText()
         for name, val in (("USER", 3), ("EPC", 1), ("RESERVED", 0)):
@@ -558,6 +561,7 @@ class ReaderApp(Gtk.Window):
 
         frame2 = Gtk.Frame(label="Write EPC")
         g2 = Gtk.Grid(column_spacing=8, row_spacing=6)
+        g2.set_border_width(8)
         frame2.add(g2)
         self.entry_write_epc = Gtk.Entry(
             text="3034333234353536373839303132")
@@ -574,6 +578,7 @@ class ReaderApp(Gtk.Window):
 
         fp = Gtk.Frame(label="Huella (anti-clonado)")
         fg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        fg.set_border_width(8)
         fp.add(fg)
         self.chk_fp = Gtk.CheckButton(
             label="Verificar la huella antes de escribir")
@@ -655,6 +660,7 @@ class ReaderApp(Gtk.Window):
 
         frame = Gtk.Frame(label="Frequency")
         g = Gtk.Grid(column_spacing=8, row_spacing=6)
+        g.set_border_width(8)
         frame.add(g)
         self.cb_freq_adv = Gtk.ComboBoxText()
         for band in FREQ_BANDS:
@@ -672,6 +678,7 @@ class ReaderApp(Gtk.Window):
 
         frame2 = Gtk.Frame(label="Device")
         g2 = Gtk.Grid(column_spacing=8, row_spacing=6)
+        g2.set_border_width(8)
         frame2.add(g2)
         b_reboot = Gtk.Button(label="Reboot reader")
         b_reboot.connect("clicked", lambda *_: self.on_reboot())
@@ -802,6 +809,7 @@ class ReaderApp(Gtk.Window):
         # --- A: bloqueo Gen2 -------------------------------------------
         lock = Gtk.Frame(label="A - Bloquear tag (Gen2 block lock, cmd 0x05)")
         lg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        lg.set_border_width(8)
         lock.add(lg)
         self.entry_lock_data = Gtk.Entry(text="00000000")
         self.entry_lock_data.set_max_length(8)
@@ -826,6 +834,7 @@ class ReaderApp(Gtk.Window):
         # --- B: comando crudo -------------------------------------------
         raw = Gtk.Frame(label="B - Comando crudo (CFHid_SendCommand)")
         rg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        rg.set_border_width(8)
         raw.add(rg)
         self.entry_raw_cmd = Gtk.Entry(text="10")
         self.entry_raw_cmd.set_max_length(4)
@@ -847,6 +856,7 @@ class ReaderApp(Gtk.Window):
 
         crypt = Gtk.Frame(label="C - CryptWrite (EXPERIMENTAL, en desarrollo)")
         cg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        cg.set_border_width(8)
         crypt.add(cg)
         self.entry_cw_mode = Gtk.Entry(text="0")
         self.entry_cw_mode.set_max_length(4)
@@ -1007,6 +1017,7 @@ class ReaderApp(Gtk.Window):
 
         add = Gtk.Frame(label="Add one entry (32 bytes hex)")
         ag = Gtk.Grid(column_spacing=8, row_spacing=6)
+        ag.set_border_width(8)
         add.add(ag)
         self.entry_wl_data = Gtk.Entry(text="")
         self.entry_wl_data.set_placeholder_text(
@@ -1041,6 +1052,7 @@ class ReaderApp(Gtk.Window):
 
         frame = Gtk.Frame(label="Write the same EPC to a batch of tags")
         g = Gtk.Grid(column_spacing=8, row_spacing=6)
+        g.set_border_width(8)
         frame.add(g)
         self.entry_bw_epc = Gtk.Entry(text="")
         self.entry_bw_epc.set_placeholder_text("EPC in hex, eg 3034333234")
