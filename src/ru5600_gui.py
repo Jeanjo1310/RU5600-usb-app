@@ -413,18 +413,21 @@ class ReaderApp(Gtk.Window):
 
         # device identity
         info = Gtk.Frame(label="Device")
-        ig = Gtk.Grid(column_spacing=8, row_spacing=6)
+        ig = Gtk.Grid(column_spacing=12, row_spacing=6)
+        ig.set_column_homogeneous(True)
         ig.set_border_width(8)
         info.add(ig)
         self.entry_sn = Gtk.Entry(); self.entry_sn.set_editable(False)
         self.entry_fw = Gtk.Entry(); self.entry_fw.set_editable(False)
         self.entry_hw = Gtk.Entry(); self.entry_hw.set_editable(False)
-        ig.attach(Gtk.Label(label="DeviceSN:", xalign=0), 0, 0, 1, 1)
-        ig.attach(self.entry_sn, 1, 0, 1, 1)
-        ig.attach(Gtk.Label(label="Firmware:", xalign=0), 0, 1, 1, 1)
-        ig.attach(self.entry_fw, 1, 1, 1, 1)
-        ig.attach(Gtk.Label(label="Hardware:", xalign=0), 0, 2, 1, 1)
-        ig.attach(self.entry_hw, 1, 2, 1, 1)
+        for col, (lab, ent) in enumerate((("DeviceSN:", self.entry_sn),
+                                          ("Firmware:", self.entry_fw),
+                                          ("Hardware:", self.entry_hw))):
+            cell = Gtk.Grid(column_spacing=6, row_spacing=6)
+            cell.attach(Gtk.Label(label=lab, xalign=0), 0, 0, 1, 1)
+            ent.set_hexpand(True)
+            cell.attach(ent, 0, 1, 1, 1)
+            ig.attach(cell, col, 0, 1, 1)
         box.pack_start(info, False, False, 0)
 
         cfg = Gtk.Grid(column_spacing=6, row_spacing=6)
