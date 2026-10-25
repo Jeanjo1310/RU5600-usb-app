@@ -129,22 +129,49 @@ class ReaderApp(Gtk.Window):
         self._tag_counts = {}
         self._tag_order = []
         self._active = False
+        self._lang = "en"
+        self._freq_raw = None
 
         self._build_ui()
         self.connect("destroy", self._on_destroy)
 
     # ------------------------------------------------------------------ UI
+    READ_MODE_ITEMS = ["Burst (fastest)", "Balanced", "Reliable (8/8)"]
+    WORKMODE_ITEMS = ["AnswerMode", "ActiveMode"]
+    OUTFMT_ITEMS = ["All(Hex)", "EPC(HEX)", "EPC(ASCII)"]
+
+    def _refresh_dynamic(self):
+        self.lbl_freq_raw.set_text(
+            tr("Raw frequency:", self._lang) + " "
+            + (self._freq_raw or "-"))
+
+    def _refill_combo(self, cb, items):
+        idx = cb.get_active()
+        cb.remove_all()
+        for t in items:
+            cb.append_text(tr(t, self._lang))
+        cb.set_active(idx if 0 <= idx < len(items) else 0)
+
     def on_language(self, *_):
         """Change the language of the interface in place."""
         code = self.cb_lang.get_active_id() or "en"
+        self._lang = code
         self._translate(self, code)
+        self._refill_combo(self.cb_read_mode, self.READ_MODE_ITEMS)
+        self._refill_combo(self.cb_workmode, self.WORKMODE_ITEMS)
+        self._refill_combo(self.cb_outfmt, self.OUTFMT_ITEMS)
+        self._refresh_dynamic()
 
     def _translate(self, widget, lang):
         """Translate the visible texts and add the missing tooltips.
 
         The original text is kept on the widget, so the language can be
         changed back and forth as many times as wanted.
+        Dynamic widgets (live values) opt out via _dynamic_i18n and set
+        their own text with tr() instead.
         """
+        if getattr(widget, "_dynamic_i18n", False):
+            return
         if isinstance(widget, (Gtk.Label, Gtk.Button, Gtk.CheckButton,
                               Gtk.Frame)):
             if isinstance(widget, Gtk.Label):
@@ -560,7 +587,7 @@ class ReaderApp(Gtk.Window):
         g.attach(self.entry_wordptr, 3, 0, 1, 1)
         g.attach(Gtk.Label(label="WordCount(Hex):", xalign=0), 4, 0, 1, 1)
         g.attach(self.entry_wordcount, 5, 0, 1, 1)
-        g.attach(Gtk.Label(label="Password:", xalign=0), 0, 1, 1, 1)
+        g.attach(Gtk.Label(label="Access password:", xalign=0), 0, 1, 1, 1)
         g.attach(self.entry_password, 1, 1, 2, 1)
         b = Gtk.Button(label="Read memory")
         b.connect("clicked", lambda *_: self.on_read_memory())
@@ -722,7 +749,8 @@ class ReaderApp(Gtk.Window):
         b_reboot = Gtk.Button(label="Reboot reader")
         b_reboot.connect("clicked", lambda *_: self.on_reboot())
         g2.attach(b_reboot, 0, 0, 1, 1)
-        self.lbl_freq_raw = Gtk.Label(label="raw freq: -")
+        self.lbl_freq_raw = Gtk.Label(label="Raw frequency: -")
+        self.lbl_freq_raw._dynamic_i18n = True
         g2.attach(self.lbl_freq_raw, 1, 0, 1, 1)
         box.pack_start(frame2, False, False, 0)
         lbl_tab = Gtk.Label(label="AdvanceSet")
@@ -1575,8 +1603,8 @@ class ReaderApp(Gtk.Window):
             self.cb_workmode.set_active(1 if data["mode"] else 0)
             self.chk_buzzer.set_active(bool(data["beep"]))
             self.entry_filter.set_text(str(data["filter"]))
-            self.lbl_freq_raw.set_text(
-                "raw freq: " + data["freq"].hex().upper())
+            self._freq_raw = data["freq"].hex().upper()
+            self._refresh_dynamic()
             self.log("Parameters loaded from reader")
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
@@ -1609,7 +1637,7 @@ class ReaderApp(Gtk.Window):
 
         def task():
             self.reader.set_rf_power(int(self.cb_rfpower.get_active_text()[:-3]))
-            mode = 1 if self.cb_workmode.get_active_text() == "ActiveMode" else 0
+            mode = 1 if self.cb_workmode.get_active() == 1 else 0
             self.reader.set_work_mode(mode)
             self.reader.set_beep(self.chk_buzzer.get_active())
             self.reader.set_filter_time(int(self.entry_filter.get_text() or 0))
@@ -1621,9 +1649,9 @@ class ReaderApp(Gtk.Window):
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     def _read_mode(self) -> str:
-        labels = {"Burst (fastest)": "burst", "Balanced": "balanced",
-                  "Reliable (8/8)": "reliable"}
-        return labels.get(self.cb_read_mode.get_active_text(), "balanced")
+        modes = ["burst", "balanced", "reliable"]
+        idx = self.cb_read_mode.get_active()
+        return modes[idx] if 0 <= idx < len(modes) else "balanced"
 
     def _access_password(self) -> bytes:
         text = self.entry_password.get_text().strip().replace(" ", "")
@@ -1837,7 +1865,8 @@ class ReaderApp(Gtk.Window):
             return self.reader.read_freq()
 
         def ok(raw):
-            self.lbl_freq_raw.set_text("raw freq: " + raw.hex().upper())
+            self._freq_raw = raw.hex().upper()
+            self._refresh_dynamic()
             self.log(f"Frequency read: {raw.hex().upper()}")
 
         self.worker.run(task, on_ok=ok, on_err=self.log_error)
