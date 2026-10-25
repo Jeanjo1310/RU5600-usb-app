@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Conexión{% endblock %}
+{% block content %}
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Idioma y apariencia</h2>
+  <div class="flex gap-6">
+    <div><div class="text-sm text-gray-500 mb-1">Idioma</div>
+      <label class="mr-3"><input type="radio" name="lang" value="es" checked> Español</label>
+      <label><input type="radio" name="lang" value="en"> English</label></div>
+    <div><div class="text-sm text-gray-500 mb-1">Tema</div>
+      <label class="mr-3"><input type="radio" name="theme" value="dark" checked> Oscuro</label>
+      <label><input type="radio" name="theme" value="light"> Claro</label></div>
+  </div>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Conexión</h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+    <div>
+      <div class="text-sm text-gray-500 mb-1">Transporte</div>
+      <label class="block"><input type="radio" name="t" value="usb" checked> USB</label>
+      <label class="block"><input type="radio" name="t" value="com"> COM</label>
+      <label class="block"><input type="radio" name="t" value="net"> Net</label>
+    </div>
+    <div>
+      <label class="block mb-1 text-sm">Baudrate <select id="baud" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></label>
+      <label class="block mb-1 text-sm">Puerto <select id="dev" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"></select></label>
+      <label class="block text-sm">Modo de lectura <select id="mode" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></label>
+    </div>
+    <div>
+      <label class="block mb-1 text-sm">IP de red <input id="ip" value="192.168.1.250" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
+      <label class="block text-sm">Puerto de red <input id="port" value="60000" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
+    </div>
+  </div>
+  <div class="grid grid-cols-2 gap-2">
+    <button id="openBtn" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Abrir</button>
+    <button id="closeBtn" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2" disabled>Cerrar</button>
+    <button id="scanBtn" class="border rounded-lg px-4 py-2">Escanear puerto</button>
+    <button id="netBtn" class="border rounded-lg px-4 py-2">Escanear red</button>
+  </div>
+  <p id="connMsg" class="mt-2 text-sm"></p>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+  <h2 class="text-lg font-semibold mb-3">Dispositivo</h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div><div class="text-sm text-gray-500">N. de serie</div><div id="sn" class="font-mono">-</div></div>
+    <div><div class="text-sm text-gray-500">Firmware</div><div id="fw" class="font-mono">-</div></div>
+    <div><div class="text-sm text-gray-500">Hardware</div><div id="hw" class="font-mono">-</div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function refreshState() {
+  const s = await fetch('/api/conn_state').then(r => r.json());
+  document.getElementById('openBtn').disabled = s.open;
+  document.getElementById('closeBtn').disabled = !s.open;
+  if (s.info) {
+    document.getElementById('sn').textContent = s.info.sn || '-';
+    document.getElementById('fw').textContent = s.info.fw || '-';
+    document.getElementById('hw').textContent = s.info.hw || '-';
+  }
+}
+document.getElementById('openBtn').onclick = async () => {
+  const t = document.querySelector('input[name=t]:checked').value;
+  const r = await post('/api/open', {transport: t, ip: document.getElementById('ip').value, port: document.getElementById('port').value, baud: document.getElementById('baud').value});
+  document.getElementById('connMsg').textContent = r.ok ? 'Abierto.' : ('Error: ' + r.error);
+  refreshState();
+};
+document.getElementById('closeBtn').onclick = async () => { await post('/api/close', {}); document.getElementById('connMsg').textContent = 'Cerrado.'; refreshState(); };
+document.getElementById('scanBtn').onclick = async () => {
+  const r = await post('/api/scan_port', {});
+  const sel = document.getElementById('dev'); sel.innerHTML = '';
+  (r.devices || ['1a86:e010 (SWUSB_HID)']).forEach(d => { const o = document.createElement('option'); o.textContent = d; sel.appendChild(o); });
+  document.getElementById('connMsg').textContent = (r.devices || []).length + ' lector(es).';
+};
+document.getElementById('netBtn').onclick = async () => {
+  const r = await post('/api/scan_net', {ip: document.getElementById('ip').value, port: document.getElementById('port').value});
+  document.getElementById('connMsg').textContent = r.ok ? 'Red OK.' : ('Red: ' + r.error);
+};
+document.querySelectorAll('input[name=theme]').forEach(el => el.onchange = () => document.documentElement.classList.toggle('dark', document.querySelector('input[name=theme]:checked').value !== 'light'));
+refreshState();
+</script>
+{% endblock %}

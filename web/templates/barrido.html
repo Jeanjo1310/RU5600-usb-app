@@ -9,16 +9,10 @@
 tailwind.config = { darkMode: 'class' }
 </script>
 <link href="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.css" rel="stylesheet" />
-</head>
-<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-<nav class="bg-white border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
-  <div class="max-w-screen-xl flex items-center justify-between mx-auto p-4">
-    <span class="text-xl font-semibold">RU5600 · Barrido</span>
-    <button id="themeBtn" class="text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1">Claro / Oscuro</button>
-  </div>
-</nav>
-<main class="max-w-screen-xl mx-auto p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+{% extends "base.html" %}
+{% block title %}Barrido{% endblock %}
+{% block content %}
+<main>  <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
     <div class="flex flex-wrap items-end gap-4">
       <div>
         <label class="block mb-1 text-sm font-medium">Segundos (0 = hasta parar)</label>
@@ -39,7 +33,8 @@ tailwind.config = { darkMode: 'class' }
   </div>
   <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Crudo íntegro por tag (tooltip en EPC). Deduplicado por blob: la relectura no crea fila nueva.</p>
 </main>
-<script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script>
+{% endblock %}
+{% block scripts %}
 <script>
 const $ = id => document.getElementById(id);
 document.getElementById('themeBtn').onclick = () => document.documentElement.classList.toggle('dark');
@@ -72,5 +67,4 @@ $('startBtn').onclick = async () => {
 };
 $('stopBtn').onclick = async () => { await fetch('/api/stop', {method:'POST'}); };
 </script>
-</body>
-</html>
+{% endblock %}

@@ -25,10 +25,103 @@ EXCEL = os.path.normpath(os.path.join(BASE, "..", "..", "CONOCIMIENTO",
 
 app = Flask(__name__)
 _reader: Ru5600Reader | None = None
+_net_reader = None
+_net_info: dict = {"mode": "usb"}
 _lock = threading.Lock()
 _stop = threading.Event()
 _state = {"running": False, "tags": [], "seen": set(), "started": 0.0,
           "error": ""}
+
+
+def _usb_nodes():
+    found = []
+    base = "/sys/bus/usb/devices"
+    try:
+        for node in sorted(os.listdir(base)):
+            try:
+                vid = open(os.path.join(base, node, "idVendor")).read().strip()
+                pid = open(os.path.join(base, node, "idProduct")).read().strip()
+            except OSError:
+                continue
+            if vid.lower() == "1a86" and pid.lower() == "e010":
+                found.append(f"1a86:e010 ({node})")
+    except OSError:
+        pass
+    return found
+
+
+@app.route("/conexion")
+def conexion():
+    return render_template("conexion.html")
+
+
+@app.route("/api/conn_state")
+def conn_state():
+    global _reader, _net_reader
+    if _reader is not None and _reader.is_open:
+        try:
+            si = _reader.system_info()
+            info = {"sn": si.device_sn, "fw": si.soft_ver,
+                    "hw": si.hard_ver}
+        except Exception:  # noqa: BLE001
+            info = {}
+        return jsonify(open=True, mode="usb", info=info)
+    if _net_reader is not None and _net_reader.is_open():
+        return jsonify(open=True, mode="net", info={})
+    return jsonify(open=False, mode=_net_info.get("mode", "usb"), info={})
+
+
+@app.route("/api/open", methods=["POST"])
+def api_open():
+    global _reader, _net_reader
+    cfg = request.get_json(silent=True) or {}
+    t = cfg.get("transport", "usb")
+    try:
+        if t == "net":
+            from ru5600_net import NetReader
+            _net_reader = NetReader(cfg.get("ip", "192.168.1.250"),
+                                    int(cfg.get("port", 60000)))
+            _net_reader.open()
+            _net_info["mode"] = "net"
+        else:
+            _net_info["mode"] = t
+            _get_reader()
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/close", methods=["POST"])
+def api_close():
+    global _reader, _net_reader
+    try:
+        if _reader is not None and _reader.is_open:
+            _reader.close()
+        if _net_reader is not None and _net_reader.is_open():
+            _net_reader.close()
+    except Exception:  # noqa: BLE001
+        pass
+    _reader, _net_reader = None, None
+    return jsonify(ok=True)
+
+
+@app.route("/api/scan_port", methods=["POST"])
+def api_scan_port():
+    devs = _usb_nodes() or ["1a86:e010 (SWUSB_HID)"]
+    return jsonify(devices=devs)
+
+
+@app.route("/api/scan_net", methods=["POST"])
+def api_scan_net():
+    import socket
+    cfg = request.get_json(silent=True) or {}
+    try:
+        s = socket.create_connection((cfg.get("ip", "192.168.1.250"),
+                                      int(cfg.get("port", 60000))), timeout=5)
+        s.close()
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
 
 
 def _excel():
@@ -95,6 +188,11 @@ def _get_reader():
 
 @app.route("/")
 def index():
+    return render_template("conexion.html")
+
+
+@app.route("/barrido")
+def barrido():
     return render_template("barrido.html")
 
 
