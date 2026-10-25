@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Lote{% endblock %}
+{% block content %}
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Escribir el mismo EPC en un lote</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+    <input id="bepc" value="E2004704D9A06820068E0112" class="bg-gray-50 border rounded-lg p-2 font-mono md:col-span-2 dark:bg-gray-700">
+    <input id="btotal" type="number" value="10" min="1" title="total" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
+    <label class="text-sm"><input type="checkbox" id="bcheck" checked> Verificar tras escribir</label>
+  </div>
+  <div class="flex gap-2">
+    <button id="bstart" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Iniciar</button>
+    <button id="bstop" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2" disabled>Parar</button>
+  </div>
+  <p id="bmsg" class="mt-1 text-sm"></p>
+  <div class="overflow-x-auto mt-2"><table class="w-full text-sm"><thead class="text-xs uppercase bg-gray-50 dark:bg-gray-700"><tr><th class="px-4 py-2">Tag</th><th class="px-4 py-2">Resultado</th><th class="px-4 py-2">RSSI</th></tr></thead><tbody id="brows"></tbody></table></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let btimer = null;
+async function bpoll() {
+  const r = await fetch('/api/batch_status').then(r => r.json());
+  document.getElementById('bstart').disabled = r.running;
+  document.getElementById('bstop').disabled = !r.running;
+  document.getElementById('bmsg').textContent = r.running ? `Escribiendo… ${r.done}/${r.total}` : `Listo: ${r.done}/${r.total}.`;
+  const tb = document.getElementById('brows'); tb.innerHTML = '';
+  (r.rows || []).forEach(x => {
+    const tr = document.createElement('tr'); tr.className = 'border-b dark:border-gray-700';
+    tr.innerHTML = `<td class="px-4 py-2 font-mono">${x.epc}</td><td class="px-4 py-2">${x.result}</td><td class="px-4 py-2">${x.rssi}</td>`;
+    tb.appendChild(tr);
+  });
+  if (!r.running && btimer) { clearInterval(btimer); btimer = null; }
+}
+document.getElementById('bstart').onclick = async () => {
+  const r = await post('/api/batch_start', {epc: document.getElementById('bepc').value, total: parseInt(document.getElementById('btotal').value) || 10, check: document.getElementById('bcheck').checked});
+  if (!r.ok) { document.getElementById('bmsg').textContent = 'Error: ' + r.error; return; }
+  btimer = setInterval(bpoll, 500); bpoll();
+};
+document.getElementById('bstop').onclick = async () => { await post('/api/batch_stop', {}); };
+bpoll();
+</script>
+{% endblock %}

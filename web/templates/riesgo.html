@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Peligroso{% endblock %}
+{% block content %}
+<div class="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-1 text-red-800 dark:text-red-200">Zona peligrosa</h2>
+  <p class="text-sm mb-2">Un mal bloqueo deja el tag inservible para siempre y un comando crudo puede dejar el lector en un estado inconsistente. <label class="font-semibold"><input type="checkbox" id="riskack"> Entiendo el riesgo</label></p>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">A · Bloquear tag (Gen2, cmd 0x05)</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <input id="lkdata" value="00000000" title="lock data 4 bytes hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <input id="lkact" value="00" title="action hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <button id="lkgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2 md:col-span-2">Bloquear (irreversible)</button>
+  </div>
+  <p id="lkout" class="mt-1 text-sm"></p>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">B · Comando crudo (CFHid_SendCommand)</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <input id="rcmd" value="10" title="cmd hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <input id="rpay" placeholder="payload hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <input id="rtime" value="400" title="timeout ms" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
+    <button id="rgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2">Enviar comando crudo</button>
+  </div>
+  <p class="text-xs mt-1 text-gray-500">BLOQUEADOS: 0x2B/0x2C/0x2D (firmware) y 0x65 (Kill6C, mata un tag).</p>
+  <p id="rout" class="mt-1 text-sm"></p>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+  <h2 class="text-lg font-semibold mb-3">C · CryptWrite (experimental)</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <input id="cwmode" value="00" title="mode hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <input id="cwpwd" placeholder="password" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <button id="cwgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2 md:col-span-2">Aplicar CryptWrite</button>
+  </div>
+  <p class="text-xs mt-1 text-gray-500">0x2F con payload [mode][0x55][pass]. Este firmware (7.1) no responde a 0x2E/0x2F: área en desarrollo.</p>
+  <p id="cwout" class="mt-1 text-sm"></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function ack() { if (!document.getElementById('riskack').checked) { alert('Marcá "Entiendo el riesgo" primero.'); return false; } if (!confirm('Operación irreversible/peligrosa. ¿Confirmás?')) return false; return true; }
+document.getElementById('lkgo').onclick = async () => {
+  if (!ack()) return;
+  const r = await post('/api/lock', {data: document.getElementById('lkdata').value, action: document.getElementById('lkact').value, ack: true});
+  document.getElementById('lkout').textContent = r.ok ? ('Lock: ' + (r.accepted ? 'aceptado' : 'rechazado')) : 'Error: ' + r.error;
+};
+document.getElementById('rgo').onclick = async () => {
+  if (!ack()) return;
+  const r = await post('/api/raw', {cmd: document.getElementById('rcmd').value, payload: document.getElementById('rpay').value, timeout: document.getElementById('rtime').value, ack: true});
+  document.getElementById('rout').textContent = r.ok ? ('Respuesta: ' + (r.answered ? 'el lector respondió' : 'sin respuesta')) : 'Error: ' + r.error;
+};
+document.getElementById('cwgo').onclick = async () => {
+  if (!ack()) return;
+  const r = await post('/api/cryptwrite', {mode: document.getElementById('cwmode').value, pwd: document.getElementById('cwpwd').value, ack: true});
+  document.getElementById('cwout').textContent = r.ok ? 'Enviado.' : 'Error: ' + r.error;
+};
+</script>
+{% endblock %}

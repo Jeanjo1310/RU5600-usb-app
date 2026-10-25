@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Lectura continua{% endblock %}
+{% block content %}
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Lectura continua (stream)</h2>
+  <div class="flex flex-wrap items-center gap-2 mb-2">
+    <button id="astart" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Iniciar</button>
+    <button id="astop" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2" disabled>Parar</button>
+    <span id="astatus" class="text-sm text-gray-600 dark:text-gray-300">Detenido.</span>
+    <span class="flex-1"></span>
+    <input id="mdur" type="number" value="10" min="1" class="bg-gray-50 border rounded-lg p-2 w-20 dark:bg-gray-700" title="segundos">
+    <button id="mgo" class="border rounded-lg px-4 py-2">Medir antena</button>
+  </div>
+  <p id="mout" class="text-sm mb-2"></p>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left text-gray-600 dark:text-gray-300">
+      <thead class="text-xs uppercase bg-gray-50 dark:bg-gray-700"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">TID</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Ant</th><th class="px-4 py-2">Veces</th></tr></thead>
+      <tbody id="arows"></tbody>
+    </table>
+  </div>
+  <p class="mt-2 text-sm text-gray-500">Crudo + chip-primero como en Barrido. La relectura suma veces, no filas.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let seen = 0, counts = {}, timer = null;
+function key(t) { return (t.raw || t.epc) + '|' + (t.ant || ''); }
+async function poll() {
+  const r = await fetch('/api/active_tags').then(r => r.json());
+  document.getElementById('astart').disabled = r.running;
+  document.getElementById('astop').disabled = !r.running;
+  document.getElementById('astatus').textContent = r.running ? `Leyendo… ${r.tags.length} tags` : `Detenido. ${r.tags.length} tags.`;
+  const tb = document.getElementById('arows');
+  r.tags.forEach((t, i) => {
+    let row = document.getElementById('arow' + i);
+    if (!row) { row = document.createElement('tr'); row.id = 'arow' + i; row.className = 'border-b dark:border-gray-700'; tb.appendChild(row); }
+    row.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono" title="${t.raw}">${t.epc}</td><td class="px-4 py-2 font-mono">${t.tid || '-'}</td><td class="px-4 py-2">${t.chip}</td><td class="px-4 py-2">${t.ant}</td><td class="px-4 py-2">${t.n}</td>`;
+  });
+  while (tb.children.length > r.tags.length) tb.removeChild(tb.lastChild);
+}
+document.getElementById('astart').onclick = async () => { await post('/api/active_start', {}); timer = setInterval(poll, 500); poll(); };
+document.getElementById('astop').onclick = async () => { await post('/api/active_stop', {}); };
+document.getElementById('mgo').onclick = async () => {
+  document.getElementById('mout').textContent = 'Midiendo...';
+  const r = await post('/api/measure', {seconds: parseFloat(document.getElementById('mdur').value) || 10});
+  document.getElementById('mout').textContent = r.ok ? `${r.det} detecciones (${r.dps}/s), RSSI avg ${r.rssi}` : 'Error: ' + r.error;
+};
+poll();
+</script>
+{% endblock %}
