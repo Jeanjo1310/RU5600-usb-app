@@ -225,7 +225,7 @@ class ReaderApp(Gtk.Window):
         lang.add(lg)
         self.cb_lang = Gtk.ComboBoxText()
         for name, code in LANGUAGES:
-            self.cb_lang.append(name, code)
+            self.cb_lang.append(code, name)
         self.cb_lang.set_active(0)
         self.cb_lang.set_tooltip_text(
             "Language of the interface. It can be changed at any moment.")
