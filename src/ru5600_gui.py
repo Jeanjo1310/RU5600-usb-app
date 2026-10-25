@@ -932,7 +932,7 @@ class ReaderApp(Gtk.Window):
         self.entry_cw_pass.set_placeholder_text("password del cifrado")
         cg.attach(Gtk.Label(label="Mode:", xalign=0), 0, 0, 1, 1)
         cg.attach(self.entry_cw_mode, 1, 0, 1, 1)
-        cg.attach(Gtk.Label(label="Pass:", xalign=0), 2, 0, 1, 1)
+        cg.attach(Gtk.Label(label="Access password:", xalign=0), 2, 0, 1, 1)
         cg.attach(self.entry_cw_pass, 3, 0, 1, 1)
         b_cw = Gtk.Button(label="Aplicar CryptWrite")
         b_cw.connect("clicked", lambda *_: self.on_cryptwrite())
