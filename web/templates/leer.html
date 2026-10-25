@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Leer/Escribir{% endblock %}
+{% block content %}
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Leer memoria del tag</h2>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
+    <select id="rmem" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option value="1">EPC</option><option value="2">TID</option><option value="3">USER</option><option value="0">RESERVED</option></select>
+    <input id="rptr" value="00" title="Word inicial (hex)" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
+    <input id="rlen" value="06" title="Palabras (hex)" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
+    <input id="rpwd" value="00000000" title="Password 4 bytes hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <button id="rgo" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Leer</button>
+  </div>
+  <pre id="rout" class="font-mono text-sm whitespace-pre-wrap">-</pre>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Escribir memoria (verificada)</h2>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
+    <select id="wmem" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option value="3">USER</option><option value="1">EPC</option><option value="0">RESERVED</option></select>
+    <input id="wptr" value="00" title="Word inicial (hex)" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
+    <input id="wdata" placeholder="datos hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <input id="wpwd" value="00000000" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <button id="wgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2">Escribir</button>
+  </div>
+  <label class="text-sm"><input type="checkbox" id="wfp"> Verificar huella antes de escribir</label>
+  <p id="wout" class="mt-1 text-sm"></p>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+  <h2 class="text-lg font-semibold mb-3">Huella (anti-clonado)</h2>
+  <button id="fplearn" class="border rounded-lg px-4 py-2 mr-2">Aprender huella del tag actual</button>
+  <button id="fpcheck" class="border rounded-lg px-4 py-2">Verificar huella</button>
+  <p id="fpout" class="mt-1 text-sm"></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('rgo').onclick = async () => {
+  const r = await post('/api/mem_read', {mem: parseInt(document.getElementById('rmem').value), ptr: document.getElementById('rptr').value, count: document.getElementById('rlen').value, pwd: document.getElementById('rpwd').value});
+  document.getElementById('rout').textContent = r.ok ? r.hex : 'Error: ' + r.error;
+};
+document.getElementById('wgo').onclick = async () => {
+  if (!confirm('Escribir en el tag. ¿Confirmás?')) return;
+  const r = await post('/api/mem_write', {mem: parseInt(document.getElementById('wmem').value), ptr: document.getElementById('wptr').value, data: document.getElementById('wdata').value, pwd: document.getElementById('wpwd').value, fp: document.getElementById('wfp').checked});
+  document.getElementById('wout').textContent = r.ok ? 'Escrito y verificado.' : 'Error: ' + r.error;
+};
+document.getElementById('fplearn').onclick = async () => {
+  const r = await post('/api/fp_learn', {});
+  document.getElementById('fpout').textContent = r.ok ? 'Huella: ' + r.tid : 'Error: ' + r.error;
+};
+document.getElementById('fpcheck').onclick = async () => {
+  const r = await post('/api/fp_check', {});
+  document.getElementById('fpout').textContent = r.ok ? ('OK: ' + r.msg) : 'Error: ' + r.error;
+};
+</script>
+{% endblock %}

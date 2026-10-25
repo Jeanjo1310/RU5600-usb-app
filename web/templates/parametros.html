@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Parámetros{% endblock %}
+{% block content %}
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Parámetros del lector</h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+    <div><label class="block text-sm mb-1">RF Power <select id="rf" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></select></label></div>
+    <div><label class="block text-sm mb-1">Banda <select id="band" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></select></label></div>
+    <div><label class="block text-sm mb-1">WorkMode <select id="wm" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></label></div>
+    <div><label class="block text-sm mb-1">FilterTime(s) <input id="filt" value="0" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label></div>
+    <div><label class="block text-sm mb-1">Buzzer <input id="beep" type="checkbox" class="ml-2"></label></div>
+  </div>
+  <div class="flex gap-2">
+    <button id="pread" class="border rounded-lg px-4 py-2">Leer</button>
+    <button id="papply" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Aplicar</button>
+    <button id="pdef" class="border rounded-lg px-4 py-2">Defecto</button>
+  </div>
+  <p id="pmsg" class="mt-2 text-sm"></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadBands() {
+  for (let v = 0; v <= 30; v++) { const o = document.createElement('option'); o.textContent = v + 'dBm'; document.getElementById('rf').appendChild(o); }
+  const bands = ["USA","Europe","China","Korea","Australia","Singapore","Taiwan","Canada","Brazil","Israel","South Africa","Thailand","Malaysia","Japan","New Zealand","India","Hongkong","Mexico"];
+  const b = document.getElementById('band'); bands.forEach(x => { const o = document.createElement('option'); o.textContent = x; b.appendChild(o); });
+}
+loadBands();
+document.getElementById('pread').onclick = async () => {
+  const r = await post('/api/params_read', {});
+  if (r.ok) {
+    document.getElementById('rf').selectedIndex = r.rf;
+    document.getElementById('wm').value = String(r.mode);
+    document.getElementById('beep').checked = !!r.beep;
+    document.getElementById('filt').value = r.filter;
+    document.getElementById('pmsg').textContent = 'Frecuencia: ' + r.freq;
+  } else document.getElementById('pmsg').textContent = 'Error: ' + r.error;
+};
+document.getElementById('papply').onclick = async () => {
+  const r = await post('/api/params_apply', {rf: document.getElementById('rf').selectedIndex, mode: parseInt(document.getElementById('wm').value), beep: document.getElementById('beep').checked, filter: document.getElementById('filt').value});
+  document.getElementById('pmsg').textContent = r.ok ? 'Aplicado.' : 'Error: ' + r.error;
+};
+document.getElementById('pdef').onclick = () => {
+  document.getElementById('rf').selectedIndex = 15;
+  document.getElementById('band').selectedIndex = 0;
+  document.getElementById('wm').value = '0';
+  document.getElementById('filt').value = '0';
+  document.getElementById('beep').checked = true;
+  document.getElementById('pmsg').textContent = 'Defecto (UI). Usá Aplicar para mandarlo al lector.';
+};
+</script>
+{% endblock %}

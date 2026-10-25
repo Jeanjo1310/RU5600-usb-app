@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Avanzado{% endblock %}
+{% block content %}
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Frecuencia</h2>
+  <div class="flex flex-wrap items-end gap-2">
+    <select id="band" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"></select>
+    <button id="fread" class="border rounded-lg px-4 py-2">Leer</button>
+    <button id="fset" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Grabar banda</button>
+    <span id="fraw" class="font-mono text-sm">frec. cruda: -</span>
+  </div>
+  <p id="fmsg" class="mt-1 text-sm"></p>
+</div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+  <h2 class="text-lg font-semibold mb-3">Dispositivo</h2>
+  <button id="reboot" class="text-white bg-yellow-600 hover:bg-yellow-700 rounded-lg px-4 py-2">Reiniciar lector</button>
+  <p id="rmsg" class="mt-1 text-sm"></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const bands = ["USA","Europe","China","Korea","Australia","Singapore","Taiwan","Canada","Brazil","Israel","South Africa","Thailand","Malaysia","Japan","New Zealand","India","Hongkong","Mexico"];
+const b = document.getElementById('band'); bands.forEach(x => { const o = document.createElement('option'); o.textContent = x; b.appendChild(o); });
+document.getElementById('fread').onclick = async () => {
+  const r = await post('/api/freq_read', {});
+  document.getElementById('fmsg').textContent = r.ok ? 'OK' : 'Error: ' + r.error;
+  if (r.ok) document.getElementById('fraw').textContent = 'frec. cruda: ' + r.raw;
+};
+document.getElementById('fset').onclick = async () => {
+  const r = await post('/api/freq_set', {band: document.getElementById('band').value});
+  document.getElementById('fmsg').textContent = r.ok ? 'Banda aplicada.' : 'Error: ' + r.error;
+};
+document.getElementById('reboot').onclick = async () => {
+  const r = await post('/api/reboot', {});
+  document.getElementById('rmsg').textContent = r.ok ? 'Reinicio enviado. Reabrí la conexión en ~30s.' : 'Error: ' + r.error;
+};
+</script>
+{% endblock %}

@@ -71,6 +71,196 @@ def conn_state():
     return jsonify(open=False, mode=_net_info.get("mode", "usb"), info={})
 
 
+def _need_usb():
+    if _reader is None or not _reader.is_open:
+        raise RuntimeError("Abrí la conexión primero (pestaña Conexión).")
+    return _reader
+
+
+@app.route("/parametros")
+def parametros():
+    return render_template("parametros.html")
+
+
+@app.route("/leer")
+def leer():
+    return render_template("leer.html")
+
+
+@app.route("/chip")
+def chip():
+    return render_template("chip.html")
+
+
+@app.route("/avanzado")
+def avanzado():
+    return render_template("avanzado.html")
+
+
+@app.route("/api/params_read", methods=["POST"])
+def api_params_read():
+    try:
+        r = _need_usb()
+        return jsonify(ok=True, rf=r.rf_power(), mode=r.work_mode(),
+                       beep=r.beep(), filter=r.filter_time(),
+                       freq=r.read_freq().hex().upper())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/params_apply", methods=["POST"])
+def api_params_apply():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        r = _need_usb()
+        if "rf" in cfg:
+            r.set_rf_power(int(cfg["rf"]))
+        if "mode" in cfg:
+            r.set_work_mode(int(cfg["mode"]))
+        if "beep" in cfg:
+            r.set_beep(bool(cfg["beep"]))
+        if "filter" in cfg:
+            r.set_filter_time(int(cfg["filter"]))
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+def _hex(b, n=4, default=b"\x00" * 4):
+    try:
+        v = bytes.fromhex((b or "").replace(" ", ""))
+        return v if len(v) == n else default
+    except ValueError:
+        return default
+
+
+@app.route("/api/mem_read", methods=["POST"])
+def api_mem_read():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        r = _need_usb()
+        data = r.read_card(int(cfg.get("mem", 1)),
+                           int(str(cfg.get("ptr", "00")), 16),
+                           int(str(cfg.get("count", "06")), 16),
+                           _hex(cfg.get("pwd")))
+        out = data.hex().upper()
+        if int(cfg.get("mem", 1)) == 1 and len(data) >= 4:
+            out += "  (word 0-1 = CRC + PC, el EPC arranca en word 2)"
+        return jsonify(ok=True, hex=out)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/mem_write", methods=["POST"])
+def api_mem_write():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        r = _need_usb()
+        data = bytes.fromhex(str(cfg.get("data", "")).replace(" ", ""))
+        if len(data) % 2:
+            return jsonify(ok=False, error="hex par (palabras de 2 bytes)")
+        if cfg.get("fp"):
+            from ru5600_core import check_fingerprint
+            tags = r.scan()
+            if not tags:
+                return jsonify(ok=False, error="sin tag a la vista")
+            okfp, msg = check_fingerprint(r, tags[0].epc or tags[0].raw_id)
+            if not okfp:
+                return jsonify(ok=False, error="huella: " + msg)
+        r.write_card_verified(data, int(cfg.get("mem", 3)),
+                              int(str(cfg.get("ptr", "00")), 16),
+                              _hex(cfg.get("pwd")))
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/fp_learn", methods=["POST"])
+def api_fp_learn():
+    try:
+        from ru5600_core import learn_fingerprint
+        r = _need_usb()
+        tags = r.scan()
+        if not tags:
+            return jsonify(ok=False, error="sin tag a la vista")
+        tid = learn_fingerprint(r, tags[0].epc or tags[0].raw_id)
+        return jsonify(ok=True, tid=tid)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/fp_check", methods=["POST"])
+def api_fp_check():
+    try:
+        from ru5600_core import check_fingerprint
+        r = _need_usb()
+        tags = r.scan()
+        if not tags:
+            return jsonify(ok=False, error="sin tag a la vista")
+        ok, msg = check_fingerprint(r, tags[0].epc or tags[0].raw_id)
+        return jsonify(ok=ok, msg=msg)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/chip_analyze", methods=["POST"])
+def api_chip_analyze():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        from ru5600_chip import analyze_chip, format_report
+        r = _need_usb()
+        rep = analyze_chip(r, _hex(cfg.get("pwd")),
+                           deep=bool(cfg.get("deep")))
+        return jsonify(ok=True, report=format_report(rep))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/pwd_test", methods=["POST"])
+def api_pwd_test():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        r = _need_usb()
+        r.read_card(1, 0, 2, _hex(cfg.get("pwd")), retries=2)
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/freq_read", methods=["POST"])
+def api_freq_read():
+    try:
+        r = _need_usb()
+        return jsonify(ok=True, raw=r.read_freq().hex().upper())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/freq_set", methods=["POST"])
+def api_freq_set():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        from ru5600_core import FREQ_BANDS
+        r = _need_usb()
+        band = str(cfg.get("band", "USA"))
+        if band not in FREQ_BANDS:
+            return jsonify(ok=False, error="banda desconocida")
+        r.set_freq(band)
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/reboot", methods=["POST"])
+def api_reboot():
+    try:
+        r = _need_usb()
+        r._lib.CFHid_RebootDevice(0xFF)
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
 @app.route("/api/open", methods=["POST"])
 def api_open():
     global _reader, _net_reader
