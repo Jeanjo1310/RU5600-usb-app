@@ -15,7 +15,7 @@ import traceback
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -37,6 +37,39 @@ from ru5600_core import (  # noqa: E402
 APP_TITLE = "RU5600 Reader"
 USB_VID = "1a86"
 USB_PID = "e010"
+
+# Web-like stylesheet (lo mas cercano a Tailwind en GTK3: CSS propio).
+# El toggle claro/oscuro cambia de provider = garantizado en vivo,
+# sin depender del tema del escritorio.
+DARK_CSS = b"""
+window, box, notebook { background-color: #2b2b2b; color: #e6e6e6; }
+label, checkbutton, radiobutton { color: #e6e6e6; }
+button { background-color: #3a3a3a; color: #e6e6e6;
+         border: 1px solid #555555; border-radius: 6px; padding: 6px 12px; }
+button:hover { background-color: #454545; }
+button:disabled { color: #888888; }
+entry { background-color: #333333; color: #e6e6e6;
+        border: 1px solid #555555; border-radius: 6px; padding: 4px 8px; }
+frame { border: 1px solid #555555; border-radius: 8px; }
+notebook tab { background-color: #333333; padding: 6px 12px; }
+notebook tab:checked { background-color: #404040; }
+treeview { background-color: #262626; color: #e6e6e6; }
+"""
+
+LIGHT_CSS = b"""
+window, box, notebook { background-color: #f5f5f5; color: #222222; }
+label, checkbutton, radiobutton { color: #222222; }
+button { background-color: #ffffff; color: #222222;
+         border: 1px solid #cccccc; border-radius: 6px; padding: 6px 12px; }
+button:hover { background-color: #e8f0fe; }
+button:disabled { color: #999999; }
+entry { background-color: #ffffff; color: #222222;
+        border: 1px solid #cccccc; border-radius: 6px; padding: 4px 8px; }
+frame { border: 1px solid #cccccc; border-radius: 8px; }
+notebook tab { background-color: #e8e8e8; padding: 6px 12px; }
+notebook tab:checked { background-color: #ffffff; }
+treeview { background-color: #ffffff; color: #222222; }
+"""
 
 
 def _usb_readers() -> list:
@@ -153,8 +186,11 @@ class ReaderApp(Gtk.Window):
     def _build_ui(self):
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.add(root)
-        Gtk.Settings.get_default().set_property(
-            "gtk-application-prefer-dark-theme", True)
+        self._css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), self._css,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._apply_theme(False)
 
         # ---------------- notebook (full width) --------------------------
         # The connection panel used to live on the left; since 2026-10-26
@@ -369,9 +405,13 @@ class ReaderApp(Gtk.Window):
         self.nb.append_page(box, lbl_tab)
 
     def on_light_theme(self, *_):
+        self._apply_theme(self.chk_light.get_active())
+
+    def _apply_theme(self, light):
+        self._css.load_from_data(LIGHT_CSS if light else DARK_CSS)
         Gtk.Settings.get_default().set_property(
-            "gtk-application-prefer-dark-theme",
-            not self.chk_light.get_active())
+            "gtk-application-prefer-dark-theme", not light)
+        self.queue_draw()
 
     def _install_accelerators(self):
         """Keyboard shortcuts: Ctrl+letter for actions, Alt+1..6 for tabs."""
