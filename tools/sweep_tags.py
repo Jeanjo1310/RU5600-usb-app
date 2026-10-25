@@ -118,7 +118,17 @@ def main():
                     flush=True))
             for tag in fresh:
                 blob = bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)
-                key = blob[:24].hex().upper()
+                # Identidad = EPC+TID (el TID nunca se clona). Mismo nucleo
+                # = repeats del mismo tag (cuentan, sirven para Measure de
+                # a 1). Mismo EPC + distinto TID = gemelos: mismo codigo
+                # de lectura, tags distintos. Sin layout conocido, crudo.
+                if len(blob) >= 24 and blob[0] == 0xE2 and blob[12] == 0xE2:
+                    key = blob[:24].hex().upper()          # layout B
+                elif (len(blob) >= 36 and blob[0] == 0xE2 and blob[24] == 0xE2
+                        and all(b == 0 for b in blob[12:24])):
+                    key = (blob[:12] + blob[24:36]).hex().upper()  # layout A
+                else:
+                    key = blob.hex().upper()
                 groups.setdefault(key, {"blob": blob, "n": 0,
                                          "epc": "?", "chip": "interpreter pending",
                                          "xl": "-", "conf": ""})
