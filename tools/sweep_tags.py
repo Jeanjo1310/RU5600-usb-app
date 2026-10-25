@@ -39,27 +39,19 @@ def load_excel(path):
     return idx, codes
 
 
-def resolve_group(reader, blob, bhe, idx, codes):
+def resolve_group(reader, blob, bhe, idx, codes, shared_tids=()):
     """Dato completo de un grupo: TID directo + carve + excel.
 
-    Devuelve (epc, chip, xl, conf). conf = confirmado | patron | excel | "".
+    Devuelve (epc, chip, xl, conf). conf = confirmado | patron | excel |
+    candidato | "". shared_tids: TIDs votados en la vuelta (censo barato
+    compartido); el TID del grupo tiene que estar DENTRO del blob.
     Sin discriminacion de modelo: si el layout es desconocido, el EPC
     candidato (slot inicial) + prefijo TID en DB se validan contra el
     excel — un match exacto entre 1001 EPCs no es coincidencia.
     """
     from ru5600_core import interpret_active_blob
     epc, chip, xl, conf = "?", "interpreter pending", "-", ""
-    votes = {}
-    for _ in range(3):
-        try:
-            t = reader.read_card(2, 0, 6, b"\x00" * 4, retries=1)
-            if t and len(t) >= 4 and t[0] == 0xE2:
-                votes[t] = votes.get(t, 0) + 1
-        except Exception:  # noqa: BLE001 - lector intermitente
-            pass
-    if votes:
-        tid = max(votes.items(), key=lambda kv: kv[1])[0]
-        the = tid.hex().upper()
+    for the in shared_tids:
         if the in bhe:
             prefix = the[:8]
             e, _, pending = interpret_active_blob(blob, prefix)
@@ -69,6 +61,7 @@ def resolve_group(reader, blob, bhe, idx, codes):
                 conf = "confirmado"
                 if idx is not None:
                     xl = idx.get(epc, "NO ESTA (nuevo)")
+                break
     if not conf:
         from ru5600_chip import TID_PREFIX_DB
         cand, tp = None, None
@@ -87,7 +80,8 @@ def resolve_group(reader, blob, bhe, idx, codes):
         # Sin discriminacion de modelo: el slot EPC abre el blob en todos
         # los layouts vistos. Candidato + cruce excel: un match exacto
         # entre 1001 EPCs valida; si no esta, code 7-14 manda (duplicado
-        # = modificar, limpio = usable).
+        # = modificar, limpio = usable). Siempre asigna: pendiente no es
+        # un estado util para el barrido.
         cand = blob[0:12].hex().upper()
         hit = idx.get(cand)
         if hit is not None:
@@ -98,6 +92,10 @@ def resolve_group(reader, blob, bhe, idx, codes):
             if code in codes:
                 epc, chip = cand, "desconocido (patron)"
                 xl, conf = f"code {code} DUPLICADO", "patron"
+            else:
+                epc = cand
+                chip = "desconocido (candidato)"
+                xl, conf = "NO ESTA (nuevo)", "candidato"
     return epc, chip, xl, conf
 
 
@@ -154,10 +152,34 @@ def main():
                                          "epc": "?", "chip": "interpreter pending",
                                          "xl": "-", "conf": ""})
                 groups[key]["n"] += 1
+            # Censo TID compartido de la vuelta (6 lecturas, no 3xN).
+            # Barato y caza tags que no streamean (ej H10).
+            shared_tids = set()
+            for _ in range(6):
+                try:
+                    t = reader.read_card(2, 0, 6, b"\x00" * 4, retries=1)
+                    if t and len(t) >= 4 and t[0] == 0xE2:
+                        shared_tids.add(t.hex().upper())
+                except Exception:  # noqa: BLE001 - lector intermitente
+                    pass
             for key, g in groups.items():
                 if not g["conf"]:
                     g["epc"], g["chip"], g["xl"], g["conf"] = resolve_group(
-                        reader, g["blob"], g["blob"].hex().upper(), idx, codes)
+                        reader, g["blob"], g["blob"].hex().upper(), idx, codes,
+                        shared_tids)
+            for the in shared_tids:
+                if any(the in g["blob"].hex().upper() for g in groups.values()):
+                    continue
+                from ru5600_chip import decode_tid
+                try:
+                    info = decode_tid(bytes.fromhex(the))
+                    chip = f"{info.manufacturer} {info.model}"
+                except Exception:  # noqa: BLE001
+                    chip = "desconocido"
+                groups["TID:" + the] = {"blob": bytes.fromhex(the), "n": 1,
+                                        "epc": "?", "chip": chip,
+                                        "xl": "-", "conf": "presente",
+                                        "note": "no streamea, solo direccionado"}
             done = sum(1 for g in groups.values() if g["conf"])
             print(f"vuelta: {len(groups)} grupos, {done} con dato completo{meta}",
                   flush=True)
