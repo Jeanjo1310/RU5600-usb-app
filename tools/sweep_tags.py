@@ -36,103 +36,121 @@ def load_excel(path):
     return idx
 
 
-KNOWN_PREFIXES = ("E2803821", "E2803813", "E2801105", "E2806894", "E2806915",
-                  "E2003412")
+def resolve_group(reader, blob, bhe, idx):
+    """Dato completo de un grupo: TID directo + carve + excel.
+
+    Devuelve (epc, chip, xl, conf). conf = confirmado | patron | "".
+    """
+    from ru5600_core import interpret_active_blob
+    epc, chip, xl, conf = "?", "interpreter pending", "-", ""
+    votes = {}
+    for _ in range(3):
+        try:
+            t = reader.read_card(2, 0, 6, b"\x00" * 4, retries=1)
+            if t and len(t) >= 4 and t[0] == 0xE2:
+                votes[t] = votes.get(t, 0) + 1
+        except Exception:  # noqa: BLE001 - lector intermitente
+            pass
+    if votes:
+        tid = max(votes.items(), key=lambda kv: kv[1])[0]
+        the = tid.hex().upper()
+        if the in bhe:
+            prefix = the[:8]
+            e, _, pending = interpret_active_blob(blob, prefix)
+            if pending is None:
+                epc = e.hex().upper()
+                chip = prefix
+                conf = "confirmado"
+                if idx is not None:
+                    xl = idx.get(epc, "NO ESTA (nuevo)")
+    if not conf:
+        from ru5600_chip import TID_PREFIX_DB
+        cand, tp = None, None
+        if (len(blob) >= 24 and blob[0] == 0xE2 and blob[12] == 0xE2):
+            cand, tp = blob[0:12], blob[12:24]      # layout B
+        elif (len(blob) >= 36 and blob[0] == 0xE2 and blob[24] == 0xE2
+                and all(b == 0 for b in blob[12:24])):
+            cand, tp = blob[0:12], blob[24:36]      # layout A
+        if cand is not None and tp.hex().upper()[:8] in TID_PREFIX_DB:
+            epc = cand.hex().upper()
+            chip = tp.hex().upper()[:8] + " (patron)"
+            conf = "patron"
+            if idx is not None:
+                xl = idx.get(epc, "NO ESTA (nuevo)")
+    return epc, chip, xl, conf
 
 
 def main():
     ap = argparse.ArgumentParser(description="RU5600 persistent tag sweep")
     ap.add_argument("--target", type=int, default=0,
-                    help="meta informativa (ej 100/500); nunca detiene")
-    ap.add_argument("--seconds", type=float, default=90.0,
-                    help="presupuesto de tiempo; 0 = hasta Ctrl+C (orden de parar)")
+                    help="para cuando N grupos tengan dato completo (0 = sin meta)")
+    ap.add_argument("--seconds", type=float, default=120.0,
+                    help="presupuesto total; 0 = hasta Ctrl+C (orden de parar)")
+    ap.add_argument("--round", type=float, default=15.0,
+                    help="streaming por vuelta antes de resolver")
     args = ap.parse_args()
 
     reader = Ru5600Reader()
     reader.open()
     meta = f"/{args.target}" if args.target else ""
-    try:
-        t0 = time.monotonic()
-        tags = reader.sweep(
-            duration=args.seconds, target_count=args.target,
-            on_new=lambda tag, n: print(
-                f"  nuevo #{n}{meta} "
-                f"{(bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)).hex().upper()[:24]}",
-                flush=True))
-        dt = time.monotonic() - t0
-    finally:
-        reader.close()
-
     idx = None
     try:
-        # tools/ -> ru5600/tools, excel lives at <project>/CONOCIMIENTO/
         xl = os.path.normpath(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "..", "CONOCIMIENTO", "TAGS EPC.xlsx"))
         if os.path.exists(xl):
             idx = load_excel(xl)
-    except Exception as exc:  # noqa: BLE001 - excel is a bonus, not the read
+    except Exception as exc:  # noqa: BLE001 - excel is a bonus
         print(f"excel no cargado: {exc}")
 
-    print(f"barrido {dt:.0f}s: {len(tags)} lecturas")
-    # colision: mismo nucleo EPC+TID (24B) con colas distintas = doble
-    # lectura del mismo tag o tags gemelos (mismo EPC grabado). No se
-    # fusiona ni se duplica: se marca para verificar por TID directo.
-    groups = {}
-    for tag in tags:
-        blob = bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)
-        groups.setdefault(blob[:24].hex().upper(), []).append(tag)
-    print(f"grupos por nucleo: {len(groups)}")
+    groups, t0 = {}, time.monotonic()
+    dead_rounds = 0
+    try:
+        while True:
+            if args.seconds and time.monotonic() - t0 >= args.seconds:
+                print("presupuesto agotado");
+                break
+            fresh = reader.sweep(
+                duration=args.round,
+                on_new=lambda tag, n: print(
+                    f"  stream #{n}{meta} "
+                    f"{(bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)).hex().upper()[:24]}",
+                    flush=True))
+            for tag in fresh:
+                blob = bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)
+                key = blob[:24].hex().upper()
+                groups.setdefault(key, {"blob": blob, "n": 0,
+                                         "epc": "?", "chip": "interpreter pending",
+                                         "xl": "-", "conf": ""})
+                groups[key]["n"] += 1
+            for key, g in groups.items():
+                if not g["conf"]:
+                    g["epc"], g["chip"], g["xl"], g["conf"] = resolve_group(
+                        reader, g["blob"], g["blob"].hex().upper(), idx)
+            done = sum(1 for g in groups.values() if g["conf"])
+            print(f"vuelta: {len(groups)} grupos, {done} con dato completo{meta}",
+                  flush=True)
+            if not fresh:
+                dead_rounds += 1
+            else:
+                dead_rounds = 0
+            if dead_rounds >= 3:
+                print("lector mudo 3 vueltas: reboot + reintentar")
+                break
+            if args.target and done >= args.target:
+                print(f"listo: {done} tags con dato completo")
+                break
+    finally:
+        reader.close()
+
     n = 0
-    for core, members in groups.items():
-        flag = "" if len(members) == 1 else f" <- COLISION x{len(members)}: doble lectura o gemelos, verificar TID directo"
+    for key, g in groups.items():
         n += 1
-        tag = members[0]
-        blob = (bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc))
-        bhe = blob.hex().upper()
-        epc, chip, xl, conf = "?", "interpreter pending", "-", ""
-        # chip-primero de verdad: TID directo (votos) + el TID tiene que
-        # estar DENTRO del blob (dos fuentes independientes coinciden).
-        # Sin eso no hay carve, solo crudo.
-        votes = {}
-        for _ in range(3):
-            try:
-                t = reader.read_card(2, 0, 6, b"\x00" * 4, retries=1)
-                if t and len(t) >= 4 and t[0] == 0xE2:
-                    votes[t] = votes.get(t, 0) + 1
-            except Exception:  # noqa: BLE001 - lector intermitente
-                pass
-        if votes:
-            tid = max(votes.items(), key=lambda kv: kv[1])[0]
-            the = tid.hex().upper()
-            if the in bhe:
-                prefix = the[:8]
-                e, _, pending = interpret_active_blob(blob, prefix)
-                if pending is None:
-                    epc = e.hex().upper()
-                    chip = prefix
-                    conf = "confirmado"
-                    if idx is not None:
-                        xl = idx.get(epc, "NO ESTA (nuevo)")
-        if not conf:
-            # patron de alta probabilidad (Creador 2026-10-26): layout A/B
-            # + prefijo TID en DB con evidencia. Se informa como patron,
-            # el excel como tercera fuente lo respalda o lo tumba.
-            from ru5600_chip import TID_PREFIX_DB
-            cand, tp = None, None
-            if (len(blob) >= 24 and blob[0] == 0xE2 and blob[12] == 0xE2):
-                cand, tp = blob[0:12], blob[12:24]      # layout B
-            elif (len(blob) >= 36 and blob[0] == 0xE2 and blob[24] == 0xE2
-                    and all(b == 0 for b in blob[12:24])):
-                cand, tp = blob[0:12], blob[24:36]      # layout A
-            if cand is not None and tp.hex().upper()[:8] in TID_PREFIX_DB:
-                epc = cand.hex().upper()
-                chip = tp.hex().upper()[:8] + " (patron)"
-                conf = "patron"
-                if idx is not None:
-                    xl = idx.get(epc, "NO ESTA (nuevo)")
-        print(f"#{n} epc={epc[:32] if len(epc) > 32 else epc} "
-              f"chip={chip} excel={xl} {conf}{flag}")
+        bhe = g["blob"].hex().upper()
+        flag = "" if g["n"] == 1 else (
+            f" <- COLISION x{g['n']}: doble lectura o gemelos")
+        print(f"#{n} epc={g['epc'][:32] if len(g['epc']) > 32 else g['epc']} "
+              f"chip={g['chip']} excel={g['xl']} {g['conf']}{flag}")
         print(f"   blob {len(bhe) // 2}B {bhe[:64]}...")
     return 0
 
