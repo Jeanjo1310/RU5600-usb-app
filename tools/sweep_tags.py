@@ -66,8 +66,20 @@ def main():
     except Exception as exc:  # noqa: BLE001 - excel is a bonus, not the read
         print(f"excel no cargado: {exc}")
 
-    print(f"barrido {dt:.0f}s: {len(tags)} tags distintos (por blob crudo)")
-    for i, tag in enumerate(tags, 1):
+    print(f"barrido {dt:.0f}s: {len(tags)} lecturas")
+    # colision: mismo nucleo EPC+TID (24B) con colas distintas = doble
+    # lectura del mismo tag o tags gemelos (mismo EPC grabado). No se
+    # fusiona ni se duplica: se marca para verificar por TID directo.
+    groups = {}
+    for tag in tags:
+        blob = bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)
+        groups.setdefault(blob[:24].hex().upper(), []).append(tag)
+    print(f"grupos por nucleo: {len(groups)}")
+    n = 0
+    for core, members in groups.items():
+        flag = "" if len(members) == 1 else f" <- COLISION x{len(members)}: doble lectura o gemelos, verificar TID directo"
+        n += 1
+        tag = members[0]
         blob = (bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc))
         bhe = blob.hex().upper()
         epc, chip, xl = "?", "interpreter pending", "-"
@@ -93,8 +105,8 @@ def main():
                     chip = prefix
                     if idx is not None:
                         xl = idx.get(epc, "NO ESTA (nuevo)")
-        print(f"#{i} epc={epc[:32] if len(epc) > 32 else epc} "
-              f"chip={chip} excel={xl}")
+        print(f"#{n} epc={epc[:32] if len(epc) > 32 else epc} "
+              f"chip={chip} excel={xl}{flag}")
         print(f"   blob {len(bhe) // 2}B {bhe[:64]}...")
     return 0
 
