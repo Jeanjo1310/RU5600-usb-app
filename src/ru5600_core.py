@@ -272,14 +272,22 @@ def _library_base(lib) -> int:
 class Tag:
     """One Gen2 tag as reported by the reader.
 
-    The reader reports the tag id in a variable length slot that holds the
-    **whole EPC** (12 bytes for a 96 bit tag, 24 bytes for a 192 bit one) -
-    there is no padding.  ``raw_id`` keeps the slot as received.
+    Answer-mode inventory holds the **whole EPC** in the slot (12 bytes
+    for a 96 bit tag, 24 for a 192 bit one) - there is no padding.
+    ``raw_id`` keeps the slot as received.
+
+    Active-mode streaming packs a **compound** record instead: the EPC
+    slot (PC-padded with zeros, e.g. 12 data + 12 zeros for a 96 bit
+    EPC with PC 6000) followed by the TID.  ``epc`` is then the carved
+    EPC and ``tid`` the carved TID; ``raw_id`` keeps the full blob.
+    (REA P2 fix 2026-10-25: origin kept the 100 B blob as EPC, which
+    broke dedup/guard. RSSI position for compound records is pending.)
     """
 
     type: int = 0
     ant: int = 0
     epc: bytes = b""
+    tid: bytes = b""
     rssi: int = 0
     timestamp: Optional[bytes] = None
     raw: bytes = b""
@@ -442,16 +450,34 @@ def parse_tag_buffer(buf: bytes, count: int) -> List[Tag]:
         if id_len < 2:
             id_len = max(pack_len - 1, 0)
         epc = bytes(rec[2:id_len]) if id_len > 2 else b""
+        tid = b""
+        if not has_ts and id_len > 32:
+            # Active-mode compound record (REA P2 fix 2026-10-25, vendor
+            # demo dumps the whole blob as "Tag"): EPC slot PC-padded
+            # with zeros + TID (always ISO class 0xE2 first byte).
+            # 96 bit EPC = 12 data + 12 zero pad; longer EPCs keep 24 B.
+            blob = rec[2:id_len]
+            if len(blob) >= 24 and all(b == 0 for b in blob[12:24]):
+                epc = bytes(blob[0:12])
+                rest = blob[24:]
+            else:
+                epc = bytes(blob[0:24]) if len(blob) >= 24 else bytes(blob)
+                rest = blob[len(epc):]
+            for i in range(len(rest) - 11):
+                if rest[i] == 0xE2:
+                    tid = bytes(rest[i:i + 12])
+                    break
         ts = bytes(rec[id_len:id_len + 6]) if has_ts and id_len + 6 <= pack_len else None
         tags.append(
             Tag(
                 type=rec[0],
                 ant=rec[1],
                 epc=epc,
+                tid=tid,
                 rssi=rec[id_len] if id_len < pack_len else 0,
                 timestamp=ts,
                 raw=bytes(rec),
-                raw_id=epc,
+                raw_id=bytes(rec[2:id_len]),
             )
         )
         off += pack_len + 1
