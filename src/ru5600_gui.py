@@ -153,26 +153,6 @@ class ReaderApp(Gtk.Window):
     def _build_ui(self):
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.add(root)
-
-        # the language selector lives in its own bar so it is always
-        # at hand
-        langbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        langbar.set_border_width(4)
-        self.cb_lang = Gtk.ComboBoxText()
-        for name, code in LANGUAGES:
-            self.cb_lang.append(name, code)
-        self.cb_lang.set_active(0)
-        self.cb_lang.set_tooltip_text(
-            "Language of the interface. It can be changed at any moment.")
-        self.cb_lang.connect("changed", self.on_language)
-        langbar.pack_start(Gtk.Label(label="Language", xalign=0), False, False, 0)
-        langbar.pack_start(self.cb_lang, False, False, 0)
-        self.chk_light = Gtk.CheckButton(label="Light")
-        self.chk_light.set_tooltip_text(
-            "Light theme instead of dark.")
-        self.chk_light.connect("toggled", self.on_light_theme)
-        langbar.pack_end(self.chk_light, False, False, 0)
-        root.pack_start(langbar, False, False, 0)
         Gtk.Settings.get_default().set_property(
             "gtk-application-prefer-dark-theme", True)
 
@@ -185,142 +165,6 @@ class ReaderApp(Gtk.Window):
         self.nb.set_scrollable(True)
         root.pack_start(self.nb, True, True, 0)
         self._build_connection_tab()
-
-    def _build_connection_tab(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.set_border_width(12)
-
-        conn = Gtk.Frame(label="Connection")
-        lv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        lv.set_border_width(8)
-        conn.add(lv)
-
-        self.rb_usb = Gtk.RadioButton.new_with_label_from_widget(None, "USB")
-        self.rb_com = Gtk.RadioButton.new_with_label_from_widget(self.rb_usb, "COM")
-        self.rb_net = Gtk.RadioButton.new_with_label_from_widget(self.rb_usb, "Net")
-        for rb in (self.rb_usb, self.rb_com, self.rb_net):
-            lv.pack_start(rb, False, False, 0)
-        self.rb_usb.set_active(True)
-
-        grid = Gtk.Grid(column_spacing=8, row_spacing=6)
-        grid.set_border_width(8)
-        grid.set_column_homogeneous(False)
-        grid.set_border_width(8)
-        lv.pack_start(grid, False, False, 0)
-
-        self.cb_baud = Gtk.ComboBoxText()
-        for rate in ("9600bps", "19200bps", "38400bps", "57600bps",
-                     "115200bps", "230400bps"):
-            self.cb_baud.append_text(rate)
-        self.cb_baud.set_active(4)
-        grid.attach(Gtk.Label(label="Baudrate:", xalign=0), 0, 0, 1, 1)
-        grid.attach(self.cb_baud, 1, 0, 1, 1)
-
-        self.cb_device = Gtk.ComboBoxText()
-        grid.attach(Gtk.Label(label="Device:", xalign=0), 0, 1, 1, 1)
-        grid.attach(self.cb_device, 1, 1, 1, 1)
-
-        self.cb_transport = Gtk.ComboBoxText()
-        for t in ("USB", "COM", "Net"):
-            self.cb_transport.append_text(t)
-        self.cb_transport.set_active(0)
-        grid.attach(Gtk.Label(label="Interface:", xalign=0), 0, 2, 1, 1)
-        grid.attach(self.cb_transport, 1, 2, 1, 1)
-
-        self.cb_read_mode = Gtk.ComboBoxText()
-        for m in READ_MODES:
-            label = {"burst": "Burst (fastest)",
-                     "balanced": "Balanced",
-                     "reliable": "Reliable (8/8)"}[m]
-            self.cb_read_mode.append_text(label)
-        self.cb_read_mode.set_active(1)
-        self.cb_read_mode.set_tooltip_text(
-            "How hard the reader tries on a single detection:\n"
-            "Burst    - one poll, fastest, misses most of the time\n"
-            "Balanced - three polls\n"
-            "Reliable - keeps polling until the reader answers")
-        grid.attach(Gtk.Label(label="Read mode:", xalign=0), 0, 5, 1, 1)
-        grid.attach(self.cb_read_mode, 1, 5, 1, 1)
-
-        self.entry_ip = Gtk.Entry(text="192.168.1.250")
-        grid.attach(Gtk.Label(label="Net IP:", xalign=0), 0, 3, 1, 1)
-        grid.attach(self.entry_ip, 1, 3, 1, 1)
-
-        self.entry_port = Gtk.Entry(text="60000")
-        grid.attach(Gtk.Label(label="NetPort:", xalign=0), 0, 4, 1, 1)
-        grid.attach(self.entry_port, 1, 4, 1, 1)
-
-        btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        lv.pack_start(btns, False, False, 0)
-        self.btn_open = Gtk.Button(label="Open")
-        self.btn_close = Gtk.Button(label="Close")
-        self.btn_close.set_sensitive(False)
-        self.btn_open.connect("clicked", lambda *_: self.on_open())
-        self.btn_close.connect("clicked", lambda *_: self.on_close())
-        btns.pack_start(self.btn_open, True, True, 0)
-        btns.pack_start(self.btn_close, True, True, 0)
-
-        btns2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        lv.pack_start(btns2, False, False, 0)
-        for label, cb in (("ScanPort", self.on_scan_port),
-                          ("ScanNetwork", self.on_scan_network)):
-            b = Gtk.Button(label=label)
-            b.connect("clicked", cb)
-            btns2.pack_start(b, True, True, 0)
-
-        btns3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        lv.pack_start(btns3, False, False, 0)
-        for label, cb in (("TCPServer", self.on_tcp_server),
-                          ("Help", self.on_help)):
-            b = Gtk.Button(label=label)
-            b.connect("clicked", cb)
-            btns3.pack_start(b, True, True, 0)
-
-        self.btn_udev = Gtk.Button(label="Install USB access rule")
-        self.btn_udev.set_tooltip_text(
-            "Installs the udev rule that lets non-root users open the "
-            "reader (needs the administrator password)")
-        self.btn_udev.connect("clicked", self.on_install_udev)
-        lv.pack_start(self.btn_udev, False, False, 0)
-
-        box.pack_start(conn, False, False, 0)
-
-        # device identity
-        info = Gtk.Frame(label="Device")
-        ig = Gtk.Grid(column_spacing=8, row_spacing=6)
-        ig.set_border_width(8)
-        info.add(ig)
-        self.entry_sn = Gtk.Entry(); self.entry_sn.set_editable(False)
-        self.entry_fw = Gtk.Entry(); self.entry_fw.set_editable(False)
-        self.entry_hw = Gtk.Entry(); self.entry_hw.set_editable(False)
-        ig.attach(Gtk.Label(label="DeviceSN:", xalign=0), 0, 0, 1, 1)
-        ig.attach(self.entry_sn, 1, 0, 1, 1)
-        ig.attach(Gtk.Label(label="Firmware:", xalign=0), 0, 1, 1, 1)
-        ig.attach(self.entry_fw, 1, 1, 1, 1)
-        ig.attach(Gtk.Label(label="Hardware:", xalign=0), 0, 2, 1, 1)
-        ig.attach(self.entry_hw, 1, 2, 1, 1)
-        box.pack_start(info, False, False, 0)
-
-        cfg = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        box.pack_start(cfg, False, False, 0)
-        for label, cb in (("ExportConfig", self.on_export_config),
-                          ("ImportConfig", self.on_import_config)):
-            b = Gtk.Button(label=label)
-            b.connect("clicked", cb)
-            cfg.pack_start(b, True, True, 0)
-
-        relay = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        box.pack_start(relay, False, False, 0)
-        for label, cb in (("CloseRelay", lambda *_: self.on_relay(False)),
-                          ("ReleaseRelay", lambda *_: self.on_relay(True))):
-            b = Gtk.Button(label=label)
-            b.connect("clicked", cb)
-            relay.pack_start(b, True, True, 0)
-
-        lbl_tab = Gtk.Label(label="Connection")
-        self._tab_labels.append(lbl_tab)
-        self.nb.append_page(box, lbl_tab)
-
         self._build_param_tab()
         self._build_readwrite_tab()
         self._build_active_tab()
@@ -329,11 +173,6 @@ class ReaderApp(Gtk.Window):
         self._build_risky_tab()
         self._build_whitelist_tab()
         self._build_batchwrite_tab()
-
-    def on_light_theme(self, *_):
-        Gtk.Settings.get_default().set_property(
-            "gtk-application-prefer-dark-theme",
-            not self.chk_light.get_active())
 
         # ---------------- bottom action row ------------------------------
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
@@ -374,6 +213,165 @@ class ReaderApp(Gtk.Window):
 
         self.refresh_devices()
         self._install_accelerators()
+        self.on_language()
+
+    def _build_connection_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(12)
+
+        lang = Gtk.Frame(label="Language and theme")
+        lg = Gtk.Grid(column_spacing=12, row_spacing=6)
+        lg.set_border_width(8)
+        lang.add(lg)
+        self.cb_lang = Gtk.ComboBoxText()
+        for name, code in LANGUAGES:
+            self.cb_lang.append(name, code)
+        self.cb_lang.set_active(0)
+        self.cb_lang.set_tooltip_text(
+            "Language of the interface. It can be changed at any moment.")
+        self.cb_lang.connect("changed", self.on_language)
+        lg.attach(Gtk.Label(label="Language", xalign=0), 0, 0, 1, 1)
+        lg.attach(self.cb_lang, 1, 0, 1, 1)
+        self.chk_light = Gtk.CheckButton(label="Light")
+        self.chk_light.set_tooltip_text("Light theme instead of dark.")
+        self.chk_light.connect("toggled", self.on_light_theme)
+        lg.attach(self.chk_light, 2, 0, 1, 1)
+        box.pack_start(lang, False, False, 0)
+
+        conn = Gtk.Frame(label="Connection")
+        lv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        lv.set_border_width(8)
+        conn.add(lv)
+
+        self.rb_usb = Gtk.RadioButton.new_with_label_from_widget(None, "USB")
+        self.rb_com = Gtk.RadioButton.new_with_label_from_widget(self.rb_usb, "COM")
+        self.rb_net = Gtk.RadioButton.new_with_label_from_widget(self.rb_usb, "Net")
+        for rb in (self.rb_usb, self.rb_com, self.rb_net):
+            lv.pack_start(rb, False, False, 0)
+        self.rb_usb.set_active(True)
+
+        grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        grid.set_column_homogeneous(True)
+        grid.set_border_width(8)
+        lv.pack_start(grid, False, False, 0)
+
+        self.cb_baud = Gtk.ComboBoxText()
+        for rate in ("9600bps", "19200bps", "38400bps", "57600bps",
+                     "115200bps", "230400bps"):
+            self.cb_baud.append_text(rate)
+        self.cb_baud.set_active(4)
+
+        g_serial = Gtk.Grid(column_spacing=6, row_spacing=6)
+        g_serial.attach(Gtk.Label(label="Baudrate:", xalign=0), 0, 0, 1, 1)
+        g_serial.attach(self.cb_baud, 1, 0, 1, 1)
+        self.cb_device = Gtk.ComboBoxText()
+        g_serial.attach(Gtk.Label(label="Device:", xalign=0), 0, 1, 1, 1)
+        g_serial.attach(self.cb_device, 1, 1, 1, 1)
+        grid.attach(g_serial, 0, 0, 1, 1)
+
+        self.cb_transport = Gtk.ComboBoxText()
+        for t in ("USB", "COM", "Net"):
+            self.cb_transport.append_text(t)
+        self.cb_transport.set_active(0)
+        g_mode = Gtk.Grid(column_spacing=6, row_spacing=6)
+        g_mode.attach(Gtk.Label(label="Interface:", xalign=0), 0, 0, 1, 1)
+        g_mode.attach(self.cb_transport, 1, 0, 1, 1)
+
+        self.cb_read_mode = Gtk.ComboBoxText()
+        for m in READ_MODES:
+            label = {"burst": "Burst (fastest)",
+                     "balanced": "Balanced",
+                     "reliable": "Reliable (8/8)"}[m]
+            self.cb_read_mode.append_text(label)
+        self.cb_read_mode.set_active(1)
+        self.cb_read_mode.set_tooltip_text(
+            "How hard the reader tries on a single detection:\n"
+            "Burst    - one poll, fastest, misses most of the time\n"
+            "Balanced - three polls\n"
+            "Reliable - keeps polling until the reader answers")
+        g_mode.attach(Gtk.Label(label="Read mode:", xalign=0), 0, 1, 1, 1)
+        g_mode.attach(self.cb_read_mode, 1, 1, 1, 1)
+        grid.attach(g_mode, 2, 0, 1, 1)
+
+        self.entry_ip = Gtk.Entry(text="192.168.1.250")
+        self.entry_port = Gtk.Entry(text="60000")
+        g_net = Gtk.Grid(column_spacing=6, row_spacing=6)
+        g_net.attach(Gtk.Label(label="Net IP:", xalign=0), 0, 0, 1, 1)
+        g_net.attach(self.entry_ip, 1, 0, 1, 1)
+        g_net.attach(Gtk.Label(label="NetPort:", xalign=0), 0, 1, 1, 1)
+        g_net.attach(self.entry_port, 1, 1, 1, 1)
+        grid.attach(g_net, 1, 0, 1, 1)
+
+        btns = Gtk.Grid(column_spacing=6, row_spacing=6)
+        btns.set_column_homogeneous(True)
+        lv.pack_start(btns, False, False, 0)
+        self.btn_open = Gtk.Button(label="Open")
+        self.btn_close = Gtk.Button(label="Close")
+        self.btn_close.set_sensitive(False)
+        self.btn_open.connect("clicked", lambda *_: self.on_open())
+        self.btn_close.connect("clicked", lambda *_: self.on_close())
+        for b in (self.btn_open, self.btn_close):
+            b.set_hexpand(True)
+        btns.attach(self.btn_open, 0, 0, 1, 1)
+        btns.attach(self.btn_close, 1, 0, 1, 1)
+        row = 1
+        for label, cb in (("ScanPort", self.on_scan_port),
+                          ("ScanNetwork", self.on_scan_network),
+                          ("TCPServer", self.on_tcp_server),
+                          ("Help", self.on_help)):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", cb)
+            b.set_hexpand(True)
+            btns.attach(b, row % 2, row // 2 + 1, 1, 1)
+            row += 1
+
+        self.btn_udev = Gtk.Button(label="Install USB access rule")
+        self.btn_udev.set_tooltip_text(
+            "Installs the udev rule that lets non-root users open the "
+            "reader (needs the administrator password)")
+        self.btn_udev.connect("clicked", self.on_install_udev)
+        lv.pack_start(self.btn_udev, False, False, 0)
+
+        box.pack_start(conn, False, False, 0)
+
+        # device identity
+        info = Gtk.Frame(label="Device")
+        ig = Gtk.Grid(column_spacing=8, row_spacing=6)
+        ig.set_border_width(8)
+        info.add(ig)
+        self.entry_sn = Gtk.Entry(); self.entry_sn.set_editable(False)
+        self.entry_fw = Gtk.Entry(); self.entry_fw.set_editable(False)
+        self.entry_hw = Gtk.Entry(); self.entry_hw.set_editable(False)
+        ig.attach(Gtk.Label(label="DeviceSN:", xalign=0), 0, 0, 1, 1)
+        ig.attach(self.entry_sn, 1, 0, 1, 1)
+        ig.attach(Gtk.Label(label="Firmware:", xalign=0), 0, 1, 1, 1)
+        ig.attach(self.entry_fw, 1, 1, 1, 1)
+        ig.attach(Gtk.Label(label="Hardware:", xalign=0), 0, 2, 1, 1)
+        ig.attach(self.entry_hw, 1, 2, 1, 1)
+        box.pack_start(info, False, False, 0)
+
+        cfg = Gtk.Grid(column_spacing=6, row_spacing=6)
+        cfg.set_column_homogeneous(True)
+        box.pack_start(cfg, False, False, 0)
+        row = 0
+        for label, cb in (("ExportConfig", self.on_export_config),
+                          ("ImportConfig", self.on_import_config),
+                          ("CloseRelay", lambda *_: self.on_relay(False)),
+                          ("ReleaseRelay", lambda *_: self.on_relay(True))):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", cb)
+            b.set_hexpand(True)
+            cfg.attach(b, row % 2, row // 2, 1, 1)
+            row += 1
+
+        lbl_tab = Gtk.Label(label="Connection")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
+
+    def on_light_theme(self, *_):
+        Gtk.Settings.get_default().set_property(
+            "gtk-application-prefer-dark-theme",
+            not self.chk_light.get_active())
 
     def _install_accelerators(self):
         """Keyboard shortcuts: Ctrl+letter for actions, Alt+1..6 for tabs."""

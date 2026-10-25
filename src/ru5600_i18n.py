@@ -10,7 +10,7 @@ que tiene la app, asi que conviene que sea util.
 """
 from __future__ import annotations
 
-LANGUAGES = (("English", "en"), ("Espanol", "es"))
+LANGUAGES = (("Español", "es"), ("English", "en"))
 
 DEFAULT_LANG = "en"
 
