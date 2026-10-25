@@ -8,27 +8,24 @@
       <label class="mr-3"><input type="radio" class="radio radio-sm" name="lang" value="es" checked> Español</label>
       <label><input type="radio" class="radio radio-sm" name="lang" value="en"> English</label></div>
     <div><div class="text-sm text-gray-500 mb-1">Tema</div>
-      <label class="mr-3"><input type="radio" class="radio radio-sm" name="theme" value="dark" checked> Oscuro</label>
-      <label><input type="radio" class="radio radio-sm" name="theme" value="light"> Claro</label></div>
+      <label class="mr-3"><input type="radio" class="radio radio-sm" name="theme" value="dark"> Oscuro</label>
+      <label><input type="radio" class="radio radio-sm" name="theme" value="light" checked> Claro</label></div>
   </div>
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Conexión</h2>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
     <div>
-      <div class="text-sm text-gray-500 mb-1">Transporte</div>
-      <label class="block"><input type="radio" class="radio radio-sm" name="t" value="usb" checked> USB</label>
-      <label class="block"><input type="radio" class="radio radio-sm" name="t" value="com"> COM</label>
-      <label class="block"><input type="radio" class="radio radio-sm" name="t" value="net"> Net</label>
+      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Baudrate</span><select id="baud" class="select select-bordered select-sm flex-1"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></div>
+      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Puerto</span><select id="dev" class="select select-bordered select-sm flex-1"></select></div>
     </div>
     <div>
-      <label class="block mb-1 text-sm">Baudrate <select id="baud" class="select select-bordered"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></label>
-      <label class="block mb-1 text-sm">Puerto <select id="dev" class="select select-bordered"></select></label>
-      <label class="block text-sm">Modo de lectura <select id="mode" class="select select-bordered"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></label>
+      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">IP de red</span><input id="ip" value="192.168.1.250" class="input input-bordered input-sm flex-1"></div>
+      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Puerto de red</span><input id="port" value="60000" class="input input-bordered input-sm flex-1"></div>
     </div>
     <div>
-      <label class="block mb-1 text-sm">IP de red <input id="ip" value="192.168.1.250" class="input input-bordered w-full"></label>
-      <label class="block text-sm">Puerto de red <input id="port" value="60000" class="input input-bordered w-full"></label>
+      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Transporte</span><span class="flex gap-3"><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="usb" checked> USB</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="com"> COM</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="net"> Net</label></span></div>
+      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Modo de lectura</span><select id="mode" class="select select-bordered select-sm flex-1"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></div>
     </div>
   </div>
   <div class="grid grid-cols-2 gap-2">
@@ -116,7 +113,7 @@ document.getElementById('netBtn').onclick = async () => {
   const r = await post('/api/scan_net', {ip: document.getElementById('ip').value, port: document.getElementById('port').value});
   document.getElementById('connMsg').textContent = r.ok ? 'Red OK.' : ('Red: ' + r.error);
 };
-document.querySelectorAll('input[name=theme]').forEach(el => el.onchange = () => document.documentElement.classList.toggle('dark', document.querySelector('input[name=theme]:checked').value !== 'light'));
+document.querySelectorAll('input[name=theme]').forEach(el => el.onchange = () => setTheme(document.querySelector('input[name=theme]:checked').value));
 refreshState();
 </script>
 {% endblock %}
