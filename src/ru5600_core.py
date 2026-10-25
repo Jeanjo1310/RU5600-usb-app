@@ -277,11 +277,13 @@ class Tag:
     ``raw_id`` keeps the slot as received.
 
     Active-mode streaming packs a **compound** record instead: the EPC
-    slot (PC-padded with zeros, e.g. 12 data + 12 zeros for a 96 bit
-    EPC with PC 6000) followed by the TID.  ``epc`` is then the carved
-    EPC and ``tid`` the carved TID; ``raw_id`` keeps the full blob.
-    (REA P2 fix 2026-10-25: origin kept the 100 B blob as EPC, which
-    broke dedup/guard. RSSI position for compound records is pending.)
+    slot (PC-padded with zeros) followed by the TID.  The parser keeps
+    the blob intact (vendor-faithful, like the `Form1.cs` demo) and the
+    split happens chip-first in `interpret_active_blob()`, only for
+    chips with an evidence-backed interpreter.  ``tid`` is populated
+    there, not here.
+    (REA P2 2026-10-25: carvear a ciegas rompía el dedup; leer mal es
+    grave, escribir mal es crítico.)
     """
 
     type: int = 0
@@ -450,23 +452,11 @@ def parse_tag_buffer(buf: bytes, count: int) -> List[Tag]:
         if id_len < 2:
             id_len = max(pack_len - 1, 0)
         epc = bytes(rec[2:id_len]) if id_len > 2 else b""
+        # NOTE (REA P2 2026-10-25, anti-sobre-ingeniería): el parser queda
+        # fiel al vendor (blob íntegro, como el demo `Form1.cs`).
+        # La separación EPC/TID NO se hace acá: se hace chip-primero en
+        # `interpret_active_blob()` después de identificar por TID directo.
         tid = b""
-        if not has_ts and id_len > 32:
-            # Active-mode compound record (REA P2 fix 2026-10-25, vendor
-            # demo dumps the whole blob as "Tag"): EPC slot PC-padded
-            # with zeros + TID (always ISO class 0xE2 first byte).
-            # 96 bit EPC = 12 data + 12 zero pad; longer EPCs keep 24 B.
-            blob = rec[2:id_len]
-            if len(blob) >= 24 and all(b == 0 for b in blob[12:24]):
-                epc = bytes(blob[0:12])
-                rest = blob[24:]
-            else:
-                epc = bytes(blob[0:24]) if len(blob) >= 24 else bytes(blob)
-                rest = blob[len(epc):]
-            for i in range(len(rest) - 11):
-                if rest[i] == 0xE2:
-                    tid = bytes(rest[i:i + 12])
-                    break
         ts = bytes(rec[id_len:id_len + 6]) if has_ts and id_len + 6 <= pack_len else None
         tags.append(
             Tag(
@@ -482,6 +472,35 @@ def parse_tag_buffer(buf: bytes, count: int) -> List[Tag]:
         )
         off += pack_len + 1
     return tags
+
+
+# --- Chip-first compound interpreters (REA P2 2026-10-25) ------------------
+# The active-mode blob is interpreted ONLY after the chip was identified
+# by direct TID read (bank 2) + decode.  One entry per chip with hardware
+# evidence.  Unknown chips stay vendor-faithful (whole blob + pending flag):
+# reading wrong is grave, writing wrong is critical.
+ACTIVE_COMPOUND_PREFIXES = {
+    # prefix: (epc_data_bytes, tid_offset, tid_bytes, evidence)
+    "E2803821": (12, 24, 12, "Higgs-9 live 2026-10-25: EPC 12+12pad, TID 12"),
+}
+
+
+def interpret_active_blob(blob: bytes, tid_prefix: str):
+    """Split a compound active blob for a KNOWN chip.
+
+    Returns ``(epc, tid, pending)``: pending is None when the chip has
+    an evidence-backed interpreter, else a string flagging the blob as
+    uninterpreted (whole blob returned as epc, tid empty).
+    """
+    spec = ACTIVE_COMPOUND_PREFIXES.get(tid_prefix)
+    if spec is None:
+        return bytes(blob), b"", f"interpreter pending for {tid_prefix}"
+    epc_len, tid_off, tid_len, _ = spec
+    epc = bytes(blob[0:epc_len])
+    tid = bytes(blob[tid_off:tid_off + tid_len])
+    if not tid or tid[0] != 0xE2:
+        return bytes(blob), b"", f"layout mismatch for {tid_prefix}"
+    return epc, tid, None
 
 
 class Ru5600Reader:
