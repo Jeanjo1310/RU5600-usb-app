@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RU5600 · Barrido</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script>
+tailwind.config = { darkMode: 'class' }
+</script>
+<link href="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.css" rel="stylesheet" />
+</head>
+<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+<nav class="bg-white border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+  <div class="max-w-screen-xl flex items-center justify-between mx-auto p-4">
+    <span class="text-xl font-semibold">RU5600 · Barrido</span>
+    <button id="themeBtn" class="text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1">Claro / Oscuro</button>
+  </div>
+</nav>
+<main class="max-w-screen-xl mx-auto p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+    <div class="flex flex-wrap items-end gap-4">
+      <div>
+        <label class="block mb-1 text-sm font-medium">Segundos (0 = hasta parar)</label>
+        <input id="seconds" type="number" value="60" min="0" class="bg-gray-50 border border-gray-300 rounded-lg p-2 w-28 dark:bg-gray-700 dark:border-gray-600">
+      </div>
+      <button id="startBtn" class="text-white bg-blue-700 hover:bg-blue-800 font-medium rounded-lg px-5 py-2">Iniciar lectura</button>
+      <button id="stopBtn" class="text-white bg-red-700 hover:bg-red-800 font-medium rounded-lg px-5 py-2" disabled>Parar</button>
+      <span id="status" class="text-sm text-gray-600 dark:text-gray-300">Listo.</span>
+    </div>
+  </div>
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+    <table class="w-full text-sm text-left text-gray-600 dark:text-gray-300">
+      <thead class="text-xs uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300">
+        <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Code W34</th><th class="px-4 py-2">Excel</th><th class="px-4 py-2">Estado</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Crudo íntegro por tag (tooltip en EPC). Deduplicado por blob: la relectura no crea fila nueva.</p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+document.getElementById('themeBtn').onclick = () => document.documentElement.classList.toggle('dark');
+let timer = null, seen = 0;
+function badge(txt, color) {
+  return `<span class="text-xs font-medium px-2 py-0.5 rounded bg-${color}-100 text-${color}-800 dark:bg-${color}-900 dark:text-${color}-300">${txt}</span>`;
+}
+async function poll() {
+  const r = await fetch('/api/status').then(r => r.json());
+  $('status').textContent = r.running ? `Leyendo… ${r.count} tags (${r.elapsed}s)` : (r.error ? 'Error: ' + r.error : `Detenido. ${r.count} tags.`);
+  $('startBtn').disabled = r.running;
+  $('stopBtn').disabled = !r.running;
+  if (r.tags.length > seen) {
+    const tb = $('rows');
+    r.tags.slice(seen).forEach((t, i) => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-b dark:border-gray-700';
+      const conf = t.conf === 'confirmado' ? badge('confirmado','green') : t.conf === 'patron' ? badge('patrón','yellow') : t.conf === 'excel' ? badge('excel','green') : t.conf === 'candidato' ? badge('candidato','purple') : t.conf === 'presente' ? badge('presente','blue') : badge(t.conf || '?','gray');
+      tr.innerHTML = `<td class="px-4 py-2">${seen + i + 1}</td><td class="px-4 py-2 font-mono" title="${t.raw}">${t.epc}</td><td class="px-4 py-2 font-mono">${t.chip}</td><td class="px-4 py-2 font-mono">${t.epc && t.epc.length >= 14 ? t.epc.slice(6,14) : '-'}</td><td class="px-4 py-2">${t.xl}</td><td class="px-4 py-2">${conf}</td>`;
+      tb.appendChild(tr);
+    });
+    seen = r.tags.length;
+  }
+  if (!r.running && timer) { clearInterval(timer); timer = null; }
+}
+$('startBtn').onclick = async () => {
+  $('rows').innerHTML = ''; seen = 0;
+  await fetch('/api/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seconds: parseFloat($('seconds').value) || 60})});
+  timer = setInterval(poll, 500); poll();
+};
+$('stopBtn').onclick = async () => { await fetch('/api/stop', {method:'POST'}); };
+</script>
+</body>
+</html>
