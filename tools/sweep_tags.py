@@ -44,13 +44,16 @@ def main():
     ap = argparse.ArgumentParser(description="RU5600 persistent tag sweep")
     ap.add_argument("--target", type=int, default=10)
     ap.add_argument("--seconds", type=float, default=90.0)
+    ap.add_argument("--continuous", action="store_true",
+                    help="no para al llegar al target: escucha como la antena")
     args = ap.parse_args()
 
     reader = Ru5600Reader()
     reader.open()
     try:
         t0 = time.monotonic()
-        tags = reader.sweep(duration=args.seconds, target_count=args.target)
+        tags = reader.sweep(duration=args.seconds, target_count=args.target,
+                            stop_on_target=not args.continuous)
         dt = time.monotonic() - t0
     finally:
         reader.close()

@@ -967,12 +967,14 @@ class Ru5600Reader:
         return tags
 
     def sweep(self, duration: float = 60.0, target_count: int = 0,
-              poll: float = 0.1) -> List[Tag]:
+              poll: float = 0.1, stop_on_target: bool = True) -> List[Tag]:
         """Persistent multi-tag sweep (barrido).
 
         Vendor pattern (timer1 100 ms): StartRead once, drain the buffer
-        continuously while streaming, stop at time budget or as soon as
-        ``target_count`` distinct tags are seen.  Dedup key is the raw
+        continuously while streaming.  Like the antenna it never stops on
+        its own: with stop_on_target it returns once target_count distinct
+        tags are seen, otherwise it keeps listening the whole duration
+        (duration <= 0 = until Ctrl+C).  Dedup key is the raw
         blob (vendor-faithful, exact on any antenna).  Elevated tags and
         batches (10+) need time, not power: keep polling, don't hammer
         with extra orders.
@@ -992,16 +994,16 @@ class Ru5600Reader:
         self._pace()
         self._lib.CFHid_StartRead(DEV_ADDR)
         self._pace(settle=True)
-        deadline = time.monotonic() + duration
+        deadline = None if duration <= 0 else time.monotonic() + duration
         try:
-            while time.monotonic() < deadline:
+            while deadline is None or time.monotonic() < deadline:
                 time.sleep(poll)
                 for tag in self.poll_tags():
                     key = bytes(tag.raw_id).hex().upper() if tag.raw_id else tag.epc_hex
                     if key not in seen:
                         seen.add(key)
                         tags.append(tag)
-                        if target_count and len(tags) >= target_count:
+                        if stop_on_target and target_count and len(tags) >= target_count:
                             return tags
         finally:
             try:
