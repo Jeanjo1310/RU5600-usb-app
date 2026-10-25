@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Avanzado{% endblock %}
 {% block content %}
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Frecuencia</h2>
   <div class="flex flex-wrap items-end gap-2">
-    <select id="band" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"></select>
-    <button id="fread" class="border rounded-lg px-4 py-2">Leer</button>
-    <button id="fset" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Grabar banda</button>
+    <select id="band" class="select select-bordered"></select>
+    <button id="fread" class="btn btn-outline">Leer</button>
+    <button id="fset" class="btn btn-primary">Grabar banda</button>
     <span id="fraw" class="font-mono text-sm">frec. cruda: -</span>
   </div>
   <p id="fmsg" class="mt-1 text-sm"></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+<div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">Dispositivo</h2>
-  <button id="reboot" class="text-white bg-yellow-600 hover:bg-yellow-700 rounded-lg px-4 py-2">Reiniciar lector</button>
+  <button id="reboot" class="btn btn-warning">Reiniciar lector</button>
   <p id="rmsg" class="mt-1 text-sm"></p>
 </div>
 {% endblock %}

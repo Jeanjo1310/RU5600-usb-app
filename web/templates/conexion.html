@@ -1,49 +1,49 @@
 {% extends "base.html" %}
 {% block title %}Conexión{% endblock %}
 {% block content %}
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Idioma y apariencia</h2>
   <div class="flex gap-6">
     <div><div class="text-sm text-gray-500 mb-1">Idioma</div>
-      <label class="mr-3"><input type="radio" name="lang" value="es" checked> Español</label>
-      <label><input type="radio" name="lang" value="en"> English</label></div>
+      <label class="mr-3"><input type="radio" class="radio radio-sm" name="lang" value="es" checked> Español</label>
+      <label><input type="radio" class="radio radio-sm" name="lang" value="en"> English</label></div>
     <div><div class="text-sm text-gray-500 mb-1">Tema</div>
-      <label class="mr-3"><input type="radio" name="theme" value="dark" checked> Oscuro</label>
-      <label><input type="radio" name="theme" value="light"> Claro</label></div>
+      <label class="mr-3"><input type="radio" class="radio radio-sm" name="theme" value="dark" checked> Oscuro</label>
+      <label><input type="radio" class="radio radio-sm" name="theme" value="light"> Claro</label></div>
   </div>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Conexión</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
     <div>
       <div class="text-sm text-gray-500 mb-1">Transporte</div>
-      <label class="block"><input type="radio" name="t" value="usb" checked> USB</label>
-      <label class="block"><input type="radio" name="t" value="com"> COM</label>
-      <label class="block"><input type="radio" name="t" value="net"> Net</label>
+      <label class="block"><input type="radio" class="radio radio-sm" name="t" value="usb" checked> USB</label>
+      <label class="block"><input type="radio" class="radio radio-sm" name="t" value="com"> COM</label>
+      <label class="block"><input type="radio" class="radio radio-sm" name="t" value="net"> Net</label>
     </div>
     <div>
-      <label class="block mb-1 text-sm">Baudrate <select id="baud" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></label>
-      <label class="block mb-1 text-sm">Puerto <select id="dev" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"></select></label>
-      <label class="block text-sm">Modo de lectura <select id="mode" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></label>
+      <label class="block mb-1 text-sm">Baudrate <select id="baud" class="select select-bordered"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></label>
+      <label class="block mb-1 text-sm">Puerto <select id="dev" class="select select-bordered"></select></label>
+      <label class="block text-sm">Modo de lectura <select id="mode" class="select select-bordered"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></label>
     </div>
     <div>
-      <label class="block mb-1 text-sm">IP de red <input id="ip" value="192.168.1.250" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
-      <label class="block text-sm">Puerto de red <input id="port" value="60000" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
+      <label class="block mb-1 text-sm">IP de red <input id="ip" value="192.168.1.250" class="input input-bordered w-full"></label>
+      <label class="block text-sm">Puerto de red <input id="port" value="60000" class="input input-bordered w-full"></label>
     </div>
   </div>
   <div class="grid grid-cols-2 gap-2">
-    <button id="openBtn" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Abrir</button>
-    <button id="closeBtn" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2" disabled>Cerrar</button>
-    <button id="scanBtn" class="border rounded-lg px-4 py-2">Escanear puerto</button>
-    <button id="netBtn" class="border rounded-lg px-4 py-2">Escanear red</button>
-    <button id="tcpBtn" class="border rounded-lg px-4 py-2">TCPServer</button>
-    <button id="helpBtn" class="border rounded-lg px-4 py-2">Ayuda</button>
+    <button id="openBtn" class="btn btn-primary">Abrir</button>
+    <button id="closeBtn" class="btn btn-primary" disabled>Cerrar</button>
+    <button id="scanBtn" class="btn btn-outline">Escanear puerto</button>
+    <button id="netBtn" class="btn btn-outline">Escanear red</button>
+    <button id="tcpBtn" class="btn btn-outline">TCPServer</button>
+    <button id="helpBtn" class="btn btn-outline">Ayuda</button>
   </div>
-  <button id="udevBtn" class="mt-2 w-full border rounded-lg px-4 py-2">Instalar regla de acceso USB</button>
+  <button id="udevBtn" class="mt-2 w-full btn btn-outline">Instalar regla de acceso USB</button>
   <pre id="udevout" class="mt-1 text-xs whitespace-pre-wrap hidden"></pre>
   <p id="connMsg" class="mt-2 text-sm"></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+<div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">Dispositivo</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     <div><div class="text-sm text-gray-500">N. de serie</div><div id="sn" class="font-mono">-</div></div>
@@ -51,10 +51,10 @@
     <div><div class="text-sm text-gray-500">Hardware</div><div id="hw" class="font-mono">-</div></div>
   </div>
   <div class="grid grid-cols-2 gap-2 mt-3">
-    <button id="expBtn" class="border rounded-lg px-4 py-2">Exportar config</button>
-    <label class="border rounded-lg px-4 py-2 text-center cursor-pointer">Importar config<input id="impFile" type="file" accept=".ini" class="hidden"></label>
-    <button id="relayOff" class="border rounded-lg px-4 py-2">Cerrar relé</button>
-    <button id="relayOn" class="border rounded-lg px-4 py-2">Liberar relé</button>
+    <button id="expBtn" class="btn btn-outline">Exportar config</button>
+    <label class="btn btn-outline text-center cursor-pointer">Importar config<input id="impFile" type="file" accept=".ini" class="hidden"></label>
+    <button id="relayOff" class="btn btn-outline">Cerrar relé</button>
+    <button id="relayOn" class="btn btn-outline">Liberar relé</button>
   </div>
   <p id="devMsg" class="mt-1 text-sm"></p>
 </div>

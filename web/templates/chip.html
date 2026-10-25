@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Chip info{% endblock %}
 {% block content %}
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Analizar chip</h2>
   <div class="flex flex-wrap items-end gap-2 mb-2">
-    <label class="text-sm">Contraseña de acceso <input id="cpwd" value="00000000" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700 ml-1"></label>
-    <button id="ctest" class="border rounded-lg px-4 py-2">Probar contraseña</button>
-    <label class="text-sm"><input type="checkbox" id="cdeep"> Barrido profundo (mapa de memoria)</label>
-    <button id="cgo" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Analizar chip</button>
+    <label class="text-sm">Contraseña de acceso <input id="cpwd" value="00000000" class="input input-bordered font-mono ml-1"></label>
+    <button id="ctest" class="btn btn-outline">Probar contraseña</button>
+    <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="cdeep"> Barrido profundo (mapa de memoria)</label>
+    <button id="cgo" class="btn btn-primary">Analizar chip</button>
   </div>
   <pre id="cout" class="font-mono text-sm whitespace-pre-wrap">Poné un tag y apretá Analizar.</pre>
 </div>

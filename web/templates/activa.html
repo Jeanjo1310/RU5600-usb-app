@@ -1,20 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Lectura continua{% endblock %}
 {% block content %}
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Lectura continua (stream)</h2>
   <div class="flex flex-wrap items-center gap-2 mb-2">
-    <button id="astart" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Iniciar</button>
-    <button id="astop" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2" disabled>Parar</button>
-    <span id="astatus" class="text-sm text-gray-600 dark:text-gray-300">Detenido.</span>
+    <button id="astart" class="btn btn-primary">Iniciar</button>
+    <button id="astop" class="btn btn-error" disabled>Parar</button>
+    <span id="astatus" class="text-sm opacity-80">Detenido.</span>
     <span class="flex-1"></span>
-    <input id="mdur" type="number" value="10" min="1" class="bg-gray-50 border rounded-lg p-2 w-20 dark:bg-gray-700" title="segundos">
-    <button id="mgo" class="border rounded-lg px-4 py-2">Medir antena</button>
+    <input id="mdur" type="number" value="10" min="1" class="input input-bordered w-20" title="segundos">
+    <button id="mgo" class="btn btn-outline">Medir antena</button>
   </div>
   <p id="mout" class="text-sm mb-2"></p>
   <div class="overflow-x-auto">
-    <table class="w-full text-sm text-left text-gray-600 dark:text-gray-300">
-      <thead class="text-xs uppercase bg-gray-50 dark:bg-gray-700"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">TID</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Ant</th><th class="px-4 py-2">Veces</th></tr></thead>
+    <table class="table table-zebra w-full text-sm">
+      <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">TID</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Ant</th><th class="px-4 py-2">Veces</th></tr></thead>
       <tbody id="arows"></tbody>
     </table>
   </div>
@@ -33,7 +33,7 @@ async function poll() {
   const tb = document.getElementById('arows');
   r.tags.forEach((t, i) => {
     let row = document.getElementById('arow' + i);
-    if (!row) { row = document.createElement('tr'); row.id = 'arow' + i; row.className = 'border-b dark:border-gray-700'; tb.appendChild(row); }
+    if (!row) { row = document.createElement('tr'); row.id = 'arow' + i; row.className = 'border-b border-base-300'; tb.appendChild(row); }
     row.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.raw}">${t.raw}</td><td class="px-4 py-2 font-mono">${t.epc}</td><td class="px-4 py-2">${t.chip}</td><td class="px-4 py-2">${t.ant}</td><td class="px-4 py-2">${t.rssi}</td><td class="px-4 py-2">${t.n}</td><td class="px-4 py-2">${new Date().toLocaleTimeString()}</td>`;
   });
   while (tb.children.length > r.tags.length) tb.removeChild(tb.lastChild);

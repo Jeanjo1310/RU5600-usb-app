@@ -1,41 +1,41 @@
 {% extends "base.html" %}
 {% block title %}Peligroso{% endblock %}
 {% block content %}
-<div class="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg shadow p-4 mb-4">
-  <h2 class="text-lg font-semibold mb-1 text-red-800 dark:text-red-200">Zona peligrosa</h2>
-  <p class="text-sm mb-2">Un mal bloqueo deja el tag inservible para siempre y un comando crudo puede dejar el lector en un estado inconsistente. <label class="font-semibold"><input type="checkbox" id="riskack"> Entiendo el riesgo</label></p>
+<div class="alert alert-error shadow mb-4">
+  <h2 class="text-lg font-semibold mb-1 font-bold">Zona peligrosa</h2>
+  <p class="text-sm mb-2">Un mal bloqueo deja el tag inservible para siempre y un comando crudo puede dejar el lector en un estado inconsistente. <label class="font-semibold"><input type="checkbox" class="checkbox checkbox-sm" id="riskack"> Entiendo el riesgo</label></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">A · Bloquear tag (Gen2, cmd 0x05)</h2>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <input id="lkdata" value="00000000" title="lock data 4 bytes hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <input id="lkact" value="00" title="action hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <button id="lkgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2 md:col-span-2">Bloquear (irreversible)</button>
+    <input id="lkdata" value="00000000" title="lock data 4 bytes hex" class="input input-bordered font-mono">
+    <input id="lkact" value="00" title="action hex" class="input input-bordered font-mono">
+    <button id="lkgo" class="btn btn-error md:col-span-2">Bloquear (irreversible)</button>
   </div>
   <p id="lkout" class="mt-1 text-sm"></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">B · Comando crudo (CFHid_SendCommand)</h2>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <input id="rcmd" value="10" title="cmd hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <input id="rpay" placeholder="payload hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <input id="rtime" value="400" title="timeout ms" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
-    <button id="rgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2">Enviar comando crudo</button>
+    <input id="rcmd" value="10" title="cmd hex" class="input input-bordered font-mono">
+    <input id="rpay" placeholder="payload hex" class="input input-bordered font-mono">
+    <input id="rtime" value="400" title="timeout ms" class="input input-bordered">
+    <button id="rgo" class="btn btn-error">Enviar comando crudo</button>
   </div>
   <p class="text-xs mt-1 text-gray-500">BLOQUEADOS: 0x2B/0x2C/0x2D (firmware) y 0x65 (Kill6C, mata un tag).</p>
   <p id="rout" class="mt-1 text-sm"></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+<div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">C · CryptWrite (experimental)</h2>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <input id="cwmode" value="00" title="mode hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <input id="cwpwd" placeholder="password" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <button id="cwgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2 md:col-span-2">Aplicar CryptWrite</button>
+    <input id="cwmode" value="00" title="mode hex" class="input input-bordered font-mono">
+    <input id="cwpwd" placeholder="password" class="input input-bordered font-mono">
+    <button id="cwgo" class="btn btn-error md:col-span-2">Aplicar CryptWrite</button>
   </div>
   <p class="text-xs mt-1 text-gray-500">0x2F con payload [mode][0x55][pass]. Este firmware (7.1) no responde a 0x2E/0x2F: área en desarrollo.</p>
   <p id="cwout" class="mt-1 text-sm"></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+<div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">Comandos conocidos del lector RU5600</h2>
   <pre class="text-xs font-mono whitespace-pre-wrap">0x01 inventario   0x02 leer memoria   0x03 escribir memoria   0x04 escribir EPC   0x05 lock   0x10 informacion   0x20/0x21 parametro   0x23/0x24 un parametro   0x3E/0x3F frecuencia   0x30 reiniciar   0x40/0x41 start/stop read   0x85/0x86 relay   0xE0 modulo   0xE1 antena   0xE8-0xEC whitelist   0x2E/0x2F CryptWrite
 BLOQUEADOS: 0x2B/0x2C/0x2D (actualizan el firmware del lector) y 0x65 (Kill6C, mata un tag).</pre>

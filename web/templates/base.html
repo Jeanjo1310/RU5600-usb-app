@@ -1,41 +1,44 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RU5600 · {% block title %}{% endblock %}</title>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<script>if (window.tailwind) tailwind.config = { darkMode: 'class' }</script>
-<link href="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/tailwindcss" />
 </head>
-<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-<nav class="bg-white border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
-  <div class="max-w-screen-xl flex items-center justify-between mx-auto p-4">
+<body>
+<div class="navbar bg-base-100 shadow">
+  <div class="max-w-screen-xl mx-auto flex items-center justify-between w-full px-4">
     <span class="text-xl font-semibold">RU5600 Reader</span>
-    <button id="themeBtn" class="text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1">Claro / Oscuro</button>
+    <button id="themeBtn" class="btn btn-ghost btn-sm">Claro / Oscuro</button>
   </div>
-</nav>
+</div>
 <div class="max-w-screen-xl mx-auto p-4">
-  <div class="flex flex-wrap gap-2 mb-4 text-sm">
-    <a href="/conexion" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Conexión</a>
-    <a href="/parametros" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Parámetros</a>
-    <a href="/leer" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Leer/Escribir</a>
-    <a href="/activa" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Lectura continua</a>
-    <a href="/avanzado" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Avanzado</a>
-    <a href="/chip" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Chip info</a>
-    <a href="/riesgo" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Peligroso</a>
-    <a href="/blanca" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Lista blanca</a>
-    <a href="/lote" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Lote</a>
-    <a href="/" class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600">Barrido</a>
+  <div class="flex flex-wrap gap-2 mb-4">
+    <a class="btn btn-ghost btn-sm" href="/conexion">Conexión</a>
+    <a class="btn btn-ghost btn-sm" href="/parametros">Parámetros</a>
+    <a class="btn btn-ghost btn-sm" href="/leer">Leer/Escribir</a>
+    <a class="btn btn-ghost btn-sm" href="/activa">Lectura continua</a>
+    <a class="btn btn-ghost btn-sm" href="/avanzado">Avanzado</a>
+    <a class="btn btn-ghost btn-sm" href="/chip">Chip info</a>
+    <a class="btn btn-ghost btn-sm" href="/riesgo">Peligroso</a>
+    <a class="btn btn-ghost btn-sm" href="/blanca">Lista blanca</a>
+    <a class="btn btn-ghost btn-sm" href="/lote">Lote</a>
+    <a class="btn btn-ghost btn-sm" href="/barrido">Barrido</a>
   </div>
   {% block content %}{% endblock %}
 </div>
+<footer class="max-w-screen-xl mx-auto px-4 pb-6 text-sm opacity-70">RU5600 · Linux + Android · REA</footer>
 <script>
-document.getElementById('themeBtn').onclick = () => document.documentElement.classList.toggle('dark');
 async function post(url, body) {
   const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
   return r.json();
 }
+document.getElementById('themeBtn').onclick = () => {
+  const h = document.documentElement;
+  h.dataset.theme = h.dataset.theme === 'light' ? 'dark' : 'light';
+};
 </script>
 {% block scripts %}{% endblock %}
 </body>

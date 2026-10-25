@@ -1,43 +1,43 @@
 {% extends "base.html" %}
 {% block title %}Leer/Escribir{% endblock %}
 {% block content %}
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Leer memoria del tag</h2>
   <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
-    <select id="rmem" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option value="1">EPC</option><option value="2">TID</option><option value="3">USER</option><option value="0">RESERVED</option></select>
-    <input id="rptr" value="00" title="Word inicial (hex)" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
-    <input id="rlen" value="06" title="Palabras (hex)" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
-    <input id="rpwd" value="00000000" title="Password 4 bytes hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <button id="rgo" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Leer</button>
+    <select id="rmem" class="select select-bordered"><option value="1">EPC</option><option value="2">TID</option><option value="3">USER</option><option value="0">RESERVED</option></select>
+    <input id="rptr" value="00" title="Word inicial (hex)" class="input input-bordered">
+    <input id="rlen" value="06" title="Palabras (hex)" class="input input-bordered">
+    <input id="rpwd" value="00000000" title="Password 4 bytes hex" class="input input-bordered font-mono">
+    <button id="rgo" class="btn btn-primary">Leer</button>
   </div>
   <pre id="rout" class="font-mono text-sm whitespace-pre-wrap">-</pre>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir memoria (verificada)</h2>
   <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
-    <select id="wmem" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700"><option value="3">USER</option><option value="1">EPC</option><option value="0">RESERVED</option></select>
-    <input id="wptr" value="00" title="Word inicial (hex)" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
-    <input id="wdata" placeholder="datos hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <input id="wpwd" value="00000000" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <button id="wgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2">Escribir</button>
+    <select id="wmem" class="select select-bordered"><option value="3">USER</option><option value="1">EPC</option><option value="0">RESERVED</option></select>
+    <input id="wptr" value="00" title="Word inicial (hex)" class="input input-bordered">
+    <input id="wdata" placeholder="datos hex" class="input input-bordered font-mono">
+    <input id="wpwd" value="00000000" class="input input-bordered font-mono">
+    <button id="wgo" class="btn btn-error">Escribir</button>
   </div>
-  <label class="text-sm"><input type="checkbox" id="wfp"> Verificar huella antes de escribir</label>
+  <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wfp"> Verificar huella antes de escribir</label>
   <p id="wout" class="mt-1 text-sm"></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir EPC</h2>
   <div class="flex flex-wrap gap-2">
-    <input id="wepc" value="3034333234353536373839303132" class="bg-gray-50 border rounded-lg p-2 font-mono flex-1 dark:bg-gray-700">
-    <input id="wpwd" value="00000000" title="password 4 bytes hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
-    <label class="text-sm"><input type="checkbox" id="wep_fp"> Verificar huella</label>
-    <button id="wepcgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2">Escribir EPC</button>
+    <input id="wepc" value="3034333234353536373839303132" class="input input-bordered font-mono flex-1">
+    <input id="wpwd" value="00000000" title="password 4 bytes hex" class="input input-bordered font-mono">
+    <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wep_fp"> Verificar huella</label>
+    <button id="wepcgo" class="btn btn-error">Escribir EPC</button>
   </div>
   <p id="wepout" class="mt-1 text-sm"></p>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+<div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">Huella (anti-clonado)</h2>
-  <button id="fplearn" class="border rounded-lg px-4 py-2 mr-2">Aprender huella del tag actual</button>
-  <button id="fpcheck" class="border rounded-lg px-4 py-2">Verificar huella</button>
+  <button id="fplearn" class="btn btn-outline mr-2">Aprender huella del tag actual</button>
+  <button id="fpcheck" class="btn btn-outline">Verificar huella</button>
   <p id="fpout" class="mt-1 text-sm"></p>
 </div>
 {% endblock %}

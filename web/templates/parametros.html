@@ -1,32 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Parámetros{% endblock %}
 {% block content %}
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Parámetros del lector</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-    <div><label class="block text-sm mb-1">RF Power <select id="rf" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></select></label></div>
-    <div><label class="block text-sm mb-1">Banda <select id="band" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></select></label></div>
-    <div><label class="block text-sm mb-1">WorkMode <select id="wm" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></label></div>
-    <div><label class="block text-sm mb-1">FilterTime(s) <input id="filt" value="0" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label></div>
+    <div><label class="block text-sm mb-1">RF Power <select id="rf" class="input input-bordered w-full"></select></label></div>
+    <div><label class="block text-sm mb-1">Banda <select id="band" class="input input-bordered w-full"></select></label></div>
+    <div><label class="block text-sm mb-1">WorkMode <select id="wm" class="input input-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></label></div>
+    <div><label class="block text-sm mb-1">FilterTime(s) <input id="filt" value="0" class="input input-bordered w-full"></label></div>
     <div><label class="block text-sm mb-1">Buzzer <input id="beep" type="checkbox" class="ml-2"></label></div>
   </div>
   <div class="flex flex-wrap gap-2">
-    <button id="pread" class="border rounded-lg px-4 py-2">Leer</button>
-    <button id="papply" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Aplicar</button>
-    <button id="pdef" class="border rounded-lg px-4 py-2">Defecto</button>
-    <button id="psil" class="border rounded-lg px-4 py-2">Silenciar ya</button>
+    <button id="pread" class="btn btn-outline">Leer</button>
+    <button id="papply" class="btn btn-primary">Aplicar</button>
+    <button id="pdef" class="btn btn-outline">Defecto</button>
+    <button id="psil" class="btn btn-outline">Silenciar ya</button>
   </div>
   <h3 class="text-md font-semibold mt-4 mb-2">Lectura por defecto (para Leer/Escribir)</h3>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <label class="text-sm">Área <select id="dmem" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"><option>EPC</option><option>TID</option><option>USER</option></select></label>
-    <label class="text-sm">Inicio (hex) <input id="dptr" value="00" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
-    <label class="text-sm">Longitud (hex) <input id="dlen" value="06" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
-    <label class="text-sm">ReadTime <input id="drt" value="2" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
+    <label class="text-sm">Área <select id="dmem" class="input input-bordered w-full"><option>EPC</option><option>TID</option><option>USER</option></select></label>
+    <label class="text-sm">Inicio (hex) <input id="dptr" value="00" class="input input-bordered w-full"></label>
+    <label class="text-sm">Longitud (hex) <input id="dlen" value="06" class="input input-bordered w-full"></label>
+    <label class="text-sm">ReadTime <input id="drt" value="2" class="input input-bordered w-full"></label>
   </div>
   <h3 class="text-md font-semibold mt-4 mb-2">Salida teclado (cuña: solo app de escritorio)</h3>
   <div class="grid grid-cols-2 gap-2">
-    <label class="text-sm">Formato <select id="dout" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></label>
-    <label class="text-sm"><input type="checkbox" id="denter" checked> OutWithEnterKey</label>
+    <label class="text-sm">Formato <select id="dout" class="input input-bordered w-full"><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></label>
+    <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="denter" checked> OutWithEnterKey</label>
   </div>
   <p id="pmsg" class="mt-2 text-sm"></p>
 </div>

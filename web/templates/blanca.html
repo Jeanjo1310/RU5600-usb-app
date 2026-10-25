@@ -1,23 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Lista blanca{% endblock %}
 {% block content %}
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Lista blanca <span id="wlcount" class="text-sm text-gray-500"></span></h2>
   <div class="flex flex-wrap gap-2 mb-2">
-    <button id="wlref" class="border rounded-lg px-4 py-2">Actualizar</button>
-    <button id="wlclear" class="border rounded-lg px-4 py-2">Borrar todas</button>
+    <button id="wlref" class="btn btn-outline">Actualizar</button>
+    <button id="wlclear" class="btn btn-outline">Borrar todas</button>
   </div>
-  <div class="overflow-x-auto"><table class="w-full text-sm"><thead class="text-xs uppercase bg-gray-50 dark:bg-gray-700"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Entrada</th><th class="px-4 py-2"></th></tr></thead><tbody id="wlrows"></tbody></table></div>
+  <div class="overflow-x-auto"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Entrada</th><th class="px-4 py-2"></th></tr></thead><tbody id="wlrows"></tbody></table></div>
 </div>
-<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+<div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">Agregar (32 bytes hex)</h2>
   <div class="flex flex-wrap gap-2">
-    <input id="wldata" placeholder="32 bytes hex" class="bg-gray-50 border rounded-lg p-2 font-mono flex-1 dark:bg-gray-700">
-    <button id="wladd" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Agregar</button>
+    <input id="wldata" placeholder="32 bytes hex" class="input input-bordered font-mono flex-1">
+    <button id="wladd" class="btn btn-primary">Agregar</button>
   </div>
   <h2 class="text-lg font-semibold mt-4 mb-3">Importar (una por línea)</h2>
-  <textarea id="wltext" rows="3" class="bg-gray-50 border rounded-lg p-2 w-full font-mono dark:bg-gray-700"></textarea>
-  <button id="wlimp" class="mt-2 text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Importar</button>
+  <textarea id="wltext" rows="3" class="input input-bordered w-full font-mono"></textarea>
+  <button id="wlimp" class="mt-2 btn btn-primary">Importar</button>
   <p id="wlmsg" class="mt-1 text-sm"></p>
 </div>
 {% endblock %}
@@ -27,7 +27,7 @@ async function wlrefresh() {
   const r = await fetch('/api/wl/list').then(r => r.json());
   const tb = document.getElementById('wlrows'); tb.innerHTML = '';
   (r.entries || []).forEach((e, i) => {
-    const tr = document.createElement('tr'); tr.className = 'border-b dark:border-gray-700';
+    const tr = document.createElement('tr'); tr.className = 'border-b border-base-300';
     tr.innerHTML = `<td class="px-4 py-2">${i}</td><td class="px-4 py-2 font-mono">${e}</td><td class="px-4 py-2"><button class="text-red-600" data-e="${e}">Borrar</button></td>`;
     tb.appendChild(tr);
   });
