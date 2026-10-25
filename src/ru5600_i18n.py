@@ -66,6 +66,7 @@ STRINGS = {
     "OutWithEnterKey": {"en": "OutWithEnterKey", "es": "Salir con Enter"},
     "SingleFreq": {"en": "SingleFreq", "es": "Frecuencia unica"},
     "Skin": {"en": "Skin", "es": "Apariencia"},
+    "Light": {"en": "Light", "es": "Claro"},
     "Accion:": {"en": "Accion:", "es": "Accion:"},
     "Refresh": {"en": "Refresh", "es": "Actualizar"},
     "ExportConfig": {"en": "ExportConfig", "es": "Exportar config"},
@@ -410,6 +411,9 @@ TOOLTIPS = {
     "Skin": {
         "en": "The look of the reader's own software.",
         "es": "La apariencia del software del lector."},
+    "Light": {
+        "en": "Light theme instead of dark.",
+        "es": "Tema claro en vez de oscuro."},
     "Accion:": {
         "en": "What the keyboard shortcuts do.",
         "es": "Que hacen los atajos de teclado."},

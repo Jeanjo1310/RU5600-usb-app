@@ -167,22 +167,32 @@ class ReaderApp(Gtk.Window):
         self.cb_lang.connect("changed", self.on_language)
         langbar.pack_start(Gtk.Label(label="Language", xalign=0), False, False, 0)
         langbar.pack_start(self.cb_lang, False, False, 0)
+        self.chk_light = Gtk.CheckButton(label="Light")
+        self.chk_light.set_tooltip_text(
+            "Light theme instead of dark.")
+        self.chk_light.connect("toggled", self.on_light_theme)
+        langbar.pack_end(self.chk_light, False, False, 0)
         root.pack_start(langbar, False, False, 0)
+        Gtk.Settings.get_default().set_property(
+            "gtk-application-prefer-dark-theme", True)
 
-        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        root.pack_start(paned, True, True, 0)
+        # ---------------- notebook (full width) --------------------------
+        # The connection panel used to live on the left; since 2026-10-26
+        # it is the first tab ("Connection") with breathing room and no
+        # side scrollbar (Creador: sin scrolls innecesarios).
+        self._tab_labels = []
+        self.nb = Gtk.Notebook()
+        self.nb.set_scrollable(True)
+        root.pack_start(self.nb, True, True, 0)
+        self._build_connection_tab()
 
-        # ---------------- left: connection -------------------------------
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        left.set_size_request(290, -1)
-        left_scroll = Gtk.ScrolledWindow()
-        left_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        left_scroll.set_min_content_width(290)
-        left_scroll.add(left)
-        paned.pack1(left_scroll, False, False)
+    def _build_connection_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(12)
 
         conn = Gtk.Frame(label="Connection")
-        lv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        lv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        lv.set_border_width(8)
         conn.add(lv)
 
         self.rb_usb = Gtk.RadioButton.new_with_label_from_widget(None, "USB")
@@ -192,8 +202,9 @@ class ReaderApp(Gtk.Window):
             lv.pack_start(rb, False, False, 0)
         self.rb_usb.set_active(True)
 
-        grid = Gtk.Grid(column_spacing=6, row_spacing=4)
+        grid = Gtk.Grid(column_spacing=8, row_spacing=6)
         grid.set_column_homogeneous(False)
+        grid.set_border_width(8)
         lv.pack_start(grid, False, False, 0)
 
         self.cb_baud = Gtk.ComboBoxText()
@@ -271,11 +282,12 @@ class ReaderApp(Gtk.Window):
         self.btn_udev.connect("clicked", self.on_install_udev)
         lv.pack_start(self.btn_udev, False, False, 0)
 
-        left.pack_start(conn, False, False, 0)
+        box.pack_start(conn, False, False, 0)
 
         # device identity
         info = Gtk.Frame(label="Device")
-        ig = Gtk.Grid(column_spacing=6, row_spacing=4)
+        ig = Gtk.Grid(column_spacing=8, row_spacing=6)
+        ig.set_border_width(8)
         info.add(ig)
         self.entry_sn = Gtk.Entry(); self.entry_sn.set_editable(False)
         self.entry_fw = Gtk.Entry(); self.entry_fw.set_editable(False)
@@ -286,10 +298,10 @@ class ReaderApp(Gtk.Window):
         ig.attach(self.entry_fw, 1, 1, 1, 1)
         ig.attach(Gtk.Label(label="Hardware:", xalign=0), 0, 2, 1, 1)
         ig.attach(self.entry_hw, 1, 2, 1, 1)
-        left.pack_start(info, False, False, 0)
+        box.pack_start(info, False, False, 0)
 
         cfg = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        left.pack_start(cfg, False, False, 0)
+        box.pack_start(cfg, False, False, 0)
         for label, cb in (("ExportConfig", self.on_export_config),
                           ("ImportConfig", self.on_import_config)):
             b = Gtk.Button(label=label)
@@ -297,29 +309,21 @@ class ReaderApp(Gtk.Window):
             cfg.pack_start(b, True, True, 0)
 
         relay = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        left.pack_start(relay, False, False, 0)
+        box.pack_start(relay, False, False, 0)
         for label, cb in (("CloseRelay", lambda *_: self.on_relay(False)),
                           ("ReleaseRelay", lambda *_: self.on_relay(True))):
             b = Gtk.Button(label=label)
             b.connect("clicked", cb)
             relay.pack_start(b, True, True, 0)
 
-        opts = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        left.pack_start(opts, False, False, 0)
-        self.chk_skin = Gtk.CheckButton(label="Skin")
-        self.chk_skin.set_active(True)
-        opts.pack_start(self.chk_skin, False, False, 0)
-        self.cb_lang = Gtk.ComboBoxText()
-        for lang in ("English", "Spanish", "Portuguese"):
-            self.cb_lang.append_text(lang)
-        self.cb_lang.set_active(0)
-        opts.pack_start(self.cb_lang, True, True, 0)
+        lbl_tab = Gtk.Label(label="Connection")
+        self._tab_labels.append(lbl_tab)
+        self.nb.append_page(box, lbl_tab)
 
-        # ---------------- right: notebook --------------------------------
-        self._tab_labels = []
-        self.nb = Gtk.Notebook()
-        self.nb.set_scrollable(True)
-        paned.pack2(self.nb, True, False)
+    def on_light_theme(self, *_):
+        Gtk.Settings.get_default().set_property(
+            "gtk-application-prefer-dark-theme",
+            not self.chk_light.get_active())
         self._build_param_tab()
         self._build_readwrite_tab()
         self._build_active_tab()
@@ -404,6 +408,7 @@ class ReaderApp(Gtk.Window):
 
         rp = Gtk.Frame(label="Reader parameters")
         rg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        rg.set_border_width(8)
         rp.add(rg)
         self.cb_rfpower = Gtk.ComboBoxText()
         for v in range(0, 31):
@@ -425,6 +430,7 @@ class ReaderApp(Gtk.Window):
 
         rs = Gtk.Frame(label="Reading settings")
         sg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        sg.set_border_width(8)
         rs.add(sg)
         self.cb_workmode = Gtk.ComboBoxText()
         for m in ("AnswerMode", "ActiveMode"):
@@ -465,6 +471,7 @@ class ReaderApp(Gtk.Window):
 
         kb = Gtk.Frame(label="Keyboard")
         kg = Gtk.Grid(column_spacing=8, row_spacing=6)
+        kg.set_border_width(8)
         kb.add(kg)
         self.cb_outfmt = Gtk.ComboBoxText()
         for f in ("All(Hex)", "EPC(HEX)", "EPC(ASCII)"):
