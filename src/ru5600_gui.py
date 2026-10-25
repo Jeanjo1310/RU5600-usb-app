@@ -614,11 +614,18 @@ class ReaderApp(Gtk.Window):
         # one row per tag, with the sequential number it was given when
         # it was read the first time (the same as the ReaderSoft demo:
         # a tag that is read again does not get a new record, it only
-        # gets its count and its last seen updated)
-        self.tag_store = Gtk.ListStore(str, str, str, str, str, str)
+        # gets its count and its last seen updated).
+        # CRUDO (exe) shows the raw record exactly as the Windows
+        # ReaderSoftV5.1 shows it ("Type/Ant/Tag/RSSI", whole blob with
+        # spaces) - never hidden, never truncated: the code is fixed on
+        # any antenna.  EPC/Chip are the chip-first machine
+        # interpretation below the raw (filled by _identify_tag after a
+        # direct TID read + decode; pending chips show "...").
+        self.tag_store = Gtk.ListStore(str, str, str, str, str, str, str,
+                                       str)
         view = Gtk.TreeView(model=self.tag_store)
-        for i, title in enumerate(("#", "Ant", "EPC / Tag ID", "RSSI",
-                                   "Count", "Last seen")):
+        for i, title in enumerate(("#", "Ant", "CRUDO (exe)", "EPC",
+                                   "Chip", "RSSI", "Count", "Last seen")):
             view.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(),
                                                   text=i))
         scroll = Gtk.ScrolledWindow()
@@ -1808,7 +1815,9 @@ class ReaderApp(Gtk.Window):
     def update_tag_table(self, tags):
         now = time.strftime("%H:%M:%S")
         for tag in tags:
-            key = tag.epc_hex
+            blob = bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)
+            key = blob.hex().upper()
+            crudo = " ".join(f"{b:02X}" for b in blob)
             if key not in self._tag_counts:
                 self._tag_counts[key] = 0
                 self._tag_order.append(key)
@@ -1818,19 +1827,73 @@ class ReaderApp(Gtk.Window):
                 # the sequential number is given when the tag is read
                 # for the first time and does not change afterwards
                 row = self.tag_store.append([str(len(self._tag_order)),
-                                             str(tag.ant), key,
-                                             str(tag.rssi), "1", now])
+                                             str(tag.ant), crudo, "...",
+                                             "...", str(tag.rssi), "1",
+                                             now])
+                self._identify_tag(key, blob)
             else:
-                row[3] = str(tag.rssi)
-                row[4] = str(self._tag_counts[key])
-                row[5] = now
+                row[5] = str(tag.rssi)
+                row[6] = str(self._tag_counts[key])
+                row[7] = now
         return False
 
     def _find_row(self, key):
+        compact = key.replace(" ", "")
         for row in self.tag_store:
-            if row[2] == key:
+            if row[2].replace(" ", "") == compact:
                 return row
         return None
+
+    def _identify_tag(self, key, blob):
+        """Chip-first machine interpretation under the raw (worker thread).
+
+        Direct TID read (bank 2) + decode -> chip -> per-chip interpreter
+        for the blob.  Unknown chips keep the raw and show pending: no
+        guessing, and no write path touches this.  H9/H3/ZKTeco/Dogbone
+        all enter here; only chips with evidence-backed interpreters in
+        `interpret_active_blob` get an EPC, the rest wait for hardware
+        evidence (Creador 2026-10-26).
+        """
+        if self.reader is None or not self.reader.is_open:
+            return
+
+        def task():
+            from ru5600_core import interpret_active_blob
+            from ru5600_chip import decode_tid
+            votes: dict = {}
+            for _ in range(3):
+                try:
+                    tid = self.reader.read_card(2, 0, 6, b"\x00" * 4,
+                                                retries=1)
+                except Exception:  # noqa: BLE001 - flaky reader, vote on
+                    continue
+                if tid and len(tid) >= 4 and tid[0] == 0xE2:
+                    votes[tid] = votes.get(tid, 0) + 1
+            if not votes:
+                return (key, None, "TID no leido")
+            tid = max(votes.items(), key=lambda kv: kv[1])[0]
+            try:
+                info = decode_tid(tid)
+                prefix = tid[:4].hex().upper()
+                chip = (f"{info.manufacturer} {info.model}"
+                        if info.known else
+                        f"desconocido ({prefix})")
+            except Exception:  # noqa: BLE001 - never break the table
+                return (key, None, "TID no decodificado")
+            epc, _, pending = interpret_active_blob(blob, prefix)
+            if pending is not None:
+                return (key, None, f"{chip} - interpreter pending")
+            return (key, epc.hex().upper(), chip)
+
+        def ok(res):
+            k, epc_hex, chip = res
+            row = self._find_row(k)
+            if row is None:
+                return
+            row[3] = epc_hex if epc_hex else "-"
+            row[4] = chip
+
+        self.worker.run(task, on_ok=ok, on_err=self.log_error)
 
     # --------------------------------------------------------------- log
     def log(self, message):
