@@ -101,6 +101,8 @@ STRINGS = {
     "SingleFreq": {"en": "SingleFreq", "es": "Frecuencia unica"},
     "Skin": {"en": "Skin", "es": "Apariencia"},
     "Light": {"en": "Light", "es": "Claro"},
+    "Oscuro": {"en": "Dark", "es": "Oscuro"},
+    "Theme": {"en": "Theme", "es": "Tema"},
     "Accion:": {"en": "Accion:", "es": "Accion:"},
     "Refresh": {"en": "Refresh", "es": "Actualizar"},
     "ExportConfig": {"en": "ExportConfig", "es": "Exportar config"},

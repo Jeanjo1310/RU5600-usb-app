@@ -154,7 +154,12 @@ class ReaderApp(Gtk.Window):
 
     def on_language(self, *_):
         """Change the language of the interface in place."""
-        code = self.cb_lang.get_active_id() or "en"
+        if self.rb_es.get_active():
+            code = "es"
+        elif self.rb_en.get_active():
+            code = "en"
+        else:
+            code = self._lang
         self._lang = code
         self._translate(self, code)
         self._refill_combo(self.cb_read_mode, self.READ_MODE_ITEMS)
@@ -284,22 +289,32 @@ class ReaderApp(Gtk.Window):
         box.set_border_width(12)
 
         lang = Gtk.Frame(label="Language and theme")
-        lg = Gtk.Grid(column_spacing=12, row_spacing=6)
+        lg = Gtk.Grid(column_spacing=32, row_spacing=6)
+        lg.set_column_homogeneous(True)
         lg.set_border_width(8)
         lang.add(lg)
-        self.cb_lang = Gtk.ComboBoxText()
-        for name, code in LANGUAGES:
-            self.cb_lang.append(code, name)
-        self.cb_lang.set_active(0)
-        self.cb_lang.set_tooltip_text(
-            "Language of the interface. It can be changed at any moment.")
-        self.cb_lang.connect("changed", self.on_language)
-        lg.attach(Gtk.Label(label="Language", xalign=0), 0, 0, 1, 1)
-        lg.attach(self.cb_lang, 1, 0, 1, 1)
-        self.chk_light = Gtk.CheckButton(label="Light")
-        self.chk_light.set_tooltip_text("Light theme instead of dark.")
-        self.chk_light.connect("toggled", self.on_light_theme)
-        lg.attach(self.chk_light, 2, 0, 1, 1)
+        col_lang = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        col_lang.pack_start(Gtk.Label(label="Language", xalign=0),
+                           False, False, 0)
+        self.rb_es = Gtk.RadioButton.new_with_label_from_widget(None, "Español")
+        self.rb_en = Gtk.RadioButton.new_with_label_from_widget(
+            self.rb_es, "English")
+        self.rb_es.set_active(True)
+        for rb in (self.rb_es, self.rb_en):
+            rb.connect("toggled", self.on_language)
+            col_lang.pack_start(rb, False, False, 0)
+        lg.attach(col_lang, 0, 0, 1, 1)
+        col_theme = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        col_theme.pack_start(Gtk.Label(label="Theme", xalign=0),
+                           False, False, 0)
+        self.rb_dark = Gtk.RadioButton.new_with_label_from_widget(None, "Oscuro")
+        self.rb_light = Gtk.RadioButton.new_with_label_from_widget(
+            self.rb_dark, "Light")
+        self.rb_dark.set_active(True)
+        for rb in (self.rb_dark, self.rb_light):
+            rb.connect("toggled", self.on_light_theme)
+            col_theme.pack_start(rb, False, False, 0)
+        lg.attach(col_theme, 1, 0, 1, 1)
         box.pack_start(lang, False, False, 0)
 
         conn = Gtk.Frame(label="Connection")
@@ -433,7 +448,7 @@ class ReaderApp(Gtk.Window):
         self.nb.append_page(box, lbl_tab)
 
     def on_light_theme(self, *_):
-        self._apply_theme(self.chk_light.get_active())
+        self._apply_theme(self.rb_light.get_active())
 
     def _apply_theme(self, light):
         self._css.load_from_data(LIGHT_CSS if light else DARK_CSS)
