@@ -519,8 +519,8 @@ def parse_tag_buffer(buf: bytes, count: int) -> List[Tag]:
 # evidence.  Unknown chips stay vendor-faithful (whole blob + pending flag):
 # reading wrong is grave, writing wrong is critical.
 ACTIVE_COMPOUND_PREFIXES = {
-    # prefix: (epc_data_bytes, tid_offset, tid_bytes, evidence)
-    "E2803821": (12, 24, 12, "Higgs-9 live 2026-10-25: EPC 12+12pad, TID 12"),
+    # prefix: evidence (chip-first; TID from direct bank-2 read + decode)
+    "E2803821": "Higgs-9 live 2026-10-25/26: layouts A (100B) y B (88B)",
 }
 
 
@@ -530,14 +530,27 @@ def interpret_active_blob(blob: bytes, tid_prefix: str):
     Returns ``(epc, tid, pending)``: pending is None when the chip has
     an evidence-backed interpreter, else a string flagging the blob as
     uninterpreted (whole blob returned as epc, tid empty).
+
+    Two reader packings observed live (same reader, different EPC slots):
+      A: [EPC 12][pad 12][TID 12...]  (PC 12 words, e.g. H9 041 PC 6000)
+      B: [EPC 12][TID 12...]          (no pad; TID class ID 0xE2 follows)
+    The split key is the TID class byte 0xE2 (Gen2 invariant already used
+    by read_tid_for), never a hardcoded chip model.
     """
     spec = ACTIVE_COMPOUND_PREFIXES.get(tid_prefix)
     if spec is None:
         return bytes(blob), b"", f"interpreter pending for {tid_prefix}"
-    epc_len, tid_off, tid_len, _ = spec
-    epc = bytes(blob[0:epc_len])
-    tid = bytes(blob[tid_off:tid_off + tid_len])
-    if not tid or tid[0] != 0xE2:
+    if len(blob) < 24 or blob[0] != 0xE2:
+        return bytes(blob), b"", f"layout mismatch for {tid_prefix}"
+    epc = bytes(blob[0:12])
+    if len(blob) >= 24 and blob[12] == 0xE2:
+        tid = bytes(blob[12:24])          # layout B: TID right after EPC
+    elif (len(blob) >= 36 and blob[24] == 0xE2
+            and all(b == 0 for b in blob[12:24])):
+        tid = bytes(blob[24:36])         # layout A: 12B pad, then TID
+    else:
+        return bytes(blob), b"", f"layout mismatch for {tid_prefix}"
+    if tid[0] != 0xE2:
         return bytes(blob), b"", f"layout mismatch for {tid_prefix}"
     return epc, tid, None
 

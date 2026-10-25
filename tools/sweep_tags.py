@@ -66,23 +66,36 @@ def main():
     except Exception as exc:  # noqa: BLE001 - excel is a bonus, not the read
         print(f"excel no cargado: {exc}")
 
-    print(f"barrido {dt:.0f}s: {len(tags)} tags distintos")
+    print(f"barrido {dt:.0f}s: {len(tags)} tags distintos (por blob crudo)")
     for i, tag in enumerate(tags, 1):
-        blob = (bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)).hex().upper()
-        epc, chip = "", "interpreter pending"
-        for prefix in KNOWN_PREFIXES:
-            at = blob.find(prefix)
-            if at >= 0:
-                e, t, pending = interpret_active_blob(
-                    bytes.fromhex(blob), prefix)
+        blob = (bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc))
+        bhe = blob.hex().upper()
+        epc, chip, xl = "?", "interpreter pending", "-"
+        # chip-primero de verdad: TID directo (votos) + el TID tiene que
+        # estar DENTRO del blob (dos fuentes independientes coinciden).
+        # Sin eso no hay carve, solo crudo.
+        votes = {}
+        for _ in range(3):
+            try:
+                t = reader.read_card(2, 0, 6, b"\x00" * 4, retries=1)
+                if t and len(t) >= 4 and t[0] == 0xE2:
+                    votes[t] = votes.get(t, 0) + 1
+            except Exception:  # noqa: BLE001 - lector intermitente
+                pass
+        if votes:
+            tid = max(votes.items(), key=lambda kv: kv[1])[0]
+            the = tid.hex().upper()
+            if the in bhe:
+                prefix = the[:8]
+                e, _, pending = interpret_active_blob(blob, prefix)
                 if pending is None:
-                    epc, chip = e.hex().upper(), prefix
-                    break
-        if not epc:
-            # H9-style carve attempt only as hypothesis display, not claim
-            epc = f"BLOB {len(blob) // 2}B"
-        xl_hit = idx.get(epc, "NO ESTA (nuevo)") if idx is not None and not epc.startswith("BLOB") else "-"
-        print(f"#{i} epc={epc[:32]} chip={chip} excel={xl_hit}")
+                    epc = e.hex().upper()
+                    chip = prefix
+                    if idx is not None:
+                        xl = idx.get(epc, "NO ESTA (nuevo)")
+        print(f"#{i} epc={epc[:32] if len(epc) > 32 else epc} "
+              f"chip={chip} excel={xl}")
+        print(f"   blob {len(bhe) // 2}B {bhe[:64]}...")
     return 0
 
 
