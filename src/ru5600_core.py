@@ -29,6 +29,45 @@ _VENDOR_CANDIDATES = (
 VENDOR_DIR = next((d for d in _VENDOR_CANDIDATES if os.path.isdir(d)),
                   _VENDOR_CANDIDATES[0])
 
+# USB identity of the RU5600 reader (QinHeng HID).  Used to track the
+# device node across re-enumerations: when the reader resets itself
+# under stress it comes back on another device number (008 -> 011),
+# and the fix is to look where it is now instead of where it was.
+USB_VID = "1a86"
+USB_PID = "e010"
+
+
+def find_reader_usb_node():
+    """Sysfs node (e.g. '001/011') where the reader is right now, or None.
+
+    Solution, not a problem report (Creador 2026-10-26): on disconnect,
+    re-verify the position instead of assuming the old one.
+    """
+    base = "/sys/bus/usb/devices"
+    try:
+        nodes = sorted(os.listdir(base))
+    except OSError:
+        return None
+    for node in nodes:
+        try:
+            with open(os.path.join(base, node, "idVendor")) as fh:
+                vid = fh.read().strip().lower()
+            with open(os.path.join(base, node, "idProduct")) as fh:
+                pid = fh.read().strip().lower()
+        except OSError:
+            continue
+        if vid == USB_VID and pid == USB_PID:
+            try:
+                with open(os.path.join(base, node, "busnum")) as fh:
+                    bus = fh.read().strip()
+                with open(os.path.join(base, node, "devnum")) as fh:
+                    dev = fh.read().strip()
+                return f"{int(bus):03d}/{int(dev):03d}"
+            except OSError:
+                return node
+    return None
+
+
 # Device address used by every vendor demo: 0xFF == broadcast.
 DEV_ADDR = 0xFF
 
@@ -555,10 +594,16 @@ class Ru5600Reader:
         is still shutting down can make the first attempt fail - the
         reader needs a few seconds to let go of it.  Retry before giving
         up.
+
+        Re-enumeration proof (Creador 2026-10-26): when the reader resets
+        itself it comes back on another device number, so the position is
+        re-verified on every retry instead of assumed.  The vendor open
+        itself is VID:PID based, so a moved reader opens fine.
         """
         with self._lock:
             if self._open:
                 return True
+            first_node = find_reader_usb_node()
             for attempt in range(attempts):
                 if self._lib.CFHid_OpenDevice() == 1:
                     self._open = True
@@ -569,10 +614,15 @@ class Ru5600Reader:
                     time.sleep(0.25)
                     self._install_callback()
                     return True
+                node = find_reader_usb_node()
+                if node != first_node:
+                    first_node = node  # moved (e.g. 001/008 -> 001/011)
                 if attempt + 1 < attempts:
                     time.sleep(retry_delay)
+            node = find_reader_usb_node()
             raise ReaderError(
                 "Open failed: the reader could not be claimed.\n"
+                f"USB node now: {node or 'not found - reenchufa el lector'}.\n"
                 "Either it is not connected, the udev rule is missing "
                 "(press 'Install USB access rule'), or another program "
                 "has it open - only one client can use the reader at a "
@@ -580,6 +630,24 @@ class Ru5600Reader:
                 "needs about 20-30 s to release the USB port, so the "
                 "client waits and retries."
             ) from None
+
+    def reconnect(self, settle: float = 5.0) -> bool:
+        """Best-effort close + open, re-locating a moved reader.
+
+        To call after a `Hid Disconnect` or a mute streak: drops our side
+        quietly, waits for the reader to come back (possibly on another
+        device number), and opens it again.
+        """
+        try:
+            with self._lock:
+                self._open = False
+                try:
+                    self._lib.CFHid_CloseDevice()
+                except Exception:  # noqa: BLE001 - already half gone
+                    pass
+        finally:
+            time.sleep(settle)
+        return self.open()
 
     def close(self) -> bool:
         """Close the reader, leaving it quiet.
