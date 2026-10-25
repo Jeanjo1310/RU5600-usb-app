@@ -967,17 +967,17 @@ class Ru5600Reader:
         return tags
 
     def sweep(self, duration: float = 60.0, target_count: int = 0,
-              poll: float = 0.1, stop_on_target: bool = True) -> List[Tag]:
+              poll: float = 0.1, on_new=None) -> List[Tag]:
         """Persistent multi-tag sweep (barrido).
 
         Vendor pattern (timer1 100 ms): StartRead once, drain the buffer
-        continuously while streaming.  Like the antenna it never stops on
-        its own: with stop_on_target it returns once target_count distinct
-        tags are seen, otherwise it keeps listening the whole duration
-        (duration <= 0 = until Ctrl+C).  Dedup key is the raw
-        blob (vendor-faithful, exact on any antenna).  Elevated tags and
-        batches (10+) need time, not power: keep polling, don't hammer
-        with extra orders.
+        continuously while streaming.  Like the antenna it only stops on
+        stop order (Ctrl+C -> StopRead) or time budget (duration <= 0 =
+        until Ctrl+C).  target_count is just progress meta (100/500 tags
+        in one read), never a stop condition: counted tags are never
+        re-reported as new (dedup by raw blob).  Elevated tags and big
+        batches need time, not power: keep polling, don't hammer with
+        extra orders.
         """
         previous = None
         try:
@@ -1003,8 +1003,8 @@ class Ru5600Reader:
                     if key not in seen:
                         seen.add(key)
                         tags.append(tag)
-                        if stop_on_target and target_count and len(tags) >= target_count:
-                            return tags
+                        if on_new is not None:
+                            on_new(tag, len(tags))
         finally:
             try:
                 self._lib.CFHid_StopRead(DEV_ADDR)

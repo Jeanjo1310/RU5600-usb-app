@@ -42,18 +42,23 @@ KNOWN_PREFIXES = ("E2803821", "E2803813", "E2801105", "E2806894", "E2806915",
 
 def main():
     ap = argparse.ArgumentParser(description="RU5600 persistent tag sweep")
-    ap.add_argument("--target", type=int, default=10)
-    ap.add_argument("--seconds", type=float, default=90.0)
-    ap.add_argument("--continuous", action="store_true",
-                    help="no para al llegar al target: escucha como la antena")
+    ap.add_argument("--target", type=int, default=0,
+                    help="meta informativa (ej 100/500); nunca detiene")
+    ap.add_argument("--seconds", type=float, default=90.0,
+                    help="presupuesto de tiempo; 0 = hasta Ctrl+C (orden de parar)")
     args = ap.parse_args()
 
     reader = Ru5600Reader()
     reader.open()
+    meta = f"/{args.target}" if args.target else ""
     try:
         t0 = time.monotonic()
-        tags = reader.sweep(duration=args.seconds, target_count=args.target,
-                            stop_on_target=not args.continuous)
+        tags = reader.sweep(
+            duration=args.seconds, target_count=args.target,
+            on_new=lambda tag, n: print(
+                f"  nuevo #{n}{meta} "
+                f"{(bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc)).hex().upper()[:24]}",
+                flush=True))
         dt = time.monotonic() - t0
     finally:
         reader.close()
