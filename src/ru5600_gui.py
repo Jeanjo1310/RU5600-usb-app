@@ -393,16 +393,14 @@ class ReaderApp(Gtk.Window):
             b.set_hexpand(True)
         btns.attach(self.btn_open, 0, 0, 1, 1)
         btns.attach(self.btn_close, 1, 0, 1, 1)
-        row = 1
-        for label, cb in (("ScanPort", self.on_scan_port),
-                          ("ScanNetwork", self.on_scan_network),
-                          ("TCPServer", self.on_tcp_server),
-                          ("Help", self.on_help)):
+        for i, (label, cb) in enumerate((("ScanPort", self.on_scan_port),
+                                        ("ScanNetwork", self.on_scan_network),
+                                        ("TCPServer", self.on_tcp_server),
+                                        ("Help", self.on_help))):
             b = Gtk.Button(label=label)
             b.connect("clicked", cb)
             b.set_hexpand(True)
-            btns.attach(b, row % 2, row // 2 + 1, 1, 1)
-            row += 1
+            btns.attach(b, i % 2, 1 + i // 2, 1, 1)
 
         self.btn_udev = Gtk.Button(label="Install USB access rule")
         self.btn_udev.set_tooltip_text(
