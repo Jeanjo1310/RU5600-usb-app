@@ -107,10 +107,15 @@ def main():
                     help="presupuesto total; 0 = hasta Ctrl+C (orden de parar)")
     ap.add_argument("--round", type=float, default=15.0,
                     help="streaming por vuelta antes de resolver")
+    ap.add_argument("--rf", type=int, default=None,
+                    help="potencia RF dBm 0-30 para la prueba (default: la del lector)")
     args = ap.parse_args()
 
     reader = Ru5600Reader()
     reader.open()
+    if args.rf is not None:
+        reader.set_rf_power(max(0, min(30, args.rf)))
+        print(f"RF={reader.rf_power()}dBm (restaurar al cerrar: 18)", flush=True)
     meta = f"/{args.target}" if args.target else ""
     idx, codes = None, set()
     try:
@@ -194,6 +199,11 @@ def main():
                 print(f"listo: {done} tags con dato completo")
                 break
     finally:
+        try:
+            if args.rf is not None:
+                reader.set_rf_power(18)
+        except Exception:
+            pass
         reader.close()
 
     n = 0
