@@ -82,7 +82,7 @@ def main():
         tag = members[0]
         blob = (bytes(tag.raw_id) if tag.raw_id else bytes(tag.epc))
         bhe = blob.hex().upper()
-        epc, chip, xl = "?", "interpreter pending", "-"
+        epc, chip, xl, conf = "?", "interpreter pending", "-", ""
         # chip-primero de verdad: TID directo (votos) + el TID tiene que
         # estar DENTRO del blob (dos fuentes independientes coinciden).
         # Sin eso no hay carve, solo crudo.
@@ -103,10 +103,28 @@ def main():
                 if pending is None:
                     epc = e.hex().upper()
                     chip = prefix
+                    conf = "confirmado"
                     if idx is not None:
                         xl = idx.get(epc, "NO ESTA (nuevo)")
+        if not conf:
+            # patron de alta probabilidad (Creador 2026-10-26): layout A/B
+            # + prefijo TID en DB con evidencia. Se informa como patron,
+            # el excel como tercera fuente lo respalda o lo tumba.
+            from ru5600_chip import TID_PREFIX_DB
+            cand, tp = None, None
+            if (len(blob) >= 24 and blob[0] == 0xE2 and blob[12] == 0xE2):
+                cand, tp = blob[0:12], blob[12:24]      # layout B
+            elif (len(blob) >= 36 and blob[0] == 0xE2 and blob[24] == 0xE2
+                    and all(b == 0 for b in blob[12:24])):
+                cand, tp = blob[0:12], blob[24:36]      # layout A
+            if cand is not None and tp.hex().upper()[:8] in TID_PREFIX_DB:
+                epc = cand.hex().upper()
+                chip = tp.hex().upper()[:8] + " (patron)"
+                conf = "patron"
+                if idx is not None:
+                    xl = idx.get(epc, "NO ESTA (nuevo)")
         print(f"#{n} epc={epc[:32] if len(epc) > 32 else epc} "
-              f"chip={chip} excel={xl}{flag}")
+              f"chip={chip} excel={xl} {conf}{flag}")
         print(f"   blob {len(bhe) // 2}B {bhe[:64]}...")
     return 0
 
