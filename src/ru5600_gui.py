@@ -320,10 +320,6 @@ class ReaderApp(Gtk.Window):
         self._tab_labels.append(lbl_tab)
         self.nb.append_page(box, lbl_tab)
 
-    def on_light_theme(self, *_):
-        Gtk.Settings.get_default().set_property(
-            "gtk-application-prefer-dark-theme",
-            not self.chk_light.get_active())
         self._build_param_tab()
         self._build_readwrite_tab()
         self._build_active_tab()
@@ -332,6 +328,11 @@ class ReaderApp(Gtk.Window):
         self._build_risky_tab()
         self._build_whitelist_tab()
         self._build_batchwrite_tab()
+
+    def on_light_theme(self, *_):
+        Gtk.Settings.get_default().set_property(
+            "gtk-application-prefer-dark-theme",
+            not self.chk_light.get_active())
 
         # ---------------- bottom action row ------------------------------
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
