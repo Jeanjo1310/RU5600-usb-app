@@ -7,6 +7,7 @@
     <input id="bepc" value="E2004704D9A06820068E0112" class="bg-gray-50 border rounded-lg p-2 font-mono md:col-span-2 dark:bg-gray-700">
     <input id="btotal" type="number" value="10" min="1" title="total" class="bg-gray-50 border rounded-lg p-2 dark:bg-gray-700">
     <label class="text-sm"><input type="checkbox" id="bcheck" checked> Verificar tras escribir</label>
+    <label class="text-sm"><input type="checkbox" id="block"> Bloquear tras escribir (nota: hacelo en Peligroso)</label>
   </div>
   <div class="flex gap-2">
     <button id="bstart" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Iniciar</button>
@@ -33,7 +34,7 @@ async function bpoll() {
   if (!r.running && btimer) { clearInterval(btimer); btimer = null; }
 }
 document.getElementById('bstart').onclick = async () => {
-  const r = await post('/api/batch_start', {epc: document.getElementById('bepc').value, total: parseInt(document.getElementById('btotal').value) || 10, check: document.getElementById('bcheck').checked});
+  const r = await post('/api/batch_start', {epc: document.getElementById('bepc').value, total: parseInt(document.getElementById('btotal').value) || 10, check: document.getElementById('bcheck').checked, lock: document.getElementById('block').checked});
   if (!r.ok) { document.getElementById('bmsg').textContent = 'Error: ' + r.error; return; }
   btimer = setInterval(bpoll, 500); bpoll();
 };

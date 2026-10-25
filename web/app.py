@@ -201,6 +201,36 @@ def api_mem_write():
         return jsonify(ok=False, error=str(exc))
 
 
+@app.route("/api/epc_write", methods=["POST"])
+def api_epc_write():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        epc = bytes.fromhex(str(cfg.get("epc", "")).replace(" ", ""))
+        if len(epc) % 2:
+            return jsonify(ok=False, error="EPC par (multiplo de 2 bytes)")
+    except ValueError:
+        return jsonify(ok=False, error="EPC hex invalido")
+    pwd = _hex(cfg.get("pwd"), 4)
+    fp = bool(cfg.get("fp"))
+    def _do():
+        r = _need_usb()
+        if fp:
+            from ru5600_core import check_fingerprint
+            tags = r.scan()
+            if not tags:
+                raise RuntimeError("sin tag a la vista")
+            okfp, msg = check_fingerprint(r, tags[0].epc or tags[0].raw_id)
+            if not okfp:
+                raise RuntimeError("huella: " + msg)
+        r.write_epc(epc, pwd, verify=True)
+        return True
+    try:
+        _guarded(_do, timeout=120)
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
 @app.route("/api/fp_learn", methods=["POST"])
 def api_fp_learn():
     try:
@@ -280,6 +310,15 @@ def api_freq_set():
         return jsonify(ok=False, error=str(exc))
 
 
+@app.route("/api/silence", methods=["POST"])
+def api_silence():
+    try:
+        _need_usb().set_beep(False)
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
 @app.route("/api/reboot", methods=["POST"])
 def api_reboot():
     try:
@@ -305,6 +344,75 @@ def api_open():
         else:
             _net_info["mode"] = t
             _get_reader()
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/tcp_server", methods=["POST"])
+def api_tcp_server():
+    return jsonify(msg="TCPServer: no soportado en esta build (transporte USB)")
+
+
+@app.route("/api/help")
+def api_help():
+    return jsonify(text="RU5600 Reader (cliente Linux no oficial). Transporte: USB via libusb (lib vendor libCFHidApi). Equipo: WCH 1a86:e010. Si Abrir falla, instala la regla udev para leer sin root.")
+
+
+UDEV_RULE = 'SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="e010", MODE="0666", GROUP="plugdev"\n'
+
+
+@app.route("/api/udev_rule")
+def api_udev_rule():
+    cmd = ("install -m 644 99-inveton-ru5600.rules /etc/udev/rules.d/ && "
+           "sudo udevadm control --reload-rules && sudo udevadm trigger")
+    return jsonify(rule=UDEV_RULE.rstrip("\n"),
+                   cmd="sudo sh -c 'echo \'%s\' > /etc/udev/rules.d/99-inveton-ru5600.rules' && %s" % (UDEV_RULE.rstrip("\n"), cmd))
+
+
+@app.route("/api/config_export")
+def api_config_export():
+    from flask import Response
+    try:
+        r = _need_usb()
+        cfg = {"rfpower": r.rf_power(), "workmode": r.work_mode(),
+               "buzzer": int(r.beep()), "filtertime": r.filter_time(),
+               "freq": r.read_freq().hex().upper()}
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    body = "\n".join(f"{k}={v}" for k, v in cfg.items()) + "\n"
+    return Response(body, mimetype="text/plain",
+                    headers={"Content-Disposition":
+                             "attachment; filename=ru5600-config.ini"})
+
+
+@app.route("/api/config_import", methods=["POST"])
+def api_config_import():
+    vals = {}
+    for line in str(request.get_json(silent=True).get("text", "")).splitlines():
+        if "=" in line:
+            k, v = line.strip().split("=", 1)
+            vals[k.strip()] = v.strip()
+    try:
+        r = _need_usb()
+        if "rfpower" in vals:
+            r.set_rf_power(int(vals["rfpower"]))
+        if "workmode" in vals:
+            r.set_work_mode(int(vals["workmode"]))
+        if "buzzer" in vals:
+            r.set_beep(vals["buzzer"] == "1")
+        if "filtertime" in vals:
+            r.set_filter_time(int(vals["filtertime"]))
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/relay", methods=["POST"])
+def api_relay():
+    cfg = request.get_json(silent=True) or {}
+    try:
+        _need_usb().relay(bool(cfg.get("on")))
         return jsonify(ok=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
@@ -682,6 +790,7 @@ def api_batch_start():
         _batch_stop.clear()
     threading.Thread(target=_batch_run,
                      args=(epc, bool(cfg.get("check", True))),
+                     kwargs={"lock_note": bool(cfg.get("lock", False))},
                      daemon=True).start()
     return jsonify(ok=True)
 
@@ -698,7 +807,7 @@ def api_batch_stop():
     return jsonify(ok=True)
 
 
-def _batch_run(epc, check):
+def _batch_run(epc, check, lock_note=False):
     try:
         r = _get_reader()
         seen = set()
@@ -724,6 +833,8 @@ def _batch_run(epc, check):
                                           b"\x00" * 4, retries=4)
                         if back[4:4 + len(epc)] != epc:
                             res = "verify FAILED"
+                    if lock_note and res == "written":
+                        res += " (lock: hacelo en Peligroso)"
                     _batch["done"] += 1
                     progressed = True
                 except Exception as exc:  # noqa: BLE001

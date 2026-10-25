@@ -35,6 +35,11 @@
   <p class="text-xs mt-1 text-gray-500">0x2F con payload [mode][0x55][pass]. Este firmware (7.1) no responde a 0x2E/0x2F: área en desarrollo.</p>
   <p id="cwout" class="mt-1 text-sm"></p>
 </div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+  <h2 class="text-lg font-semibold mb-3">Comandos conocidos del lector RU5600</h2>
+  <pre class="text-xs font-mono whitespace-pre-wrap">0x01 inventario   0x02 leer memoria   0x03 escribir memoria   0x04 escribir EPC   0x05 lock   0x10 informacion   0x20/0x21 parametro   0x23/0x24 un parametro   0x3E/0x3F frecuencia   0x30 reiniciar   0x40/0x41 start/stop read   0x85/0x86 relay   0xE0 modulo   0xE1 antena   0xE8-0xEC whitelist   0x2E/0x2F CryptWrite
+BLOQUEADOS: 0x2B/0x2C/0x2D (actualizan el firmware del lector) y 0x65 (Kill6C, mata un tag).</pre>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>

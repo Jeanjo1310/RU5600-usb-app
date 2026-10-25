@@ -10,10 +10,23 @@
     <div><label class="block text-sm mb-1">FilterTime(s) <input id="filt" value="0" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label></div>
     <div><label class="block text-sm mb-1">Buzzer <input id="beep" type="checkbox" class="ml-2"></label></div>
   </div>
-  <div class="flex gap-2">
+  <div class="flex flex-wrap gap-2">
     <button id="pread" class="border rounded-lg px-4 py-2">Leer</button>
     <button id="papply" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2">Aplicar</button>
     <button id="pdef" class="border rounded-lg px-4 py-2">Defecto</button>
+    <button id="psil" class="border rounded-lg px-4 py-2">Silenciar ya</button>
+  </div>
+  <h3 class="text-md font-semibold mt-4 mb-2">Lectura por defecto (para Leer/Escribir)</h3>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <label class="text-sm">Área <select id="dmem" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"><option>EPC</option><option>TID</option><option>USER</option></select></label>
+    <label class="text-sm">Inicio (hex) <input id="dptr" value="00" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
+    <label class="text-sm">Longitud (hex) <input id="dlen" value="06" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
+    <label class="text-sm">ReadTime <input id="drt" value="2" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"></label>
+  </div>
+  <h3 class="text-md font-semibold mt-4 mb-2">Salida teclado (cuña: solo app de escritorio)</h3>
+  <div class="grid grid-cols-2 gap-2">
+    <label class="text-sm">Formato <select id="dout" class="bg-gray-50 border rounded-lg p-2 w-full dark:bg-gray-700"><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></label>
+    <label class="text-sm"><input type="checkbox" id="denter" checked> OutWithEnterKey</label>
   </div>
   <p id="pmsg" class="mt-2 text-sm"></p>
 </div>
@@ -37,8 +50,16 @@ document.getElementById('pread').onclick = async () => {
   } else document.getElementById('pmsg').textContent = 'Error: ' + r.error;
 };
 document.getElementById('papply').onclick = async () => {
+  for (const k of ['dmem','dptr','dlen','drt','dout']) localStorage.setItem('ru5600_'+k, document.getElementById(k).value);
+  localStorage.setItem('ru5600_denter', document.getElementById('denter').checked ? '1' : '0');
   const r = await post('/api/params_apply', {rf: document.getElementById('rf').selectedIndex, mode: parseInt(document.getElementById('wm').value), beep: document.getElementById('beep').checked, filter: document.getElementById('filt').value});
   document.getElementById('pmsg').textContent = r.ok ? 'Aplicado.' : 'Error: ' + r.error;
+};
+for (const k of ['dmem','dptr','dlen','drt','dout']) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(k).value = v; }
+if (localStorage.getItem('ru5600_denter') === '0') document.getElementById('denter').checked = false;
+document.getElementById('psil').onclick = async () => {
+  const r = await post('/api/silence', {});
+  document.getElementById('pmsg').textContent = r.ok ? 'Silenciado.' : 'Error: ' + r.error;
 };
 document.getElementById('pdef').onclick = () => {
   document.getElementById('rf').selectedIndex = 15;

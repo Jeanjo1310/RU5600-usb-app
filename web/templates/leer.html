@@ -24,6 +24,16 @@
   <label class="text-sm"><input type="checkbox" id="wfp"> Verificar huella antes de escribir</label>
   <p id="wout" class="mt-1 text-sm"></p>
 </div>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Escribir EPC</h2>
+  <div class="flex flex-wrap gap-2">
+    <input id="wepc" value="3034333234353536373839303132" class="bg-gray-50 border rounded-lg p-2 font-mono flex-1 dark:bg-gray-700">
+    <input id="wpwd" value="00000000" title="password 4 bytes hex" class="bg-gray-50 border rounded-lg p-2 font-mono dark:bg-gray-700">
+    <label class="text-sm"><input type="checkbox" id="wep_fp"> Verificar huella</label>
+    <button id="wepcgo" class="text-white bg-red-700 hover:bg-red-800 rounded-lg px-4 py-2">Escribir EPC</button>
+  </div>
+  <p id="wepout" class="mt-1 text-sm"></p>
+</div>
 <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
   <h2 class="text-lg font-semibold mb-3">Huella (anti-clonado)</h2>
   <button id="fplearn" class="border rounded-lg px-4 py-2 mr-2">Aprender huella del tag actual</button>
@@ -41,6 +51,13 @@ document.getElementById('wgo').onclick = async () => {
   if (!confirm('Escribir en el tag. ¿Confirmás?')) return;
   const r = await post('/api/mem_write', {mem: parseInt(document.getElementById('wmem').value), ptr: document.getElementById('wptr').value, data: document.getElementById('wdata').value, pwd: document.getElementById('wpwd').value, fp: document.getElementById('wfp').checked});
   document.getElementById('wout').textContent = r.ok ? 'Escrito y verificado.' : 'Error: ' + r.error;
+};
+if (localStorage.getItem('ru5600_dmem')) document.querySelector('#rmem').selectedIndex = ['EPC','TID','USER','RESERVED'].indexOf(localStorage.getItem('ru5600_dmem'));
+for (const [id, k] of [['rptr','dptr'],['rlen','dlen']]) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(id).value = v; }
+document.getElementById('wepcgo').onclick = async () => {
+  if (!confirm('Escribir EPC (verificado). ¿Confirmás?')) return;
+  const r = await post('/api/epc_write', {epc: document.getElementById('wepc').value, pwd: document.getElementById('wpwd').value, fp: document.getElementById('wep_fp').checked});
+  document.getElementById('wepout').textContent = r.ok ? 'EPC escrito y verificado.' : 'Error: ' + r.error;
 };
 document.getElementById('fplearn').onclick = async () => {
   const r = await post('/api/fp_learn', {});

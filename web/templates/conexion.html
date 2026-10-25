@@ -36,7 +36,11 @@
     <button id="closeBtn" class="text-white bg-blue-700 hover:bg-blue-800 rounded-lg px-4 py-2" disabled>Cerrar</button>
     <button id="scanBtn" class="border rounded-lg px-4 py-2">Escanear puerto</button>
     <button id="netBtn" class="border rounded-lg px-4 py-2">Escanear red</button>
+    <button id="tcpBtn" class="border rounded-lg px-4 py-2">TCPServer</button>
+    <button id="helpBtn" class="border rounded-lg px-4 py-2">Ayuda</button>
   </div>
+  <button id="udevBtn" class="mt-2 w-full border rounded-lg px-4 py-2">Instalar regla de acceso USB</button>
+  <pre id="udevout" class="mt-1 text-xs whitespace-pre-wrap hidden"></pre>
   <p id="connMsg" class="mt-2 text-sm"></p>
 </div>
 <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
@@ -46,6 +50,13 @@
     <div><div class="text-sm text-gray-500">Firmware</div><div id="fw" class="font-mono">-</div></div>
     <div><div class="text-sm text-gray-500">Hardware</div><div id="hw" class="font-mono">-</div></div>
   </div>
+  <div class="grid grid-cols-2 gap-2 mt-3">
+    <button id="expBtn" class="border rounded-lg px-4 py-2">Exportar config</button>
+    <label class="border rounded-lg px-4 py-2 text-center cursor-pointer">Importar config<input id="impFile" type="file" accept=".ini" class="hidden"></label>
+    <button id="relayOff" class="border rounded-lg px-4 py-2">Cerrar relé</button>
+    <button id="relayOn" class="border rounded-lg px-4 py-2">Liberar relé</button>
+  </div>
+  <p id="devMsg" class="mt-1 text-sm"></p>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -72,6 +83,34 @@ document.getElementById('scanBtn').onclick = async () => {
   const sel = document.getElementById('dev'); sel.innerHTML = '';
   (r.devices || ['1a86:e010 (SWUSB_HID)']).forEach(d => { const o = document.createElement('option'); o.textContent = d; sel.appendChild(o); });
   document.getElementById('connMsg').textContent = (r.devices || []).length + ' lector(es).';
+};
+document.getElementById('tcpBtn').onclick = async () => {
+  const r = await post('/api/tcp_server', {});
+  document.getElementById('connMsg').textContent = r.msg;
+};
+document.getElementById('helpBtn').onclick = async () => {
+  const r = await fetch('/api/help').then(r => r.json());
+  document.getElementById('connMsg').textContent = r.text;
+};
+document.getElementById('udevBtn').onclick = async () => {
+  const r = await fetch('/api/udev_rule').then(r => r.json());
+  const el = document.getElementById('udevout');
+  el.textContent = r.rule + '\n\nInstalación en terminal:\n' + r.cmd;
+  el.classList.remove('hidden');
+};
+document.getElementById('expBtn').onclick = () => { window.location = '/api/config_export'; };
+document.getElementById('impFile').onchange = async (ev) => {
+  const t = await ev.target.files[0].text();
+  const r = await post('/api/config_import', {text: t});
+  document.getElementById('devMsg').textContent = r.ok ? 'Config aplicada.' : 'Error: ' + r.error;
+};
+document.getElementById('relayOff').onclick = async () => {
+  const r = await post('/api/relay', {on: false});
+  document.getElementById('devMsg').textContent = r.ok ? 'Relé cerrado.' : 'Error: ' + r.error;
+};
+document.getElementById('relayOn').onclick = async () => {
+  const r = await post('/api/relay', {on: true});
+  document.getElementById('devMsg').textContent = r.ok ? 'Relé liberado.' : 'Error: ' + r.error;
 };
 document.getElementById('netBtn').onclick = async () => {
   const r = await post('/api/scan_net', {ip: document.getElementById('ip').value, port: document.getElementById('port').value});

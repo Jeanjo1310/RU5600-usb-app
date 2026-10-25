@@ -34,7 +34,7 @@ async function poll() {
   r.tags.forEach((t, i) => {
     let row = document.getElementById('arow' + i);
     if (!row) { row = document.createElement('tr'); row.id = 'arow' + i; row.className = 'border-b dark:border-gray-700'; tb.appendChild(row); }
-    row.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono" title="${t.raw}">${t.epc}</td><td class="px-4 py-2 font-mono">${t.tid || '-'}</td><td class="px-4 py-2">${t.chip}</td><td class="px-4 py-2">${t.ant}</td><td class="px-4 py-2">${t.n}</td>`;
+    row.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.raw}">${t.raw}</td><td class="px-4 py-2 font-mono">${t.epc}</td><td class="px-4 py-2">${t.chip}</td><td class="px-4 py-2">${t.ant}</td><td class="px-4 py-2">${t.rssi}</td><td class="px-4 py-2">${t.n}</td><td class="px-4 py-2">${new Date().toLocaleTimeString()}</td>`;
   });
   while (tb.children.length > r.tags.length) tb.removeChild(tb.lastChild);
 }
