@@ -780,9 +780,13 @@ class Ru5600Reader:
     def detect(self, mode: str = "balanced") -> Detection:
         """Look for tags with the selected read effort.
 
-        The answer mode inventory is used here: with enough rounds it
-        answers every time (measured 10/10 with 40 rounds), and with one
-        round it is the fastest possible detection.
+        NOTE 2026-10-26: the answer-mode InventoryG2 underneath is refused
+        by the reader on Linux (ret=0 deterministic, not windows) - use
+        scan() for discovery; detect() stays for API compatibility.
+
+        The answer mode inventory was used here: with enough rounds it
+        answered every time (measured 10/10 with 40 rounds), and with one
+        round the fastest possible detection.
 
         * ``burst``    - a single round: fastest, misses most of the time
         * ``balanced`` - six rounds: good speed, still reliable
@@ -812,14 +816,15 @@ class Ru5600Reader:
         det.elapsed = time.monotonic() - t0
         return det
 
-    def measure(self, duration: float = 5.0, poll: float = 0.0) -> dict:
+    def measure(self, duration: float = 5.0, poll: float = 0.1) -> dict:
         """Measure the read speed and the antenna signal.
 
         The reader is switched to active mode and left streaming while
         the tag buffer is polled, so every detection the reader sends is
-        counted.  The result is what to compare when mapping the reading
-        area of an antenna: detections per second and the RSSI of the
-        tags seen.
+        counted.  Poll default 0.1 s = vendor timer1 100 ms (a busy loop
+        hammers the USB for millions of empty polls).  The result is what
+        to compare when mapping the reading area of an antenna:
+        detections per second and the RSSI of the tags seen.
         """
         rssis = []
         seen = {}
@@ -895,11 +900,15 @@ class Ru5600Reader:
              restore_mode: bool = True) -> List[Tag]:
         """Reliable one shot scan.
 
-        The answer mode inventory is refused by the reader most of the
-        time (it only answers in narrow windows).  Switching to active
-        mode for a short dwell and draining the tag buffer is what the
-        reader answers reliably.  The dwell is repeated until something
-        shows up or the attempt budget runs out.
+        Vendor-faithful (ReaderSoft timer1_Tick, 100 ms): StartRead once,
+        then drain the tag buffer REPEATEDLY while the reader streams
+        instead of a single poll after StopRead.  The old single-shot
+        drain missed the buffer; the exe never does that.
+
+        The answer mode inventory (InventoryG2) is refused by the reader
+        on Linux (ret=0 deterministic - fresh, rebooted, answer mode set,
+        2048/65536 buffers, callback on/off - 2026-10-26): declared
+        disabled/unmanaged here, use this active scan instead.
 
         A scan must not degrade the reads that come after it: the reader
         answers memory reads much better in answer mode (measured 86 %)
@@ -920,10 +929,20 @@ class Ru5600Reader:
             self._pace()
             self._lib.CFHid_StartRead(DEV_ADDR)
             self._pace(settle=True)
-            time.sleep(dwell)
-            self._lib.CFHid_StopRead(DEV_ADDR)
-            self._pace(settle=True)
-            tags = self.poll_tags()
+            tags: List[Tag] = []
+            seen = set()
+            deadline = time.monotonic() + dwell
+            try:
+                while time.monotonic() < deadline:
+                    time.sleep(0.1)  # timer1.Interval = 100 ms
+                    for tag in self.poll_tags():
+                        key = (tag.epc_hex, tag.ant)
+                        if key not in seen:
+                            seen.add(key)
+                            tags.append(tag)
+            finally:
+                self._lib.CFHid_StopRead(DEV_ADDR)
+                self._pace(settle=True)
             if tags:
                 break
         if restore_mode:
