@@ -23,7 +23,7 @@ from ru5600_core import Ru5600Reader, interpret_active_blob  # noqa: E402
 def load_excel(path):
     import openpyxl
     wb = openpyxl.load_workbook(path, data_only=True)
-    idx = {}
+    idx, codes = {}, set()
     for name in wb.sheetnames:
         if name == "PRUEBAS":
             continue
@@ -31,15 +31,21 @@ def load_excel(path):
         for rr in range(2, ws.max_row + 1):
             b = ws.cell(row=rr, column=2).value
             a = ws.cell(row=rr, column=1).value
+            c = ws.cell(row=rr, column=3).value
             if b:
                 idx[str(b).replace(" ", "").upper()] = (name, rr, a)
-    return idx
+            if c:
+                codes.add(str(c))
+    return idx, codes
 
 
-def resolve_group(reader, blob, bhe, idx):
+def resolve_group(reader, blob, bhe, idx, codes):
     """Dato completo de un grupo: TID directo + carve + excel.
 
-    Devuelve (epc, chip, xl, conf). conf = confirmado | patron | "".
+    Devuelve (epc, chip, xl, conf). conf = confirmado | patron | excel | "".
+    Sin discriminacion de modelo: si el layout es desconocido, el EPC
+    candidato (slot inicial) + prefijo TID en DB se validan contra el
+    excel — un match exacto entre 1001 EPCs no es coincidencia.
     """
     from ru5600_core import interpret_active_blob
     epc, chip, xl, conf = "?", "interpreter pending", "-", ""
@@ -77,6 +83,21 @@ def resolve_group(reader, blob, bhe, idx):
             conf = "patron"
             if idx is not None:
                 xl = idx.get(epc, "NO ESTA (nuevo)")
+    if not conf and idx is not None and len(blob) >= 12:
+        # Sin discriminacion de modelo: el slot EPC abre el blob en todos
+        # los layouts vistos. Candidato + cruce excel: un match exacto
+        # entre 1001 EPCs valida; si no esta, code 7-14 manda (duplicado
+        # = modificar, limpio = usable).
+        cand = blob[0:12].hex().upper()
+        hit = idx.get(cand)
+        if hit is not None:
+            epc, chip = cand, "desconocido (excel)"
+            xl, conf = hit, "excel"
+        else:
+            code = cand[6:14]
+            if code in codes:
+                epc, chip = cand, "desconocido (patron)"
+                xl, conf = f"code {code} DUPLICADO", "patron"
     return epc, chip, xl, conf
 
 
@@ -93,13 +114,13 @@ def main():
     reader = Ru5600Reader()
     reader.open()
     meta = f"/{args.target}" if args.target else ""
-    idx = None
+    idx, codes = None, set()
     try:
         xl = os.path.normpath(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "..", "CONOCIMIENTO", "TAGS EPC.xlsx"))
         if os.path.exists(xl):
-            idx = load_excel(xl)
+            idx, codes = load_excel(xl)
     except Exception as exc:  # noqa: BLE001 - excel is a bonus
         print(f"excel no cargado: {exc}")
 
@@ -136,7 +157,7 @@ def main():
             for key, g in groups.items():
                 if not g["conf"]:
                     g["epc"], g["chip"], g["xl"], g["conf"] = resolve_group(
-                        reader, g["blob"], g["blob"].hex().upper(), idx)
+                        reader, g["blob"], g["blob"].hex().upper(), idx, codes)
             done = sum(1 for g in groups.values() if g["conf"])
             print(f"vuelta: {len(groups)} grupos, {done} con dato completo{meta}",
                   flush=True)

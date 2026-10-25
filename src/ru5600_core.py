@@ -479,7 +479,16 @@ def parse_tag_buffer(buf: bytes, count: int) -> List[Tag]:
     """
     tags: List[Tag] = []
     off = 0
+    dropped = 0
     for _ in range(count):
+        # Resync ante record corrupto (un break descartaba todo el resto
+        # del buffer, incluidos tags sanos de otros modelos).
+        while off < len(buf) and (buf[off] < 3
+                                  or off + 1 + buf[off] > len(buf)):
+            off += 1
+            dropped += 1
+            if off >= len(buf) or dropped > 1024:
+                break
         if off >= len(buf):
             break
         pack_len = buf[off]
