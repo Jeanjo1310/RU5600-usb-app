@@ -719,6 +719,14 @@ class Ru5600Reader:
     def _install_callback(self) -> None:
         def _cb(msg, param1, param2, param3, param4):
             try:
+                st = getattr(self, "_cb_stats", None)
+                if st is not None:
+                    st["calls"] += 1
+                    st["msg"][msg] = st["msg"].get(msg, 0) + 1
+                    if msg == 2:
+                        st["data_frames"] += 1
+                        st["last_len"] = param3
+                        st["last_count"] = param1
                 if msg == 2 and param1 > 0 and param2:
                     raw = ctypes.string_at(param2, param3)
                     tags = parse_tag_buffer(raw, param1)
@@ -733,6 +741,9 @@ class Ru5600Reader:
 
         if not hasattr(self, "_cb_tags"):
             self._cb_tags = []
+        if not hasattr(self, "_cb_stats"):
+            self._cb_stats = {"calls": 0, "msg": {}, "data_frames": 0,
+                              "last_len": 0, "last_count": 0}
         self._cb = _CB(_cb)
         self._lib.CFHid_SetCallback(self._cb)
 
@@ -1037,6 +1048,15 @@ class Ru5600Reader:
         except Exception:
             pass
         return tags
+
+    def callback_stats(self) -> dict:
+        st = getattr(self, "_cb_stats", None) or {}
+        return {"calls": st.get("calls", 0),
+                "data_frames": st.get("data_frames", 0),
+                "by_msg": {str(k): v for k, v in (st.get("msg") or {}).items()},
+                "last_len": st.get("last_len", 0),
+                "last_count": st.get("last_count", 0),
+                "queued": len(getattr(self, "_cb_tags", []) or [])}
 
     def poll_tags(self) -> List[Tag]:
         """Drain the tag buffer filled by active mode (callback primero)."""

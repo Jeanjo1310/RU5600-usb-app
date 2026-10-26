@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Pruebas{% endblock %}
+{% block content %}
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Pruebas del lector</h2>
+  <p class="text-sm text-base-content/60 mb-3">Todo lo que se dispara acá es <b>solo lectura</b>: no escribe en tags. Cada acción queda en el log de abajo con su resultado.</p>
+  <div class="flex flex-wrap gap-2 mb-3">
+    <button class="btn btn-soft btn-success probe" data-what="read_epc">Leer EPC dirigido</button>
+    <button class="btn btn-outline probe" data-what="scan">scan()</button>
+    <button class="btn btn-outline probe" data-what="inventory">InventoryG2</button>
+    <button class="btn btn-outline probe" data-what="startread">StartRead + poll (3 s)</button>
+    <button class="btn btn-outline probe" data-what="callback">Estado del callback</button>
+    <button id="recoverBtn" class="btn btn-error">Destrabar lector</button>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-sm font-semibold mb-1">Estado del lector</div>
+      <pre id="state" class="font-mono text-xs whitespace-pre-wrap">-</pre>
+    </div>
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-sm font-semibold mb-1">Resultado de la última prueba</div>
+      <pre id="probeOut" class="font-mono text-xs whitespace-pre-wrap max-h-48 overflow-auto">-</pre>
+    </div>
+  </div>
+</div>
+<div class="card bg-base-100 shadow-sm p-6">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-lg font-semibold">Log de eventos</h2>
+    <div class="flex gap-2">
+      <button id="autoBtn" class="btn btn-outline btn-sm">Pausar</button>
+      <button id="clearBtn" class="btn btn-outline btn-sm">Limpiar</button>
+      <button class="btn btn-outline btn-sm" onclick="exportTable('#logTable', 'log-lector')">Exportar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto max-h-[28rem] overflow-y-auto">
+    <table class="table table-xs w-full" id="logTable">
+      <thead class="text-xs uppercase opacity-70 sticky top-0"><tr><th class="px-3 py-1">Hora</th><th class="px-3 py-1">Nivel</th><th class="px-3 py-1">Evento</th></tr></thead>
+      <tbody id="logRows"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let since = 0, autoscroll = true;
+function levelBadge(l) {
+  const map = {ok: 'badge-success', info: 'badge-info', warn: 'badge-warning', error: 'badge-error', tx: 'badge-neutral'};
+  return `<span class="badge badge-sm ${map[l] || 'badge-neutral'}">${l}</span>`;
+}
+async function pullLog() {
+  const r = await fetch('/api/log?since=' + since).then(x => x.json());
+  since = r.now;
+  const tb = document.getElementById('logRows');
+  (r.entries || []).forEach(e => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="px-3 py-1 font-mono">${e.t}</td><td class="px-3 py-1">${levelBadge(e.level)}</td><td class="px-3 py-1">${e.msg}</td>`;
+    tb.appendChild(tr);
+  });
+  if (autoscroll) tb.parentElement.parentElement.scrollTop = 1e6;
+}
+async function pullState() {
+  const s = await fetch('/api/probe/state').then(x => x.json());
+  document.getElementById('state').textContent = JSON.stringify(s, null, 2);
+}
+async function runProbe(what) {
+  const out = document.getElementById('probeOut');
+  out.textContent = 'ejecutando ' + what + '…';
+  const r = await post('/api/probe', {what: what});
+  out.textContent = JSON.stringify(r, null, 2);
+  pullState(); pullLog();
+}
+document.querySelectorAll('.probe').forEach(b => b.onclick = () => runProbe(b.dataset.what));
+document.getElementById('recoverBtn').onclick = async () => {
+  const r = await post('/api/recover', {});
+  document.getElementById('probeOut').textContent = JSON.stringify(r, null, 2);
+  pullState(); pullLog();
+};
+document.getElementById('clearBtn').onclick = async () => {
+  await post('/api/log/clear', {});
+  document.getElementById('logRows').innerHTML = '';
+  since = 0;
+};
+document.getElementById('autoBtn').onclick = (e) => {
+  autoscroll = !autoscroll;
+  e.target.textContent = autoscroll ? 'Pausar' : 'Reanudar';
+};
+pullState(); pullLog();
+setInterval(pullLog, 1000);
+setInterval(pullState, 2000);
+</script>
+{% endblock %}

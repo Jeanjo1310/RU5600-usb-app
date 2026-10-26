@@ -6,6 +6,7 @@ produccion compila con @tailwindcss/cli segun la guia oficial).
 """
 from __future__ import annotations
 
+import collections
 import io
 import os
 import re
@@ -28,6 +29,16 @@ EXCEL = os.path.normpath(os.path.join(BASE, "..", "..", "CONOCIMIENTO",
                                       "TAGS EPC.xlsx"))
 
 _pool = ThreadPoolExecutor(max_workers=8)
+
+# --- log de eventos del lector (ring buffer) ---
+_log_ring = collections.deque(maxlen=1500)
+
+
+def _log(level, msg):
+    """Registra un evento del lector: info | ok | warn | error | tx."""
+    _log_ring.append({"t": time.strftime("%H:%M:%S"), "ts": time.time(),
+                      "level": level, "msg": str(msg)[:400]})
+
 
 
 def _guarded(fn, timeout=40):
@@ -358,6 +369,7 @@ def api_open():
     cfg = request.get_json(silent=True) or {}
     t = cfg.get("transport", "usb")
     try:
+        _log("info", "abrir conexión: transporte=%s ip=%s puerto=%s" % (t, cfg.get("ip"), cfg.get("port")))
         if t == "net":
             from ru5600_net import NetReader
             _net_reader = NetReader(cfg.get("ip", "192.168.1.250"),
@@ -1190,6 +1202,11 @@ def _map_run(plan):
         _map["running"] = False
 
 
+@app.route("/pruebas")
+def pruebas():
+    return render_template("pruebas.html")
+
+
 @app.route("/barrido")
 def barrido():
     return render_template("barrido.html")
@@ -1382,6 +1399,99 @@ def api_recover():
         return jsonify(ok=True, steps=steps)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc), steps=steps)
+
+
+@app.route("/api/log")
+def api_log():
+    since = float(request.args.get("since", 0) or 0)
+    items = [x for x in _log_ring if x["ts"] > since]
+    return jsonify(entries=items, now=time.time(), total=len(_log_ring))
+
+
+@app.route("/api/log/clear", methods=["POST"])
+def api_log_clear():
+    _log_ring.clear()
+    return jsonify(ok=True)
+
+
+@app.route("/api/probe/state")
+def api_probe_state():
+    """Estado crudo para la pestaña Pruebas."""
+    out = {"open": False}
+    if _reader is not None and _reader.is_open:
+        out["open"] = True
+        try:
+            out["callback"] = _reader.callback_stats()
+        except Exception as exc:  # noqa: BLE001
+            out["callback"] = {"error": str(exc)}
+        try:
+            out["rf"] = _reader.rf_power()
+            out["mode"] = _reader.work_mode()
+            out["filter"] = _reader.filter_time()
+            out["beep"] = _reader.beep()
+        except Exception as exc:  # noqa: BLE001
+            out["params_error"] = str(exc)
+        try:
+            fr = _reader.read_freq()
+            out["freq"] = fr.hex().upper() if isinstance(fr, (bytes, bytearray)) else fr
+        except Exception:  # noqa: BLE001
+            pass
+    return jsonify(out)
+
+
+@app.route("/api/probe", methods=["POST"])
+def api_probe():
+    """Pruebas guiadas, sólo lectura. Nunca escribe en tags."""
+    cfg = request.get_json(silent=True) or {}
+    what = (cfg.get("what") or "").lower()
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    try:
+        if what == "read_epc":
+            t0 = time.monotonic()
+            data = r.read_card(1, 0, 6, b"\x00" * 4, retries=3)
+            ms = round((time.monotonic() - t0) * 1000)
+            _log("ok", "lectura dirigida EPC OK (%d ms): %s" % (ms, data.hex().upper()))
+            return jsonify(ok=True, ms=ms, hex=data.hex().upper())
+        if what == "scan":
+            t0 = time.monotonic()
+            tags = r.scan()
+            ms = round((time.monotonic() - t0) * 1000)
+            _log("ok" if tags else "warn",
+                 "scan(): %d tags en %d ms%s" % (len(tags), ms,
+                                                 "" if tags else " (sin tags)"))
+            return jsonify(ok=True, ms=ms, count=len(tags),
+                           tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+        if what == "inventory":
+            t0 = time.monotonic()
+            tags = r.inventory(rounds=8, delay=0.03)
+            ms = round((time.monotonic() - t0) * 1000)
+            _log("ok" if tags else "warn",
+                 "InventoryG2: %d tags en %d ms%s" % (len(tags), ms,
+                                                      "" if tags else " (sin respuesta)"))
+            return jsonify(ok=True, ms=ms, count=len(tags),
+                           tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+        if what == "startread":
+            r.start_read()
+            _log("tx", "StartRead enviado")
+            time.sleep(float(cfg.get("wait", 3) or 3))
+            tags = r.poll_tags()
+            r.stop_read()
+            _log("ok" if tags else "warn",
+                 "StartRead %ss + poll: %d tags" % (cfg.get("wait", 3), len(tags)))
+            return jsonify(ok=True, count=len(tags),
+                           callback=r.callback_stats(),
+                           tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+        if what == "callback":
+            stats = r.callback_stats()
+            _log("info", "callback: %s" % stats)
+            return jsonify(ok=True, callback=stats)
+        return jsonify(ok=False, error="prueba desconocida: " + what)
+    except Exception as exc:  # noqa: BLE001
+        _log("error", "prueba %s: %s" % (what, exc))
+        return jsonify(ok=False, error=str(exc))
 
 
 @app.route("/api/scan_now")
