@@ -3,18 +3,19 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Frecuencia</h2>
-  <div class="flex flex-wrap items-end gap-2">
-    <select id="band" class="select select-bordered"></select>
+  <div class="flex flex-wrap items-end gap-3">
+    <div><label class="block text-sm mb-1" for="band">Banda</label><select id="band" class="select select-bordered w-64"></select></div>
     <button id="fread" class="btn btn-outline">Leer</button>
     <button id="fset" class="btn btn-primary">Grabar banda</button>
-    <span id="fraw" class="font-mono text-sm">frec. cruda: -</span>
+    <div class="text-sm pb-2">Frecuencia cruda: <span id="fraw" class="font-mono">-</span></div>
   </div>
-  <p id="fmsg" class="mt-1 text-sm"></p>
+  <p id="fmsg" class="mt-2 text-sm"></p>
 </div>
 <div class="card bg-base-100 shadow-sm p-4">
-  <h2 class="text-lg font-semibold mb-3">Dispositivo</h2>
+  <h2 class="text-lg font-semibold mb-1">Dispositivo</h2>
+  <p class="text-sm text-gray-500 mb-3">Reiniciar el lector corta la conexión unos segundos; después volvé a abrirla en Conexión.</p>
   <button id="reboot" class="btn btn-warning">Reiniciar lector</button>
-  <p id="rmsg" class="mt-1 text-sm"></p>
+  <p id="rmsg" class="mt-2 text-sm"></p>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -24,7 +25,7 @@ const b = document.getElementById('band'); bands.forEach(x => { const o = docume
 document.getElementById('fread').onclick = async () => {
   const r = await post('/api/freq_read', {});
   document.getElementById('fmsg').textContent = r.ok ? 'OK' : 'Error: ' + r.error;
-  if (r.ok) document.getElementById('fraw').textContent = 'frec. cruda: ' + r.raw;
+  if (r.ok) document.getElementById('fraw').textContent = r.raw;
 };
 document.getElementById('fset').onclick = async () => {
   const r = await post('/api/freq_set', {band: document.getElementById('band').value});

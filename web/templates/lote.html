@@ -3,17 +3,35 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir el mismo EPC en un lote</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-    <input id="bepc" value="E2004704D9A06820068E0112" class="input input-bordered font-mono md:col-span-2">
-    <input id="btotal" type="number" value="10" min="1" title="total" class="input input-bordered">
-    <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="bcheck" checked> Verificar tras escribir</label>
-    <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="block"> Bloquear tras escribir (nota: hacelo en Peligroso)</label>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 items-start">
+    <div class="md:col-span-2">
+      <label class="block text-sm mb-1" for="bepc">EPC a escribir</label>
+      <input id="bepc" value="E2004704D9A06820068E0112" class="input input-bordered font-mono w-full">
+      <p class="text-xs mt-1 text-gray-500">Cada tag del lote queda con este mismo EPC. 24 caracteres hex.</p>
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="btotal">Cantidad de tags</label>
+      <input id="btotal" type="number" value="10" min="1" class="input input-bordered w-full">
+      <p class="text-xs mt-1 text-gray-500">Cuántos tags se van a escribir. Podés frenar cuando quieras con Parar.</p>
+    </div>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div>
+      <div class="text-sm mb-1">Verificación</div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="bcheck" checked>Verificar tras escribir</label>
+      <p class="text-xs mt-1 ml-6 text-gray-500">Relee el EPC grabado y lo compara con el esperado.</p>
+    </div>
+    <div>
+      <div class="text-sm mb-1">Bloqueo</div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="block">Bloquear tras escribir</label>
+      <p class="text-xs mt-1 ml-6 text-gray-500">Deja el tag sin posibilidad de reescritura. Conviene hacerlo aparte, en Peligroso.</p>
+    </div>
   </div>
   <div class="flex gap-2">
     <button id="bstart" class="btn btn-primary">Iniciar</button>
     <button id="bstop" class="btn btn-error" disabled>Parar</button>
   </div>
-  <p id="bmsg" class="mt-1 text-sm"></p>
+  <p id="bmsg" class="mt-2 text-sm"></p>
   <div class="overflow-x-auto mt-2"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">Tag</th><th class="px-4 py-2">Resultado</th><th class="px-4 py-2">RSSI</th></tr></thead><tbody id="brows"></tbody></table></div>
 </div>
 {% endblock %}

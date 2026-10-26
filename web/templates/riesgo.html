@@ -1,49 +1,65 @@
 {% extends "base.html" %}
 {% block title %}Peligroso{% endblock %}
 {% block content %}
-<div class="alert alert-error shadow mb-4">
-  <h2 class="text-lg font-semibold mb-1 font-bold">Zona peligrosa</h2>
-  <p class="text-sm mb-2">Un mal bloqueo deja el tag inservible para siempre y un comando crudo puede dejar el lector en un estado inconsistente. <label class="font-semibold"><input type="checkbox" class="checkbox checkbox-sm" id="riskack"> Entiendo el riesgo</label></p>
+<div class="alert alert-error shadow mb-4 items-start">
+  <div>
+    <h2 class="text-lg font-semibold mb-1">Zona peligrosa</h2>
+    <p class="text-sm mb-3">Un mal bloqueo deja el tag inservible para siempre, y un comando mal enviado puede dejar el lector sin responder hasta reiniciarlo.</p>
+    <label class="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" class="checkbox checkbox-sm" id="riskack"> Entiendo el riesgo</label>
+  </div>
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
-  <h2 class="text-lg font-semibold mb-3">A · Bloquear tag (Gen2, cmd 0x05)</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <input id="lkdata" value="00000000" title="lock data 4 bytes hex" class="input input-bordered font-mono">
-    <input id="lkact" value="00" title="action hex" class="input input-bordered font-mono">
-    <button id="lkgo" class="btn btn-error md:col-span-2">Bloquear (irreversible)</button>
+  <h2 class="text-lg font-semibold mb-1">A · Bloquear un tag para siempre</h2>
+  <p class="text-sm text-gray-500 mb-3">Deja el tag fijo: no se puede volver a escribir ni desbloquear. Usalo solo en tags que ya van a quedar pegados a su producto final. Antes de bloquear, leé el tag en Leer/Escribir y guardá su EPC.</p>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+    <div><label class="block text-sm mb-1" for="lkdata">Datos de bloqueo (hex)</label><input id="lkdata" value="00000000" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="lkact">Acción (hex)</label><input id="lkact" value="00" class="input input-bordered font-mono w-full"></div>
+    <button id="lkgo" class="btn btn-error md:col-span-2" disabled>Bloquear (irreversible)</button>
   </div>
-  <p id="lkout" class="mt-1 text-sm"></p>
+  <p id="lkout" class="mt-2 text-sm"></p>
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
-  <h2 class="text-lg font-semibold mb-3">B · Comando crudo (CFHid_SendCommand)</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <input id="rcmd" value="10" title="cmd hex" class="input input-bordered font-mono">
-    <input id="rpay" placeholder="payload hex" class="input input-bordered font-mono">
-    <input id="rtime" value="400" title="timeout ms" class="input input-bordered">
-    <button id="rgo" class="btn btn-error">Enviar comando crudo</button>
+  <h2 class="text-lg font-semibold mb-1">B · Enviar un comando al lector (soporte)</h2>
+  <p class="text-sm text-gray-500 mb-3">Herramienta de soporte técnico: manda un comando hexadecimal directo al lector, sin validación. Si no sabés qué número va, no la uses; el catálogo de comandos lo maneja el soporte.</p>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+    <div><label class="block text-sm mb-1" for="rcmd">Comando (hex)</label><input id="rcmd" value="10" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="rpay">Datos (hex)</label><input id="rpay" placeholder="hex" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="rtime">Espera (ms)</label><input id="rtime" value="400" class="input input-bordered w-full"></div>
+    <button id="rgo" class="btn btn-error" disabled>Enviar comando crudo</button>
   </div>
-  <p class="text-xs mt-1 text-gray-500">BLOQUEADOS: 0x2B/0x2C/0x2D (firmware) y 0x65 (Kill6C, mata un tag).</p>
-  <p id="rout" class="mt-1 text-sm"></p>
+  <p id="rout" class="mt-2 text-sm"></p>
+</div>
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-1">C · Escritura cifrada (experimental)</h2>
+  <p class="text-sm text-gray-500 mb-3">Este lector no responde a la escritura cifrada, así que la función queda visible pero inactiva. No la uses en producción.</p>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+    <div><label class="block text-sm mb-1" for="cwmode">Modo (hex)</label><input id="cwmode" value="00" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="cwpwd">Contraseña</label><input id="cwpwd" placeholder="00000000" class="input input-bordered font-mono w-full"></div>
+    <button id="cwgo" class="btn btn-error md:col-span-2" disabled>Aplicar CryptWrite</button>
+  </div>
+  <p id="cwout" class="mt-2 text-sm"></p>
 </div>
 <div class="card bg-base-100 shadow-sm p-4">
-  <h2 class="text-lg font-semibold mb-3">C · CryptWrite (experimental)</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <input id="cwmode" value="00" title="mode hex" class="input input-bordered font-mono">
-    <input id="cwpwd" placeholder="password" class="input input-bordered font-mono">
-    <button id="cwgo" class="btn btn-error md:col-span-2">Aplicar CryptWrite</button>
-  </div>
-  <p class="text-xs mt-1 text-gray-500">0x2F con payload [mode][0x55][pass]. Este firmware (7.1) no responde a 0x2E/0x2F: área en desarrollo.</p>
-  <p id="cwout" class="mt-1 text-sm"></p>
-</div>
-<div class="card bg-base-100 shadow-sm p-4">
-  <h2 class="text-lg font-semibold mb-3">Comandos conocidos del lector RU5600</h2>
-  <pre class="text-xs font-mono whitespace-pre-wrap">0x01 inventario   0x02 leer memoria   0x03 escribir memoria   0x04 escribir EPC   0x05 lock   0x10 informacion   0x20/0x21 parametro   0x23/0x24 un parametro   0x3E/0x3F frecuencia   0x30 reiniciar   0x40/0x41 start/stop read   0x85/0x86 relay   0xE0 modulo   0xE1 antena   0xE8-0xEC whitelist   0x2E/0x2F CryptWrite
-BLOQUEADOS: 0x2B/0x2C/0x2D (actualizan el firmware del lector) y 0x65 (Kill6C, mata un tag).</pre>
+  <h2 class="text-lg font-semibold mb-3">Cómo usar esta sección</h2>
+  <ol class="list-decimal ml-5 text-sm space-y-1">
+    <li>Marcá «Entiendo el riesgo»: recién ahí se habilitan los botones.</li>
+    <li>Bloqueá solo tags que ya están fijos en su producto final. El bloqueo no tiene deshacer.</li>
+    <li>Antes de tocar nada, leé el tag en Leer/Escribir y guardá su EPC: es tu único respaldo.</li>
+    <li>Si el lector deja de responder, reinicialo en Avanzado → Reiniciar lector y volvé a conectar en Conexión.</li>
+  </ol>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-function ack() { if (!document.getElementById('riskack').checked) { alert('Marcá "Entiendo el riesgo" primero.'); return false; } if (!confirm('Operación irreversible/peligrosa. ¿Confirmás?')) return false; return true; }
+const ackEl = document.getElementById('riskack');
+const guarded = ['lkgo', 'rgo', 'cwgo'];
+function syncAck() { guarded.forEach(id => { document.getElementById(id).disabled = !ackEl.checked; }); }
+ackEl.onchange = syncAck; syncAck();
+function ack() {
+  if (!ackEl.checked) { alert('Marcá "Entiendo el riesgo" primero.'); return false; }
+  if (!confirm('Operación irreversible/peligrosa. ¿Confirmás?')) return false;
+  return true;
+}
 document.getElementById('lkgo').onclick = async () => {
   if (!ack()) return;
   const r = await post('/api/lock', {data: document.getElementById('lkdata').value, action: document.getElementById('lkact').value, ack: true});
