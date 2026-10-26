@@ -15,17 +15,17 @@
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Conexión</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
-    <div>
-      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Baudrate</span><select id="baud" class="select select-bordered select-sm flex-1"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></div>
-      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Puerto</span><select id="dev" class="select select-bordered select-sm flex-1"></select></div>
+    <div class="space-y-3">
+      <div><div class="text-sm mb-1">Baudrate</div><select id="baud" class="select select-bordered select-sm w-full"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></div>
+      <div><div class="text-sm mb-1">Puerto</div><select id="dev" class="select select-bordered select-sm w-full"></select></div>
     </div>
-    <div>
-      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">IP de red</span><input id="ip" value="192.168.1.250" class="input input-bordered input-sm flex-1"></div>
-      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Puerto de red</span><input id="port" value="60000" class="input input-bordered input-sm flex-1"></div>
+    <div class="space-y-3">
+      <div><div class="text-sm mb-1">IP de red</div><input id="ip" value="192.168.1.250" class="input input-bordered input-sm w-full"></div>
+      <div><div class="text-sm mb-1">Puerto de red</div><input id="port" value="60000" class="input input-bordered input-sm w-full"></div>
     </div>
-    <div>
-      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Transporte</span><span class="flex gap-3"><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="usb" checked> USB</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="com"> COM</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="net"> Net</label></span></div>
-      <div class="flex items-center gap-2 h-10"><span class="text-sm w-24 shrink-0">Modo de lectura</span><select id="mode" class="select select-bordered select-sm flex-1"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></div>
+    <div class="space-y-3">
+      <div><div class="text-sm mb-1">Transporte</div><div class="flex gap-3 pt-1"><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="usb" checked> USB</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="com"> COM</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="net"> Net</label></div></div>
+      <div><div class="text-sm mb-1">Modo de lectura</div><select id="mode" class="select select-bordered select-sm w-full"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></div>
     </div>
   </div>
   <div class="grid grid-cols-2 gap-2">
