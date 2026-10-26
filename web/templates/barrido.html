@@ -85,9 +85,10 @@ function reasonText(r) {
 async function poll() {
   const r = await fetch('/api/status').then(r => r.json());
   const extra = r.target ? ` / ${r.target}` : '';
+  const modo = (r.mode_used === 'dirigido') ? ' · modo dirigido (el stream no ve este tag)' : '';
   $('status').textContent = r.running
-    ? `${t('Leyendo…')} ${r.count}${extra} tags`
-    : `${t('Detenido.')} ${r.count} tags.` + (r.reason ? ' ' + t('Se detuvo porque') + ' ' + t(reasonText(r.reason)) + '.' : '');
+    ? `${t('Leyendo…')} ${r.count}${extra} tags` + modo
+    : `${t('Detenido.')} ${r.count} tags.` + (r.reason ? ' ' + t('Se detuvo porque') + ' ' + t(reasonText(r.reason)) + '.' : '') + modo;
   const dot = $('healthDot');
   const warn = $('warnBox');
   if (!r.running) {

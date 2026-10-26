@@ -1390,6 +1390,7 @@ def status():
                    target=_state.get("target", 0),
                    reason=_state.get("reason", ""),
                    stabilized=_state.get("stabilized", 0),
+                   mode_used=_state.get("mode_used", "stream"),
                    dps=round(len(ts) / 10.0, 1),
                    last_seen=None if last is None else round(last, 1),
                    stalled=bool(running and (last is None or last > 5)),
@@ -1453,6 +1454,11 @@ def _run(seconds, target=0, mode="answer"):
         last_hit = time.monotonic()
         stabilized = 0
         _state["stabilized"] = 0
+        t_start = time.monotonic()
+        direct_mode = False
+        fallback_after = float(_state.get("fallback_after") or 6.0)
+        stream_saw = False
+        _state["mode_used"] = "stream"
         try:
             while ((deadline is None or time.monotonic() < deadline)
                     and not _stop.is_set()):
@@ -1462,7 +1468,62 @@ def _run(seconds, target=0, mode="answer"):
                 # poll adaptativo: rapido cuando entrega, mas lento cuando no
                 time.sleep(poll)
                 got = False
-                for tag in r.poll_tags():
+                # --- fallback: tags que no entran al stream (H10, UCODE8) ---
+                if (not stream_saw and not _state["tags"] and not direct_mode
+                        and (time.monotonic() - t_start) > fallback_after):
+                    direct_mode = True
+                    _state["mode_used"] = "dirigido"
+                    _log("warn", "el stream no ve tags: paso a barrido dirigido")
+                    try:
+                        r.stop_read()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        from ru5600_core import WORKMODE_ANSWER as _WS
+                        r._pace(); r._lib.CFHid_SetDeviceOneParam(
+                            DEV_ADDR, PARAM_WORKMODE, _WS); r._pace(settle=True)
+                    except Exception:  # noqa: BLE001
+                        pass
+                if direct_mode:
+                    res, epc_d, hex_d, det = _direct_read(r)
+                    if res != "ok" or not epc_d:
+                        time.sleep(poll)
+                        continue
+                    info = {"epc": epc_d.upper(), "chip": "", "xl": "-",
+                            "conf": "candidato",
+                            "code": epc_d[6:14] if len(epc_d) >= 14 else ""}
+                    try:
+                        tid = r.read_card(2, 0, 2, b"\x00" * 4, retries=2)
+                        prefix = tid.hex().upper()[:8]
+                        ent = TID_PREFIX_DB.get(prefix)
+                        info["chip"] = ("%s %s" % (ent[0], ent[1])).strip() if isinstance(ent, tuple) and len(ent) >= 2 else prefix
+                        if isinstance(ent, tuple):
+                            info["conf"] = "confirmado"
+                    except Exception:  # noqa: BLE001
+                        pass
+                    if idx is not None:
+                        hit = idx.get(info["epc"])
+                        if hit is not None:
+                            info["xl"] = "%s #%s" % (hit[0], hit[1])
+                    key = info["epc"]
+                    prev = _state["seen"].get(key)
+                    if prev is not None:
+                        prev["n"] = prev.get("n", 1) + 1
+                        _state.setdefault("hits", []).append(time.monotonic())
+                        got = True
+                        last_hit = time.monotonic()
+                        continue
+                    info.update(raw=hex_d[:48], ant=0, rssi=None, n=1)
+                    _state["seen"][key] = info
+                    _state["tags"].append(info)
+                    _state.setdefault("hits", []).append(time.monotonic())
+                    got = True
+                    last_hit = time.monotonic()
+                    continue
+                stream_tags = r.poll_tags()
+                if stream_tags:
+                    stream_saw = True
+                for tag in stream_tags:
                     # el parser nuevo ya entrega EPC/TID/RSSI: no re-parsear el blob
                     epc = (getattr(tag, "epc_hex", "") or "").upper()
                     info = {"epc": epc, "chip": "", "xl": "-",
@@ -1519,8 +1580,7 @@ def _run(seconds, target=0, mode="answer"):
             except Exception:  # noqa: BLE001
                 pass
             r._pace(settle=True)
-            # el barrido deja el lector en ActiveMode: volver a AnswerMode,
-            # que es donde el lector contesta de forma confiable
+            # volver a AnswerMode (el stream deja el lector en Active)
             try:
                 r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
                                                WORKMODE_ANSWER)
