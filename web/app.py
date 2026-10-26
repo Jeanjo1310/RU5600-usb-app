@@ -263,11 +263,25 @@ def api_epc_write():
                 raise RuntimeError("huella: " + msg)
         r.write_epc(epc, pwd, verify=True)
         return True
+    ack_error = None
     try:
         _guarded(_do, timeout=120)
-        return jsonify(ok=True)
+        return jsonify(ok=True, verified=True)
     except Exception as exc:  # noqa: BLE001
-        return jsonify(ok=False, error=str(exc))
+        ack_error = str(exc)
+    # el ACK del lector miente seguido: la verdad la da la relectura del tag
+    try:
+        r = _need_usb()
+        res, epc_leido, _raw, _det = _direct_read(r)
+        if res == "ok" and epc_leido and epc_leido.upper() == epc.hex().upper():
+            _log("warn", "escritura: ACK fallo pero el tag quedo con el EPC pedido")
+            return jsonify(ok=True, verified=True, ack_error=ack_error,
+                           note="el ACK del lector fallo, pero la relectura confirma el EPC")
+        return jsonify(ok=False, verified=False, error=ack_error,
+                       epc_leido=epc_leido)
+    except Exception as exc2:  # noqa: BLE001
+        return jsonify(ok=False, verified=False, error=ack_error,
+                       verify_error=str(exc2))
 
 
 @app.route("/api/fp_learn", methods=["POST"])
