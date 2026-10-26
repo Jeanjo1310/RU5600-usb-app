@@ -1456,7 +1456,9 @@ def _run(seconds, target=0, mode="answer"):
         _state["stabilized"] = 0
         t_start = time.monotonic()
         direct_mode = False
-        fallback_after = float(_state.get("fallback_after") or 6.0)
+        # con ventanas cortas, esperar 6 s deja casi sin tiempo al modo dirigido
+        fallback_after = float(_state.get("fallback_after") or
+                               (min(6.0, max(2.0, seconds * 0.35)) if seconds > 0 else 6.0))
         stream_saw = False
         _state["mode_used"] = "stream"
         try:
