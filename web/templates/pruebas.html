@@ -4,14 +4,47 @@
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Pruebas del lector</h2>
   <p class="text-sm text-base-content/60 mb-3">Todo lo que se dispara acá es <b>solo lectura</b>: no escribe en tags. Cada acción queda en el log de abajo con su resultado.</p>
-  <div class="flex flex-wrap gap-2 mb-3">
-    <button class="btn btn-soft btn-success probe" data-what="read_epc">Leer EPC dirigido</button>
-    <button class="btn btn-outline probe" data-what="scan">scan()</button>
-    <button class="btn btn-outline probe" data-what="inventory">InventoryG2</button>
-    <button class="btn btn-outline probe" data-what="startread">StartRead + poll (3 s)</button>
-    <button class="btn btn-outline probe" data-what="callback">Estado del callback</button>
-    <button class="btn btn-outline probe" data-what="maintenance">Mantenimiento (stop + vaciar buffer)</button>
-    <button id="recoverBtn" class="btn btn-error">Destrabar lector</button>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+    <button class="btn probe-tall flex-col items-start text-left probe" data-what="read_epc">
+      <span class="text-base">Leer el tag que está enfrente</span>
+      <span class="text-xs opacity-60 font-mono">lectura dirigida · ReadCardG2</span>
+      <span class="text-xs opacity-70">Bien si devuelve un EPC. Es la prueba más directa.</span>
+    </button>
+    <button class="btn probe-tall flex-col items-start text-left probe" data-what="scan">
+      <span class="text-base">Buscar tags de a uno (rápido)</span>
+      <span class="text-xs opacity-60 font-mono">scan() · stream 3 s</span>
+      <span class="text-xs opacity-70">Debería traer varios tags. Hoy trae 0.</span>
+    </button>
+    <button class="btn probe-tall flex-col items-start text-left probe" data-what="inventory">
+      <span class="text-base">Preguntar qué tags ve (una vez)</span>
+      <span class="text-xs opacity-60 font-mono">InventoryG2 · anticolisión</span>
+      <span class="text-xs opacity-70">Un solo pedido, sin stream. Hoy no contesta.</span>
+    </button>
+    <button class="btn probe-tall flex-col items-start text-left probe" data-what="startread">
+      <span class="text-base">Ver si el lector empuja datos</span>
+      <span class="text-xs opacity-60 font-mono">StartRead + poll · callback</span>
+      <span class="text-xs opacity-70">Bien si «callback» sube de 0.</span>
+    </button>
+    <button class="btn probe-tall flex-col items-start text-left probe" data-what="callback">
+      <span class="text-base">Ver el contador interno</span>
+      <span class="text-xs opacity-60 font-mono">callback stats</span>
+      <span class="text-xs opacity-70">No prueba nada: informa si el SDK avisó algo.</span>
+    </button>
+    <button class="btn probe-tall flex-col items-start text-left probe" data-what="checkant">
+      <span class="text-base">Preguntar si hay antena</span>
+      <span class="text-xs opacity-60 font-mono">CheckAnt</span>
+      <span class="text-xs opacity-70">1 = antena presente. 0 = revisar conexión.</span>
+    </button>
+    <button class="btn probe-tall flex-col items-start text-left probe" data-what="maintenance">
+      <span class="text-base">Limpieza rápida</span>
+      <span class="text-xs opacity-60 font-mono">StopRead + ClearTagBuf + AnswerMode</span>
+      <span class="text-xs opacity-70">No reabre el equipo. Probala antes que Destrabar.</span>
+    </button>
+    <button id="recoverBtn" class="btn btn-error probe-tall flex-col items-start text-left">
+      <span class="text-base">Destrabar el lector</span>
+      <span class="text-xs opacity-60 font-mono">stop + clear + AnswerMode + reabrir</span>
+      <span class="text-xs opacity-70">Lo más fuerte. Es el que te sirvió cuando no respondía.</span>
+    </button>
   </div>
   <div class="rounded-lg border border-base-300 p-3 mb-3">
     <div class="text-sm font-semibold mb-1">Leer hasta enganchar</div>
@@ -28,7 +61,19 @@
       <button id="readUntilBtn" class="btn btn-soft btn-success">Leer hasta enganchar</button>
     </div>
   </div>
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="alert mb-3 text-sm items-start" style="background:color-mix(in oklab, var(--color-base-content) 6%, transparent)">
+    <div>
+      <b>Cómo leer el resultado</b>
+      <div class="mt-1 opacity-80">
+        <span class="badge badge-success badge-sm">ok</span> el lector leyó el tag · es bueno.<br>
+        <span class="badge badge-warning badge-sm">stale</span> el lector contestó con la respuesta del comando anterior ·
+        <b>no es un tag roto ni un error grave</b>: significa que se cruzo la respuesta. Se arregla repitiendo o con «Limpieza rápida».<br>
+        <span class="badge badge-error badge-sm">error</span> no hubo respuesta (sin tag enfrente, o el lector rechazó el comando).<br>
+        <span class="badge badge-info badge-sm">info</span> solo informativo, no es una lectura.
+      </div>
+    </div>
+  </div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="rounded-lg border border-base-300 p-3">
       <div class="text-sm font-semibold mb-1">Estado del lector</div>
       <pre id="state" class="font-mono text-xs whitespace-pre-wrap">-</pre>
@@ -63,7 +108,7 @@
     <div class="flex gap-2">
       <button id="autoBtn" class="btn btn-outline btn-sm">Pausar</button>
       <button id="clearBtn" class="btn btn-outline btn-sm">Limpiar</button>
-      <button class="btn btn-outline btn-sm" onclick="exportTable('#logTable', 'log-lector')">Exportar</button>
+      <button class="btn btn-outline btn-sm" onclick="exportLog()">Exportar</button>
     </div>
   </div>
   <div class="overflow-x-auto max-h-[28rem] overflow-y-auto">
@@ -101,7 +146,14 @@ async function runProbe(what) {
   out.textContent = 'ejecutando ' + what + '…';
   const r = await post('/api/probe', {what: what});
   out.textContent = JSON.stringify(r, null, 2);
-  pullState(); pullLog();
+  function exportLog() {
+  const rows = [...document.querySelectorAll('#logRows tr')].map(tr =>
+    [...tr.children].map(td => td.textContent.trim()).join('\t'));
+  if (!rows.length) { alert('El log está vacío'); return; }
+  const txt = 'hora\tnivel\tevento\n' + rows.join('\n');
+  downloadExport('/api/export/txt', {name: 'log-lector', text: txt});
+}
+pullState(); pullLog();
 }
 function cell(text) {
   const td = document.createElement('td');
