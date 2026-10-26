@@ -1248,7 +1248,8 @@ def start():
         return jsonify(ok=False, error="tope de tags invalido"), 400
     if target < 0:
         target = 0
-    mode = (cfg.get("mode") or "answer").lower()
+    # el stream de tags solo existe en ActiveMode; AnswerMode es para comandos dirigidos
+    mode = (cfg.get("mode") or "active").lower()
     with _lock:
         if _state["running"]:
             return jsonify(ok=False, error="ya corriendo"), 409
@@ -1301,17 +1302,32 @@ def _run(seconds, target=0, mode="answer"):
                 time.sleep(poll)
                 got = False
                 for tag in r.poll_tags():
-                    blob = (bytes(tag.raw_id) if tag.raw_id
-                            else bytes(tag.epc))
-                    info = _resolve(blob, idx, codes)
-                    epc = (info.get("epc") or "").upper()
+                    # el parser nuevo ya entrega EPC/TID/RSSI: no re-parsear el blob
+                    epc = (getattr(tag, "epc_hex", "") or "").upper()
+                    info = {"epc": epc, "chip": "", "xl": "-",
+                            "conf": "candidato",
+                            "code": epc[6:14] if len(epc) >= 14 else ""}
+                    tid = getattr(tag, "tid", b"") or b""
+                    if tid:
+                        prefix = bytes(tid).hex().upper()[:8]
+                        entry = TID_PREFIX_DB.get(prefix)
+                        if isinstance(entry, tuple) and len(entry) >= 2:
+                            info["chip"] = ("%s %s" % (entry[0], entry[1])).strip()
+                            info["conf"] = "confirmado"
+                        else:
+                            info["chip"] = prefix
+                    if idx is not None:
+                        hit = idx.get(epc)
+                        if hit is not None:
+                            info["xl"] = "%s #%s" % (hit[0], hit[1])
+                    blob_key = bytes(tag.raw_id or tag.epc)
                     key = epc or blob.hex().upper()
                     prev = _state["seen"].get(key)
                     if prev is not None:
                         prev["n"] = prev.get("n", 1) + 1
                         _state.setdefault("hits", []).append(time.monotonic())
                         continue
-                    info.update(raw=key[:48], ant=tag.ant,
+                    info.update(raw=blob_key.hex().upper()[:48], ant=tag.ant,
                                 rssi=tag.rssi, n=1)
                     _state["seen"][key] = info
                     _state["tags"].append(info)
@@ -1489,6 +1505,44 @@ def api_probe():
             return jsonify(ok=True, count=len(tags),
                            callback=r.callback_stats(),
                            tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+        if what == "stream_raw":
+            # diagnostico crudo del stream: StartRead + N polls de GetTagBuf
+            import ctypes as _ct
+            from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
+                                     WORKMODE_ACTIVE as _WA, WORKMODE_ANSWER as _WS)
+            n = int(cfg.get("polls", 20) or 20)
+            r._pace()
+            r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
+            r._pace(settle=True)
+            r._lib.CFHid_ClearTagBuf()
+            r.start_read()
+            samples = []
+            got_tags = []
+            for i in range(n):
+                time.sleep(0.1)
+                buf = (_ct.c_ubyte * 131072)()
+                total = _ct.c_uint32(0)
+                count = _ct.c_uint32(0)
+                ret = r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
+                smp = {"i": i, "ret": int(ret), "total": int(total.value), "count": int(count.value)}
+                if count.value and "hex0" not in smp and len(samples) < 40:
+                    smp["hex0"] = bytes(buf[:total.value]).hex().upper()
+                samples.append(smp)
+                if count.value:
+                    from ru5600_core import parse_tag_buffer as _ptb
+                    for t in _ptb(bytes(buf[:total.value]), count.value):
+                        got_tags.append(t.epc_hex)
+            r.stop_read()
+            try:
+                r._pace(); r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WS)
+            except Exception:  # noqa: BLE001
+                pass
+            with_data = [s2 for s2 in samples if s2["count"]]
+            _log("ok" if with_data else "warn",
+                 "stream_raw: %d polls, %d con datos, %d tags" % (n, len(with_data), len(got_tags)))
+            return jsonify(ok=True, start_ok=getattr(r, "last_start_ok", None),
+                           polls=n, con_datos=len(with_data),
+                           tags=got_tags[:20], samples=samples[:n])
         if what == "checkant":
             try:
                 code = r._lib.CFHid_CheckAnt()

@@ -470,6 +470,47 @@ def _declare_signatures(lib) -> None:
 
 
 def parse_tag_buffer(buf: bytes, count: int) -> List[Tag]:
+    """Decodifica el buffer de tags del lector.
+
+    Layout medido en el firmware 7.1 (2026-10-26, registro de 92 bytes):
+        [0]      largo del registro - 1
+        [1]      tipo
+        [2]      antena
+        [3..]    EPC (largo variable: 8, 12 ...)
+        luego    TID 12 bytes
+        cola     fija de 65 bytes (USER / timestamp / RSSI)
+    El EPC se despeja del largo del registro: epc_len = n - 80.
+    """
+    tags: List[Tag] = []
+    off = 0
+    total = len(buf)
+    for _ in range(max(0, count)):
+        if off >= total:
+            break
+        n = buf[off] + 1
+        if n < 6 or off + n > total:
+            break
+        rec = buf[off:off + n]
+        ant = rec[2] if len(rec) > 2 else 0
+        epc_len = n - 80
+        if epc_len < 2 or epc_len > 64:
+            off += n
+            continue
+        epc = rec[3:3 + epc_len]
+        tid = rec[3 + epc_len:3 + epc_len + 12]
+        rssi = rec[n - 44] if n >= 44 else 0
+        try:
+            tags.append(Tag(epc=epc, raw_id=bytes(rec), ant=ant, rssi=rssi,
+                            tid=tid or b""))
+        except TypeError:
+            tag = Tag.__new__(Tag)
+            tag.epc, tag.raw_id, tag.ant, tag.rssi, tag.tid = epc, bytes(rec), ant, rssi, tid or b""
+            tags.append(tag)
+        off += n
+    return tags
+
+
+def _parse_tag_buffer_legacy(buf: bytes, count: int) -> List[Tag]:
     """Decode the reader's packed tag buffer.
 
     Layout per record (repeated ``count`` times):
