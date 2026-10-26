@@ -19,13 +19,12 @@
     <div><label class="block text-sm mb-1" for="mode">Modo de lectura</label><select id="mode" class="select select-bordered w-full"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></div>
   </div>
   <div class="grid grid-cols-2 gap-2">
-    <button id="openBtn" class="btn btn-primary">Abrir</button>
-    <button id="closeBtn" class="btn btn-outline" disabled>Cerrar</button>
+    <button id="connToggle" class="btn btn-primary">Abrir</button>
+    <button id="udevBtn" class="btn btn-outline">Instalar regla de acceso USB</button>
     <button id="tcpBtn" class="btn btn-outline">Servidor TCP</button>
     <button id="netBtn" class="btn btn-outline">Escanear red</button>
     <button id="scanBtn" class="btn btn-outline">Escanear puerto</button>
     <button id="helpBtn" class="btn btn-outline">Ayuda</button>
-    <button id="udevBtn" class="btn btn-outline col-span-2">Instalar regla de acceso USB</button>
   </div>
   <pre id="udevout" class="mt-1 text-xs whitespace-pre-wrap hidden"></pre>
   <p id="connMsg" class="mt-2 text-sm"></p>
@@ -69,10 +68,14 @@ function syncDev() {
   if (t === 'net') { sel.disabled = true; return; }
   sel.disabled = sel.options.length === 0;
 }
+let connOpen = false;
 async function refreshState() {
   const s = await fetch('/api/conn_state').then(r => r.json());
-  document.getElementById('openBtn').disabled = s.open;
-  document.getElementById('closeBtn').disabled = !s.open;
+  connOpen = !!(s.info && Object.keys(s.info).length) || s.open;
+  connOpen = !!s.open;
+  const ct = document.getElementById('connToggle');
+  ct.textContent = t(connOpen ? 'Cerrar' : 'Abrir');
+  ct.className = 'btn ' + (connOpen ? 'btn-error' : 'btn-primary');
   /* el rele solo tiene sentido con el lector abierto: no hay forma de consultar si la placa lo tiene */
   document.getElementById('relayOff').disabled = !s.open;
   document.getElementById('relayOn').disabled = !s.open;
@@ -83,13 +86,18 @@ async function refreshState() {
   }
 }
 document.querySelectorAll('input[name=t]').forEach(el => el.onchange = syncTransport);
-document.getElementById('openBtn').onclick = async () => {
-  const t = document.querySelector('input[name=t]:checked').value;
-  const r = await post('/api/open', {transport: t, ip: document.getElementById('ip').value, port: document.getElementById('port').value, baud: document.getElementById('baud').value});
+document.getElementById('connToggle').onclick = async () => {
+  if (connOpen) {
+    await post('/api/close', {});
+    document.getElementById('connMsg').textContent = 'Cerrado.';
+    refreshState();
+    return;
+  }
+  const tr = document.querySelector('input[name=t]:checked').value;
+  const r = await post('/api/open', {transport: tr, ip: document.getElementById('ip').value, port: document.getElementById('port').value, baud: document.getElementById('baud').value});
   document.getElementById('connMsg').textContent = r.ok ? 'Abierto.' : ('Error: ' + r.error);
   refreshState();
 };
-document.getElementById('closeBtn').onclick = async () => { await post('/api/close', {}); document.getElementById('connMsg').textContent = 'Cerrado.'; refreshState(); };
 document.getElementById('scanBtn').onclick = async () => {
   const r = await post('/api/scan_port', {});
   const sel = document.getElementById('dev'); sel.innerHTML = '';

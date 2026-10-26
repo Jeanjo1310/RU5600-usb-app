@@ -366,7 +366,7 @@ def api_open():
             _net_info["mode"] = "net"
         else:
             _net_info["mode"] = t
-            _get_reader()
+            _open_reader()
         return jsonify(ok=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
@@ -528,11 +528,20 @@ def _resolve(blob: bytes, idx, codes):
     return out
 
 
-def _get_reader():
+def _open_reader():
+    """Abre el lector (solo lo llama el boton Abrir y la recuperacion)."""
     global _reader
     if _reader is None or not _reader.is_open:
-        _reader = Ru5600Reader()
-        _reader.open()
+        r = Ru5600Reader()
+        r.open()
+        _reader = r
+    return _reader
+
+
+def _get_reader():
+    """Devuelve el lector ya abierto. Nunca abre solo: si esta cerrado, avisa."""
+    if _reader is None or not _reader.is_open:
+        raise RuntimeError("Abrí la conexión primero (pestaña Conexión).")
     return _reader
 
 
