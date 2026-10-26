@@ -14,13 +14,15 @@
 </div>
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir memoria (verificada)</h2>
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-2">
+  <div class="grid grid-cols-2 md:grid-cols-6 gap-3 items-end mb-2">
     <div><label class="block text-sm mb-1" for="wmem">Banco</label><select id="wmem" class="select select-bordered w-full"><option value="3">USER</option><option value="1">EPC</option><option value="0">RESERVED</option></select></div>
     <div><label class="block text-sm mb-1" for="wptr">Inicio (hex)</label><input id="wptr" value="00" class="input input-bordered w-full"></div>
     <div><label class="block text-sm mb-1" for="wdata">Datos (hex)</label><input id="wdata" placeholder="datos hex" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="wlen">Longitud (palabras)</label><input id="wlen" class="input input-bordered w-full" readonly></div>
     <div><label class="block text-sm mb-1" for="wpwd">Contraseña</label><input id="wpwd" value="00000000" class="input input-bordered font-mono w-full"></div>
     <button id="wgo" class="btn btn-error">Escribir</button>
   </div>
+  <p class="text-xs text-base-content/60 mb-1">Se escribe desde <b>Inicio</b> tantas palabras como largo tengan los datos (2 caracteres hex = 1 byte = media palabra). La longitud se calcula sola: el vendor la pide aparte porque permite cortar la escritura antes del final.</p>
   <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wfp"> Verificar huella antes de escribir</label>
   <p id="wout" class="mt-1 text-sm"></p>
 </div>
@@ -51,6 +53,12 @@ document.getElementById('rgo').onclick = async () => {
   const r = await post('/api/mem_read', {mem: parseInt(document.getElementById('rmem').value), ptr: document.getElementById('rptr').value, count: document.getElementById('rlen').value, pwd: document.getElementById('rpwd').value});
   document.getElementById('rout').textContent = r.ok ? r.hex : 'Error: ' + r.error;
 };
+function syncWLen() {
+  const v = (document.getElementById('wdata').value || '').replace(/[^0-9a-fA-F]/g, '');
+  document.getElementById('wlen').value = Math.floor(v.length / 4);
+}
+document.getElementById('wdata').oninput = syncWLen;
+syncWLen();
 document.getElementById('wgo').onclick = async () => {
   if (!confirm('Escribir en el tag. ¿Confirmás?')) return;
   const r = await post('/api/mem_write', {mem: parseInt(document.getElementById('wmem').value), ptr: document.getElementById('wptr').value, data: document.getElementById('wdata').value, pwd: document.getElementById('wpwd').value, fp: document.getElementById('wfp').checked});

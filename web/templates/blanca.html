@@ -3,10 +3,10 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Cómo funciona la lista blanca</h2>
-  <p class="text-sm text-base-content/60 mb-2">La lista vive en el lector: guarda los EPC que el lector tiene autorizados. Esta pantalla lee y escribe esa tabla directamente, no una copia local.</p>
+  <p class="text-sm text-base-content/60 mb-2">Es la lista de EPC permitidos que vive en el lector (pestaña <b>WhiteList</b> del software del fabricante). Se usa junto con el permiso <b>WhiteList</b> de la configuración avanzada del lector: con ese permiso activo, el lector informa <b>solo</b> los tags cuyo EPC está acá. Cada entrada es un EPC de 24 caracteres hex (12 bytes).</p>
   <ol class="list-decimal ml-5 text-sm space-y-1">
     <li>Actualizar trae la lista real del lector: cuántas entradas tiene y cuáles son.</li>
-    <li>Agregar suma una entrada escrita en hex, hasta 32 bytes.</li>
+    <li>Agregar suma una entrada: el EPC en hex, 24 caracteres (12 bytes).</li>
     <li>Importar carga varias de una vez, un EPC por línea.</li>
     <li>Borrar quita una entrada; Borrar todas vacía la tabla completa.</li>
     <li>Los cambios quedan grabados en el lector y sobreviven a cerrar la aplicación.</li>
@@ -21,9 +21,9 @@
   <div class="overflow-x-auto"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Entrada</th><th class="px-4 py-2"></th></tr></thead><tbody id="wlrows"></tbody></table></div>
 </div>
 <div class="card bg-base-100 shadow-sm p-6">
-  <h2 class="text-lg font-semibold mb-3">Agregar (32 bytes hex)</h2>
+  <h2 class="text-lg font-semibold mb-3">Agregar un EPC</h2>
   <div class="flex flex-wrap gap-2">
-    <input id="wldata" placeholder="32 bytes hex" class="input input-bordered font-mono flex-1">
+    <input id="wldata" placeholder="EPC: 24 caracteres hex" class="input input-bordered font-mono flex-1">
     <button id="wladd" class="btn btn-primary">Agregar</button>
   </div>
   <h2 class="text-lg font-semibold mt-4 mb-3">Importar (una por línea)</h2>

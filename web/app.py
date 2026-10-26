@@ -785,8 +785,9 @@ def api_wl_add():
     cfg = request.get_json(silent=True) or {}
     try:
         data = bytes.fromhex(str(cfg.get("hex", "")).replace(" ", ""))
-        if len(data) != 32:
-            return jsonify(ok=False, error="32 bytes hex")
+        # el vendor carga EPC de 12 bytes (24 hex); se acepta 32 por compatibilidad
+        if len(data) not in (12, 32):
+            return jsonify(ok=False, error="EPC de 24 caracteres hex (12 bytes)")
         _need_usb().whitelist_write(data)
         return jsonify(ok=True)
     except Exception as exc:  # noqa: BLE001

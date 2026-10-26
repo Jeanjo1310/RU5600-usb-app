@@ -31,11 +31,12 @@
 </div>
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">C · Escritura cifrada (experimental)</h2>
-  <p class="text-sm text-base-content/60 mb-3">Este lector no responde a la escritura cifrada, así que la función queda visible pero inactiva. No la uses en producción.</p>
+  <p class="text-sm text-base-content/60 mb-3">El software del fabricante ofrece <b>Mode1 a Mode4</b> + contraseña + ID, pero el frame no está confirmado y este firmware no responde a 0x2E/0x2F. Se envía <span class="font-mono">[modo][0x55][contraseña]</span> como prueba: el ID todavía no viaja. No la uses en producción.</p>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-    <div><label class="block text-sm mb-1" for="cwmode">Modo (hex)</label><input id="cwmode" value="00" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="cwmode">Modo</label><select id="cwmode" class="select select-bordered w-full"><option value="0">Mode1</option><option value="1">Mode2</option><option value="2">Mode3</option><option value="3">Mode4</option></select></div>
     <div><label class="block text-sm mb-1" for="cwpwd">Contraseña</label><input id="cwpwd" placeholder="00000000" class="input input-bordered font-mono w-full"></div>
-    <button id="cwgo" class="btn btn-error md:col-span-2" disabled>Aplicar CryptWrite</button>
+    <div><label class="block text-sm mb-1" for="cwid">ID</label><input id="cwid" placeholder="0123456789" class="input input-bordered font-mono w-full"></div>
+    <button id="cwgo" class="btn btn-error md:col-span-2" disabled>Enviar CryptWrite</button>
   </div>
   <p id="cwout" class="mt-2 text-sm"></p>
 </div>
