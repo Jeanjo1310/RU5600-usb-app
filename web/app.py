@@ -634,7 +634,7 @@ def _active_run():
         r._pace(settle=True)
         r._lib.CFHid_ClearTagBuf()
         r._pace()
-        r._lib.CFHid_StartRead(DEV_ADDR)
+        r._lib.CFHid_StartRead()
         r._pace(settle=True)
         try:
             while not _active_stop.is_set():
@@ -657,7 +657,7 @@ def _active_run():
                         "ant": tag.ant, "rssi": tag.rssi, "n": 1})
         finally:
             try:
-                r._lib.CFHid_StopRead(DEV_ADDR)
+                r._lib.CFHid_StopRead()
             except Exception:  # noqa: BLE001
                 pass
             r._pace(settle=True)
@@ -1279,7 +1279,7 @@ def _run(seconds, target=0, mode="answer"):
         r._pace(settle=True)
         r._lib.CFHid_ClearTagBuf()
         r._pace()
-        r._lib.CFHid_StartRead(DEV_ADDR)
+        r._lib.CFHid_StartRead()
         r._pace(settle=True)
         deadline = None if seconds <= 0 else time.monotonic() + seconds
         poll = 0.1
@@ -1324,7 +1324,7 @@ def _run(seconds, target=0, mode="answer"):
                             r.stop_read()
                             r._lib.CFHid_ClearTagBuf()
                             r._pace(settle=True)
-                            r._lib.CFHid_StartRead(DEV_ADDR)
+                            r._lib.CFHid_StartRead()
                             r._pace(settle=True)
                             stabilized += 1
                             _state["stabilized"] = stabilized
@@ -1333,7 +1333,7 @@ def _run(seconds, target=0, mode="answer"):
                             pass
         finally:
             try:
-                r._lib.CFHid_StopRead(DEV_ADDR)
+                r._lib.CFHid_StopRead()
             except Exception:  # noqa: BLE001
                 pass
             r._pace(settle=True)

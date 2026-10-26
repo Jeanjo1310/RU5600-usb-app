@@ -433,8 +433,8 @@ def _declare_signatures(lib) -> None:
         "CFHid_GetDeviceSystemInfo": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_ReadDeviceOneParam": ([u8, u8, u8p], ctypes.c_ubyte),
         "CFHid_SetDeviceOneParam": ([u8, u8, u8], ctypes.c_ubyte),
-        "CFHid_StopRead": ([u8], ctypes.c_ubyte),
-        "CFHid_StartRead": ([u8], ctypes.c_ubyte),
+        "CFHid_StopRead": ([], ctypes.c_ubyte),
+        "CFHid_StartRead": ([], ctypes.c_ubyte),
         "CFHid_InventoryG2": ([u8, u8p, u16p, u16p], ctypes.c_ubyte),
         "CFHid_WriteEPCG2": ([u8, u8p, u8p, u8], ctypes.c_ubyte),
         "CFHid_ReadCardG2": ([u8, u8p, u8, u8, u8, u8p], ctypes.c_ubyte),
@@ -444,9 +444,10 @@ def _declare_signatures(lib) -> None:
         "CFHid_SetFreq": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_ReadFreq": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_SetCallback": ([_CB], ctypes.c_int),
-        # el SDK declara GetTagBuf(void*, size_t*, int*): en x86_64 son 8 y 4 bytes
-        "CFHid_GetTagBuf": ([u8p, ctypes.POINTER(ctypes.c_size_t),
-                             ctypes.POINTER(ctypes.c_uint)], ctypes.c_ubyte),
+        # el .so escribe 4 bytes en cada out-param (objdump 0x6304/0x631c)
+        "CFHid_GetTagBuf": ([u8p, ctypes.POINTER(ctypes.c_uint32),
+                             ctypes.POINTER(ctypes.c_uint32)], ctypes.c_ubyte),
+        "CFHid_CheckAnt": ([], ctypes.c_ubyte),
         "CFHid_ClearTagBuf": ([], ctypes.c_ubyte),
         "CFHid_RebootDevice": ([u8], ctypes.c_ubyte),
         "CFHid_LockCardG2": ([u8p, u8], ctypes.c_ubyte),
@@ -877,8 +878,22 @@ class Ru5600Reader:
         self._pace(settle=True)
         self._lib.CFHid_ClearTagBuf()
         self._pace()
-        self._lib.CFHid_StartRead(DEV_ADDR)
+        # verificar que el modo quedo grabado: si no, el firmware no streamea
+        for _try in range(3):
+            mode_now = None
+            try:
+                mode_now = self.read_param(PARAM_WORKMODE)
+            except Exception:  # noqa: BLE001
+                pass
+            if mode_now == WORKMODE_ACTIVE:
+                break
+            self._pace(settle=True)
+            self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                              WORKMODE_ACTIVE)
+            self._pace(settle=True)
+        started = self._lib.CFHid_StartRead()
         self._pace(settle=True)
+        self.last_start_ok = bool(started)
         t0 = time.monotonic()
         try:
             while time.monotonic() - t0 < duration:
@@ -894,7 +909,7 @@ class Ru5600Reader:
                 if poll:
                     time.sleep(poll)
         finally:
-            self._lib.CFHid_StopRead(DEV_ADDR)
+            self._lib.CFHid_StopRead()
             self._pace(settle=True)
             self._lib.CFHid_ClearTagBuf()
             self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
@@ -971,7 +986,7 @@ class Ru5600Reader:
             self._pace(settle=True)
             self._lib.CFHid_ClearTagBuf()
             self._pace()
-            self._lib.CFHid_StartRead(DEV_ADDR)
+            self._lib.CFHid_StartRead()
             self._pace(settle=True)
             tags: List[Tag] = []
             seen = set()
@@ -985,7 +1000,7 @@ class Ru5600Reader:
                             seen.add(key)
                             tags.append(tag)
             finally:
-                self._lib.CFHid_StopRead(DEV_ADDR)
+                self._lib.CFHid_StopRead()
                 self._pace(settle=True)
             if tags:
                 break
@@ -1023,7 +1038,7 @@ class Ru5600Reader:
         self._pace(settle=True)
         self._lib.CFHid_ClearTagBuf()
         self._pace()
-        self._lib.CFHid_StartRead(DEV_ADDR)
+        self._lib.CFHid_StartRead()
         self._pace(settle=True)
         deadline = None if duration <= 0 else time.monotonic() + duration
         try:
@@ -1038,7 +1053,7 @@ class Ru5600Reader:
                             on_new(tag, len(tags))
         finally:
             try:
-                self._lib.CFHid_StopRead(DEV_ADDR)
+                self._lib.CFHid_StopRead()
             except Exception:
                 pass
             self._pace(settle=True)
@@ -1060,29 +1075,31 @@ class Ru5600Reader:
 
     def poll_tags(self) -> List[Tag]:
         """Drain the tag buffer filled by active mode (callback primero)."""
+        tags = []
         queued = getattr(self, "_cb_tags", None)
         if queued:
-            out = list(queued)
+            tags.extend(queued)
             del queued[:]
-            return out
-        buf = (ctypes.c_ubyte * 65536)()
-        total = ctypes.c_size_t(0)
-        count = ctypes.c_uint(0)
+        # drenar SIEMPRE el buffer del SDK tambien: si nadie lo lee, el hilo de
+        # recepcion deja de acumular (tope 0x1f7ff)
+        buf = (ctypes.c_ubyte * 131072)()
+        total = ctypes.c_uint32(0)
+        count = ctypes.c_uint32(0)
         ret = self._lib.CFHid_GetTagBuf(buf, ctypes.byref(total), ctypes.byref(count))
-        if not ret or count.value == 0:
-            return []
-        return parse_tag_buffer(bytes(buf[: total.value]), count.value)
+        if ret and count.value:
+            tags.extend(parse_tag_buffer(bytes(buf[: total.value]), count.value))
+        return tags
 
     def start_read(self) -> bool:
         self._pace()
-        if self._lib.CFHid_StartRead(DEV_ADDR) != 1:
+        if self._lib.CFHid_StartRead() != 1:
             raise ReaderError("StartRead failed")
         self._pace(settle=True)
         return True
 
     def stop_read(self) -> bool:
         self._pace()
-        if self._lib.CFHid_StopRead(DEV_ADDR) != 1:
+        if self._lib.CFHid_StopRead() != 1:
             raise ReaderError("StopRead failed")
         self._pace(settle=True)
         self._lib.CFHid_ClearTagBuf()
