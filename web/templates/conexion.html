@@ -2,17 +2,6 @@
 {% block title %}Conexión{% endblock %}
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
-  <h2 class="text-lg font-semibold mb-3">Idioma y apariencia</h2>
-  <div class="flex flex-wrap gap-10">
-    <div><div class="text-sm text-base-content/60 mb-1">Idioma</div>
-      <label class="mr-3"><input type="radio" class="radio radio-sm" name="lang" value="es" checked> Español</label>
-      <label><input type="radio" class="radio radio-sm" name="lang" value="en"> English</label></div>
-    <div><div class="text-sm text-base-content/60 mb-1">Tema</div>
-      <label class="mr-3"><input type="radio" class="radio radio-sm" name="theme" value="dark"> Oscuro</label>
-      <label><input type="radio" class="radio radio-sm" name="theme" value="light" checked> Claro</label></div>
-  </div>
-</div>
-<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Conexión</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
     <div>
@@ -137,7 +126,6 @@ document.getElementById('netBtn').onclick = async () => {
   const r = await post('/api/scan_net', {ip: document.getElementById('ip').value, port: document.getElementById('port').value});
   document.getElementById('connMsg').textContent = r.ok ? 'Red OK.' : ('Red: ' + r.error);
 };
-document.querySelectorAll('input[name=theme]').forEach(el => el.onchange = () => setTheme(document.querySelector('input[name=theme]:checked').value));
 syncTransport();
 refreshState();
 </script>
