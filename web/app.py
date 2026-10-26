@@ -492,6 +492,14 @@ def api_open():
     rm = str(cfg.get("read_mode") or "").lower()
     if rm in _READ_MODES:
         _read_cfg["mode"] = rm
+        # apertura con un modo distinto al del perfil: la mezcla pasa a Personalizado
+        # (mismo criterio que POST /api/read_mode, para que el perfil nunca mienta)
+        base_prof = PROFILES.get(_profile_cfg.get("base") or "")
+        if base_prof and base_prof["read_mode"] != rm:
+            _profile_cfg["current"] = "custom"
+            _profile_cfg["changed"] = dict(_profile_cfg.get("changed") or {}, **{
+                "lectura": {"de": _READ_MODES[base_prof["read_mode"]]["label"],
+                            "a": _READ_MODES[rm]["label"]}})
         _log("info", "modo de lectura: %s (pausa %.0f ms, reintentos %d)" % (
             _READ_MODES[rm]["label"], _READ_MODES[rm]["pause"] * 1000,
             _READ_MODES[rm]["retries"]))
