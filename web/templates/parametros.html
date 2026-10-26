@@ -121,42 +121,61 @@ document.getElementById('reboot').onclick = async () => {
 };
 pread();
 
-/* ---- perfiles de lectura (lista + aplicacion) ---- */
+/* ---- perfiles de lectura (lista + aplicacion + personalizado) ---- */
 const WM_LBL = {0: 'AnswerMode', 1: 'ActiveMode'};
-const PACE_LBL = {burst: 'Ráfaga (30 ms)', balanced: 'Balanceado (120 ms)', reliable: 'Confiable (250 ms + 2 reintentos)'};
+const PACE_LBL = {burst: 'R\u00e1faga (30 ms)', balanced: 'Balanceado (120 ms)', reliable: 'Confiable (250 ms + 2 reintentos)'};
+async function profData() {
+  try { return await fetch('/api/profiles').then(r => r.json()); } catch (e) { return null; }
+}
 async function profLoad() {
-  const d = await fetch('/api/profiles').then(r => r.json()).catch(() => null);
+  const d = await profData();
   if (!d || !d.ok) return;
-  const sel = document.getElementById('perfil'); sel.innerHTML = '';
+  const sel = document.getElementById('perfil'); if (!sel) return;
+  sel.innerHTML = '';
   (d.profiles || []).forEach(p => {
     const o = document.createElement('option'); o.value = p.id;
     o.textContent = t(p.label); sel.appendChild(o);
   });
+  sel.value = d.current;
   profShow(d.current, d);
 }
 function profShow(id, d) {
   const list = (d && d.profiles) || [];
   const p = list.find(x => x.id === id);
   if (!p) return;
-  document.getElementById('perfilDesc').textContent = t(p.desc);
-  const wm = (id === 'rafaga' || id === 'continuo') ? 1 : 0;
+  const esCustom = id === 'custom';
+  document.getElementById('perfilDesc').textContent =
+    t(p.desc) + (esCustom ? ' ' + t('Base:') + ' ' + t(d.base_label || d.base || '') : '');
+  const wm = (d.base === 'rafaga' || d.base === 'continuo') ? 1 : 0;
+  const ch = Object.keys(d.changed || {}).map(k =>
+      k + ' ' + (d.changed[k] || {}).de + ' \u2192 ' + (d.changed[k] || {}).a).join(' \u00b7 ');
   document.getElementById('perfilSets').textContent =
-    'WorkMode=' + WM_LBL[wm] + ' · ' + t('lectura') + '=' + t(PACE_LBL[d.read_mode] || PACE_LBL.balanced) +
-    ' · ' + t('barrido') + '=' + (d.sweep === 'active' ? t('stream') : t('dirigido'));
+    'WorkMode=' + WM_LBL[wm] + ' \u00b7 ' + t('lectura') + '=' + t(PACE_LBL[d.read_mode] || PACE_LBL.balanced) +
+    ' \u00b7 ' + t('barrido') + '=' + (d.sweep === 'active' ? t('stream') : t('dirigido'))
+    + (esCustom && ch ? ' \u00b7 ' + t('cambios') + ': ' + ch : '');
 }
 document.getElementById('perfil').onchange = async (ev) => {
   const id = ev.target.value;
+  const d = await profData();
+  const p = ((d && d.profiles) || []).find(x => x.id === id) || {};
+  const msg = document.getElementById('perfilMsg');
+  if (p.applyable === false) { profShow(id, d); msg.textContent = t('Conservando tu mezcla.'); return; }
   const r = await fetch('/api/profiles/apply', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({id: id})}).then(x => x.json()).catch(e => ({ok: false, error: String(e)}));
-  const msg = document.getElementById('perfilMsg');
   if (!r.ok) { msg.textContent = 'Error: ' + r.error; return; }
   try { localStorage.setItem('ru5600_read_mode', r.app.read_mode); } catch (e) {}
-  const d = await fetch('/api/profiles').then(x => x.json());
-  profShow(id, d);
-  msg.textContent = t('Perfil aplicado: ') + t((d.profiles.find(x => x.id === id) || {}).label || id)
-    + ((r.reader && r.reader.ok) ? '' : ' · ' + t('el WorkMode del lector no se pudo cambiar'));
+  const d2 = await profData();
+  profShow(id, d2);
+  msg.textContent = t('Perfil aplicado: ') + t(p.label || id)
+    + ((r.reader && r.reader.ok) ? '' : ' \u00b7 ' + t('el WorkMode del lector no se pudo cambiar'));
   if (window.pread) pread();
 };
+/* Aplicar (params) puede volver el perfil "Personalizado": refrescar la lista */
+(function () {
+  const btn = document.getElementById('papply'); if (!btn) return;
+  const prev = btn.onclick;
+  btn.onclick = async (e) => { if (prev) await prev(e); profLoad(); };
+})();
 profLoad();
 </script>
 {% endblock %}

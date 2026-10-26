@@ -122,7 +122,18 @@ PROFILES = {
     },
 }
 _sweep_cfg: dict = {"mode": "active"}
-_profile_cfg: dict = {"current": "general"}
+_profile_cfg: dict = {"current": "general", "base": "general", "changed": {}}
+# etiquetas legibles de los parametros que un perfil NO maneja (para el estado "personalizado")
+_PARAM_LBL = {"rf": "RF Power", "mode": "WorkMode", "beep": "Buzzer", "filter": "FilterTime"}
+CUSTOM = {
+    "id": "custom",
+    "label": "Personalizado",
+    "desc": ("Mezcla propia: tus cambios encima de un perfil, sin perder el resto de la "
+             "configuracion. Se marca solo cuando Aplicar cambia algo que el perfil no "
+             "define (por ejemplo RF Power para leer mas cerca). Elegir un perfil de la "
+             "lista lo reemplaza."),
+    "applyable": False,
+}
 _lock = threading.Lock()
 _stop = threading.Event()
 _state = {"running": False, "tags": [], "seen": set(), "started": 0.0,
@@ -220,6 +231,15 @@ def api_params_apply():
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
     applied, failed = {}, []
+    # valores ANTES de escribir: lo que quede distinto a esto lo vuelve "Personalizado"
+    # sin perder el resto de la configuracion (ej.: bajar RF Power para leer de cerca)
+    pre = {}
+    for key, getter in (("rf", r.rf_power), ("mode", r.work_mode),
+                        ("beep", r.beep), ("filter", r.filter_time)):
+        try:
+            pre[key] = getter()
+        except Exception:  # noqa: BLE001 - si no se lee, no se compara
+            pass
     plan = [
         ("rf", lambda v: r.set_rf_power(int(v)), lambda: r.rf_power()),
         ("mode", lambda v: r.set_work_mode(int(v)), lambda: r.work_mode()),
@@ -245,7 +265,19 @@ def api_params_apply():
                 failed.append({"field": key, "want": norm_want, "got": norm_got})
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
-    return jsonify(ok=not failed, applied=applied, failed=failed)
+    # cambios manuales: cualquier campo escrito distinto de lo que habia = Personalizado
+    changed = {}
+    for key, info in applied.items():
+        if key in pre and int(pre[key]) != int(info.get("got", pre[key])):
+            changed[_PARAM_LBL.get(key, key)] = {"de": pre[key], "a": info.get("got")}
+    prof_state = None
+    if changed:
+        _profile_cfg["current"] = "custom"
+        _profile_cfg["changed"] = changed
+        _log("info", "perfil personalizado: cambiaste %s" %
+             ", ".join("%s %s->%s" % (k, v["de"], v["a"]) for k, v in changed.items()))
+        prof_state = {"id": "custom", "base": _profile_cfg.get("base"), "changed": changed}
+    return jsonify(ok=not failed, applied=applied, failed=failed, profile=prof_state)
 
 
 def _hex(b, n=4, default=b"\x00" * 4):
@@ -482,10 +514,15 @@ def api_open():
 @app.route("/api/profiles")
 def api_profiles():
     """Lista de perfiles de lectura y cual esta activo."""
-    return jsonify(ok=True, current=_profile_cfg.get("current", "general"),
+    cur = _profile_cfg.get("current", "general")
+    base = _profile_cfg.get("base", "general")
+    changed = _profile_cfg.get("changed", {}) or {}
+    return jsonify(ok=True, current=cur, base=base, changed=changed,
+                   base_label=(PROFILES.get(base) or {}).get("label", base),
                    sweep=_sweep_cfg.get("mode", "active"),
                    read_mode=_read_cfg.get("mode", "balanced"),
-                   profiles=[{"id": pid, **cfg} for pid, cfg in PROFILES.items()])
+                   profiles=[{"id": pid, "applyable": True, **cfg}
+                             for pid, cfg in PROFILES.items()] + [CUSTOM])
 
 
 @app.route("/api/profiles/apply", methods=["POST"])
@@ -511,7 +548,7 @@ def api_profile_apply():
     # app: modo de lectura (pausas) + camino por defecto del barrido
     _read_cfg["mode"] = prof["read_mode"]
     _sweep_cfg["mode"] = prof["sweep"]
-    _profile_cfg["current"] = pid
+    _profile_cfg.update(current=pid, base=pid, changed={})
     out["app"] = {"read_mode": prof["read_mode"], "sweep": prof["sweep"],
                   "pause_ms": _READ_MODES[prof["read_mode"]]["pause"] * 1000,
                   "retries": _READ_MODES[prof["read_mode"]]["retries"]}
@@ -529,6 +566,13 @@ def api_read_mode():
         return jsonify(ok=False, error="modo desconocido: " + rm), 400
     _read_cfg["mode"] = rm
     pace = _READ_MODES[rm]
+    # si el modo elegido no es el del perfil base, la mezcla pasa a Personalizado
+    base_prof = PROFILES.get(_profile_cfg.get("base") or "")
+    if _profile_cfg.get("current") != "custom" and base_prof and base_prof["read_mode"] != rm:
+        _profile_cfg["current"] = "custom"
+        _profile_cfg["changed"] = dict(_profile_cfg.get("changed") or {},
+                                       **{_PARAM_LBL["mode"]: base_prof["read_mode"],
+                                          "lectura": rm})
     _log("info", "modo de lectura: %s (pausa %.0f ms, reintentos %d)" % (
         pace["label"], pace["pause"] * 1000, pace["retries"]))
     return jsonify(ok=True, read_mode=rm, label=pace["label"],
