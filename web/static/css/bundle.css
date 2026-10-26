@@ -3036,6 +3036,7 @@
   --color-success-content: oklch(0.38 0.09 155);
   --color-info: oklch(0.88 0.05 235);
   --color-info-content: oklch(0.38 0.08 240);
+  --color-base-content: oklch(0.36 0.008 265);
   --color-base-200: oklch(0.952 0.005 265);
   --color-base-300: oklch(0.902 0.007 265);
 }
@@ -3050,6 +3051,7 @@
   --color-success-content: oklch(0.97 0.02 155);
   --color-info: oklch(0.64 0.07 240);
   --color-info-content: oklch(0.97 0.02 240);
+  --color-base-content: oklch(0.88 0.004 265);
 }
 .card {
   border: 1px solid var(--color-base-300);
@@ -3064,6 +3066,10 @@
   }
   border-color: var(--color-base-300);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  color: oklch(0.26 0.01 265);
+}
+[data-theme="dark"] .input, [data-theme="dark"] .select, [data-theme="dark"] .textarea {
+  color: oklch(0.95 0.002 265);
 }
 .input:focus, .select:focus, .textarea:focus {
   border-color: var(--color-primary);
