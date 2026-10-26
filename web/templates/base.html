@@ -116,6 +116,36 @@ document.getElementById('helpTopBtn').onclick = openHelp;
 document.addEventListener('keydown', function (e) {
   if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); openHelp(); }
 }, true);
+async function downloadExport(path, payload) {
+  const r = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+  if (!r.ok) { alert('No se pudo exportar'); return; }
+  const blob = await r.blob();
+  const cd = r.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename="?([^";]+)"?/);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = m ? m[1] : (payload.name || 'export');
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+function exportTable(sel, name) {
+  const tb = document.querySelector(sel);
+  if (!tb) return;
+  const headers = [...tb.querySelectorAll('thead th')].map(th => th.textContent.trim()).filter(Boolean);
+  const rows = [...tb.querySelectorAll('tbody tr')].map(tr => [...tr.children].map(td => td.textContent.trim()))
+    .filter(r => r.some(v => v));
+  if (!rows.length) { alert('No hay filas para exportar todavía'); return; }
+  downloadExport('/api/export/xlsx', {name: name, headers: headers, rows: rows});
+}
+function exportText(sel, name) {
+  const el = document.querySelector(sel);
+  if (!el) return;
+  const txt = (el.value !== undefined && el.value !== null && el.value !== '') ? el.value : el.textContent;
+  if (!txt || !txt.trim() || txt.trim() === '-') { alert('No hay texto para exportar todavía'); return; }
+  downloadExport('/api/export/txt', {name: name, text: txt});
+}
 async function post(url, body) {
   const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
   return r.json();

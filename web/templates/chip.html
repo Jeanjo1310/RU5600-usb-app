@@ -9,6 +9,7 @@
     <label class="flex items-center gap-2 text-sm h-10"><input type="checkbox" class="checkbox checkbox-sm" id="cdeep"> Barrido profundo (mapa de memoria)</label>
     <button id="cgo" class="btn btn-primary">Analizar chip</button>
   </div>
+  <div class="flex justify-end mt-3"><button class="btn btn-outline btn-sm" onclick="exportText('#cout', 'chip-info')">Exportar</button></div>
   <pre id="cout" class="font-mono text-sm whitespace-pre-wrap bg-base-200/60 border border-base-300 rounded-lg p-4 mt-4 max-h-[30rem] overflow-auto">Poné un tag y apretá Analizar.</pre>
 </div>
 {% endblock %}

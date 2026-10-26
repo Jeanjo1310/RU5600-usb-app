@@ -980,6 +980,58 @@ def _map_problems(a_hex, b_hex):
     return probs
 
 
+@app.route("/api/export/xlsx", methods=["POST"])
+def api_export_xlsx():
+    """Recibe headers + rows y devuelve un .xlsx (para las tablas de salida)."""
+    cfg = request.get_json(silent=True) or {}
+    headers = [str(h) for h in (cfg.get("headers") or [])]
+    rows = cfg.get("rows") or []
+    if not rows:
+        return jsonify(ok=False, error="no hay filas para exportar"), 400
+    if len(rows) > 20000:
+        rows = rows[:20000]
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+        wb = Workbook()
+        ws = wb.active
+        ws.title = (cfg.get("sheet") or "datos")[:31]
+        if headers:
+            ws.append(headers)
+            for c in ws[1]:
+                c.font = Font(bold=True)
+        for r in rows:
+            ws.append(["" if v is None else v for v in r])
+        for i, h in enumerate(headers, start=1):
+            ancho = max(len(str(h)), *(len(str(r[i - 1])) for r in rows if len(r) >= i)) if rows else len(str(h))
+            ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = min(48, max(10, ancho + 2))
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        name = (cfg.get("name") or "export").replace("/", "-")[:60]
+        if not name.lower().endswith(".xlsx"):
+            name += ".xlsx"
+        return send_file(buf, as_attachment=True, download_name=name,
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc)), 500
+
+
+@app.route("/api/export/txt", methods=["POST"])
+def api_export_txt():
+    """Recibe texto libre y devuelve un .txt (para informes y lecturas)."""
+    cfg = request.get_json(silent=True) or {}
+    text = cfg.get("text") or ""
+    if not str(text).strip():
+        return jsonify(ok=False, error="no hay texto para exportar"), 400
+    name = (cfg.get("name") or "export").replace("/", "-")[:60]
+    if not name.lower().endswith(".txt"):
+        name += ".txt"
+    buf = io.BytesIO(str(text).encode("utf-8"))
+    return send_file(buf, as_attachment=True, download_name=name,
+                     mimetype="text/plain; charset=utf-8")
+
+
 @app.route("/api/map_template")
 def api_map_template():
     from openpyxl import Workbook

@@ -25,7 +25,8 @@
   <p class="text-xs text-base-content/60">Lee durante el tiempo indicado y suma tags distintos. Con "0" en el tope, la única forma de cortar es Parar o que se cumpla el tiempo. La relectura del mismo tag no crea fila: suma en Veces.</p>
 </div>
 <div class="card bg-base-100 shadow-sm overflow-x-auto p-2 mb-4">
-  <table class="table table-zebra w-full text-sm">
+  <div class="flex justify-end px-2 pt-2"><button class="btn btn-outline btn-sm" onclick="exportTable('#rows', 'barrido')">Exportar</button></div>
+  <table class="table table-zebra w-full text-sm" id="sweepTable">
     <thead class="text-xs uppercase opacity-70">
       <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Code W34</th><th class="px-4 py-2">Excel</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">Estado</th></tr>
     </thead>
@@ -59,6 +60,7 @@
   </div>
   <p id="cmpmsg" class="text-sm mb-2"></p>
   <div class="overflow-x-auto">
+    <div class="flex justify-end mb-1"><button class="btn btn-outline btn-sm" onclick="exportTable('#cmprows', 'comparacion')">Exportar</button></div>
     <table class="table table-zebra w-full text-sm">
       <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">Fila en planilla</th><th class="px-4 py-2">Valor en planilla</th></tr></thead>
       <tbody id="cmprows"></tbody>
