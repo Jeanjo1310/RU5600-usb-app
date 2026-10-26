@@ -131,8 +131,10 @@ async function downloadExport(path, payload) {
   URL.revokeObjectURL(a.href);
 }
 function exportTable(sel, name) {
-  const tb = document.querySelector(sel);
+  let tb = document.querySelector(sel);
   if (!tb) return;
+  // si le pasaron el tbody, subir a la tabla para encontrar los encabezados
+  if (tb.tagName === 'TBODY') tb = tb.closest('table') || tb;
   const headers = [...tb.querySelectorAll('thead th')].map(th => th.textContent.trim()).filter(Boolean);
   const rows = [...tb.querySelectorAll('tbody tr')].map(tr => [...tr.children].map(td => td.textContent.trim()))
     .filter(r => r.some(v => v));
