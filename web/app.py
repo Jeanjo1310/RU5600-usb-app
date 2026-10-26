@@ -1790,6 +1790,35 @@ def api_probe():
             return jsonify(ok=True, start_ok=getattr(r, "last_start_ok", None),
                            polls=n, con_datos=len(with_data),
                            tags=got_tags[:20], samples=samples[:n])
+        if what == "buffer_dump":
+            # vaciar, leer dirigido y volcar TODO lo que quede en el buffer del lector
+            import ctypes as _ct
+            def drain(tag=""):
+                out = []
+                for _i in range(3):
+                    buf = (_ct.c_ubyte * 131072)()
+                    total = _ct.c_uint32(0); count = _ct.c_uint32(0)
+                    ret = r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
+                    out.append({"ret": int(ret), "total": int(total.value),
+                                "count": int(count.value),
+                                "hex": bytes(buf[:total.value]).hex().upper() if total.value else ""})
+                    time.sleep(0.08)
+                return {"when": tag, "drains": out}
+            steps = []
+            r._lib.CFHid_ClearTagBuf(); time.sleep(0.1)
+            steps.append(drain("tras ClearTagBuf"))
+            res, epc, hx, det = _direct_read(r)
+            steps.append({"lectura": res, "epc": epc, "hex": hx})
+            steps.append(drain("tras lectura dirigida"))
+            try:
+                r.start_read(); time.sleep(0.6)
+                steps.append(drain("tras StartRead 0.6 s"))
+                r.stop_read()
+            except Exception as exc:  # noqa: BLE001
+                steps.append({"startread_error": str(exc)[:80]})
+            steps.append(drain("final"))
+            _log("info", "buffer_dump: %s" % (epc or "sin tag"))
+            return jsonify(ok=True, steps=steps)
         if what == "checkant":
             try:
                 code = r._lib.CFHid_CheckAnt()
