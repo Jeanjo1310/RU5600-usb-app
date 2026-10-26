@@ -12,8 +12,16 @@
       <input id="target" type="number" value="0" min="0" class="input input-bordered w-32">
     </div>
     <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
-    <span id="status" class="text-sm text-base-content/60 pb-2">Listo.</span>
+    <div class="pb-2">
+      <div class="flex items-center gap-2">
+        <span id="healthDot" class="inline-block w-2.5 h-2.5 rounded-full bg-base-300"></span>
+        <span id="status" class="text-sm font-medium">Listo.</span>
+      </div>
+      <div id="rate" class="text-xs text-base-content/60 mt-0.5"></div>
+    </div>
+    <button id="recoverBtn" class="btn btn-outline btn-sm">Destrabar lector</button>
   </div>
+  <p id="warnBox" class="hidden text-sm alert alert-warning items-center mt-2"></p>
   <p class="text-xs text-base-content/60">Lee durante el tiempo indicado y suma tags distintos. Con "0" en el tope, la única forma de cortar es Parar o que se cumpla el tiempo. La relectura del mismo tag no crea fila: suma en Veces.</p>
 </div>
 <div class="card bg-base-100 shadow-sm overflow-x-auto p-2 mb-4">
@@ -78,6 +86,24 @@ async function poll() {
   $('status').textContent = r.running
     ? `${t('Leyendo…')} ${r.count}${extra} tags`
     : `${t('Detenido.')} ${r.count} tags.` + (r.reason ? ' ' + t('Se detuvo porque') + ' ' + t(reasonText(r.reason)) + '.' : '');
+  const dot = $('healthDot');
+  const warn = $('warnBox');
+  if (!r.running) {
+    dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-base-300';
+    $('rate').textContent = r.count ? `${r.count} tags en el barrido` : '';
+    warn.classList.add('hidden');
+  } else if (r.stalled) {
+    dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-error animate-pulse';
+    $('rate').textContent = r.last_seen === null
+      ? t('Todavía no entregó ningún tag')
+      : `${r.dps}/s · ` + t('último tag hace') + ' ' + r.last_seen + ' s';
+    warn.textContent = t('El lector está en marcha pero no entrega tags: probá «Destrabar lector».');
+    warn.classList.remove('hidden');
+  } else {
+    dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-success';
+    $('rate').textContent = `${r.dps}/s · ` + t('último tag hace') + ' ' + (r.last_seen === null ? '-' : r.last_seen + ' s');
+    warn.classList.add('hidden');
+  }
   const tb2 = $('sweepToggle');
   tb2.textContent = t(r.running ? 'Parar' : 'Iniciar lectura');
   tb2.className = 'btn ' + (r.running ? 'btn-error' : 'btn-primary');
@@ -106,6 +132,14 @@ $('sweepToggle').onclick = async () => {
   if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
   $('rows').innerHTML = ''; seen = 0;
   timer = setInterval(poll, 400); poll();
+};
+$('recoverBtn').onclick = async () => {
+  $('recoverBtn').disabled = true;
+  const r = await post('/api/recover', {});
+  $('recoverBtn').disabled = false;
+  $('status').textContent = r.ok ? t('Lector destrabado.') : 'Error: ' + r.error;
+  $('rate').textContent = (r.steps || []).join(' · ');
+  poll();
 };
 $('cmpBtn').onclick = async () => {
   const f = $('cmpfile').files[0];

@@ -1136,12 +1136,19 @@ def barrido():
 
 @app.route("/api/status")
 def status():
-    return jsonify(running=_state["running"], error=_state["error"],
+    now = time.monotonic()
+    ts = [x for x in _state.get("hits", []) if now - x <= 10.0]
+    _state["hits"] = ts
+    last = (now - ts[-1]) if ts else None
+    running = _state["running"]
+    return jsonify(running=running, error=_state["error"],
                    count=len(_state["tags"]), tags=_state["tags"],
                    target=_state.get("target", 0),
                    reason=_state.get("reason", ""),
-                   elapsed=round(time.monotonic() - _state["started"], 1)
-                   if _state["running"] else 0)
+                   dps=round(len(ts) / 10.0, 1),
+                   last_seen=None if last is None else round(last, 1),
+                   stalled=bool(running and (last is None or last > 5)),
+                   elapsed=round(now - _state["started"], 1) if running else 0)
 
 
 @app.route("/api/start", methods=["POST"])
@@ -1157,15 +1164,17 @@ def start():
         return jsonify(ok=False, error="tope de tags invalido"), 400
     if target < 0:
         target = 0
+    mode = (cfg.get("mode") or "answer").lower()
     with _lock:
         if _state["running"]:
             return jsonify(ok=False, error="ya corriendo"), 409
         _state.update(running=True, tags=[], error="", target=target,
-                      reason="", started=time.monotonic())
+                      reason="", started=time.monotonic(), hits=[])
         _state["seen"] = {}
     _stop.clear()
-    threading.Thread(target=_run, args=(seconds, target), daemon=True).start()
-    return jsonify(ok=True, target=target)
+    threading.Thread(target=_run, args=(seconds, target, mode),
+                     daemon=True).start()
+    return jsonify(ok=True, target=target, mode=mode)
 
 
 @app.route("/api/stop", methods=["POST"])
@@ -1174,7 +1183,7 @@ def stop():
     return jsonify(ok=True)
 
 
-def _run(seconds, target=0):
+def _run(seconds, target=0, mode="answer"):
     reason = ""
     try:
         idx, codes = _excel()
@@ -1182,10 +1191,12 @@ def _run(seconds, target=0):
         idx, codes = None, set()
     try:
         r = _get_reader()
-        from ru5600_core import DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE
+        from ru5600_core import (DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE,
+                                 WORKMODE_ANSWER)
         r._pace()
-        r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                       WORKMODE_ACTIVE)
+        r._lib.CFHid_SetDeviceOneParam(
+            DEV_ADDR, PARAM_WORKMODE,
+            WORKMODE_ACTIVE if mode == "active" else WORKMODE_ANSWER)
         r._pace(settle=True)
         r._lib.CFHid_ClearTagBuf()
         r._pace()
@@ -1208,11 +1219,13 @@ def _run(seconds, target=0):
                     prev = _state["seen"].get(key)
                     if prev is not None:
                         prev["n"] = prev.get("n", 1) + 1
+                        _state.setdefault("hits", []).append(time.monotonic())
                         continue
                     info.update(raw=key[:48], ant=tag.ant,
                                 rssi=tag.rssi, n=1)
                     _state["seen"][key] = info
                     _state["tags"].append(info)
+                    _state.setdefault("hits", []).append(time.monotonic())
         finally:
             try:
                 r._lib.CFHid_StopRead(DEV_ADDR)
@@ -1234,6 +1247,53 @@ def _run(seconds, target=0):
             reason = "usuario" if _stop.is_set() else "tiempo"
         _state["reason"] = reason
         _state["running"] = False
+
+
+@app.route("/api/recover", methods=["POST"])
+def api_recover():
+    """Destraba el lector: corta el stream, borra el buffer, vuelve a AnswerMode
+    y reabre el dispositivo. No escribe nada en los tags."""
+    steps = []
+    _stop.set()
+    _active_stop.set()
+    time.sleep(0.4)
+    try:
+        r = _get_reader()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="no pude abrir el lector: " + str(exc))
+    try:
+        from ru5600_core import (DEV_ADDR, PARAM_WORKMODE, WORKMODE_ANSWER)
+        try:
+            r.stop_read()
+            steps.append("stream detenido")
+        except Exception as exc:  # noqa: BLE001
+            steps.append("stop_read: " + str(exc)[:40])
+        try:
+            r._lib.CFHid_ClearTagBuf()
+            steps.append("buffer borrado")
+        except Exception as exc:  # noqa: BLE001
+            steps.append("clear: " + str(exc)[:40])
+        try:
+            r._pace()
+            r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                           WORKMODE_ANSWER)
+            r._pace(settle=True)
+            steps.append("AnswerMode")
+        except Exception as exc:  # noqa: BLE001
+            steps.append("workmode: " + str(exc)[:40])
+        try:
+            r.reconnect()
+            steps.append("dispositivo reabierto")
+        except Exception as exc:  # noqa: BLE001
+            steps.append("reconnect: " + str(exc)[:40])
+        info = {}
+        try:
+            info = {"fw": r.read_param(0x00) and None}
+        except Exception:  # noqa: BLE001
+            info = {}
+        return jsonify(ok=True, steps=steps)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc), steps=steps)
 
 
 @app.route("/api/scan_now")
