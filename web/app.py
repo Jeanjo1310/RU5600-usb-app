@@ -1405,6 +1405,7 @@ def status():
                    reason=_state.get("reason", ""),
                    stabilized=_state.get("stabilized", 0),
                    mode_used=_state.get("mode_used", "stream"),
+                   flags=_flags_safe(),
                    dps=round(len(ts) / 10.0, 1),
                    last_seen=None if last is None else round(last, 1),
                    stalled=bool(running and (last is None or last > 5)),
@@ -2283,6 +2284,44 @@ def _store_result(epc, found, attempts, elapsed_ms, chip=None, rssi=None):
                       % (epc if found else "sin tag", attempts, elapsed_ms))
     except Exception as exc:  # noqa: BLE001
         _log("warn", "no pude guardar en SQLite: %s" % exc)
+
+
+def _flags_safe():
+    try:
+        return store.tag_flags()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+@app.route("/api/tags/flags")
+def api_tag_flags():
+    return jsonify(ok=True, flags=_flags_safe())
+
+
+@app.route("/api/tags/flag", methods=["POST"])
+def api_tag_flag():
+    cfg = request.get_json(silent=True) or {}
+    epc = (cfg.get("epc") or "").upper().strip()
+    if not epc:
+        return jsonify(ok=False, error="falta el EPC"), 400
+    try:
+        store.set_tag_flag(epc, cfg.get("motivo") or "")
+        _log("warn", "tag marcado como problematico: %s (%s)" % (epc, cfg.get("motivo") or "sin motivo"))
+        return jsonify(ok=True, flags=store.tag_flags())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/tags/unflag", methods=["POST"])
+def api_tag_unflag():
+    cfg = request.get_json(silent=True) or {}
+    epc = (cfg.get("epc") or "").upper().strip()
+    try:
+        store.clear_tag_flag(epc)
+        _log("info", "tag desmarcado: %s" % epc)
+        return jsonify(ok=True, flags=store.tag_flags())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
 
 
 @app.route("/api/tags")

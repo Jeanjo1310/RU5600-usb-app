@@ -117,7 +117,7 @@ async function poll() {
       const tr = document.createElement('tr');
       tr.className = 'border-b border-base-300';
       const conf = badge(x.conf === 'patron' ? 'patrón' : (x.conf || '?'), x.conf);
-      tr.innerHTML = `<td class="px-4 py-2">${seen + i + 1}</td><td class="px-4 py-2 font-mono" title="${x.raw}">${x.epc}</td><td class="px-4 py-2 font-mono">${x.chip}</td><td class="px-4 py-2 font-mono">${x.code || '-'}</td><td class="px-4 py-2">${x.xl}</td><td class="px-4 py-2">${x.n || 1}</td><td class="px-4 py-2">${x.rssi ?? '-'}</td><td class="px-4 py-2">${conf}</td>`;
+      tr.innerHTML = `<td class="px-4 py-2">${seen + i + 1}</td><td class="px-4 py-2 font-mono" title="${x.raw}">${x.epc}${(r.flags && r.flags[x.epc]) ? ' <span class="badge badge-warning badge-xs" title="' + r.flags[x.epc] + '">observado</span>' : ''}</td><td class="px-4 py-2 font-mono">${x.chip}</td><td class="px-4 py-2 font-mono">${x.code || '-'}</td><td class="px-4 py-2">${x.xl}</td><td class="px-4 py-2">${x.n || 1}</td><td class="px-4 py-2">${x.rssi ?? '-'}</td><td class="px-4 py-2">${conf}</td>`;
       tb.appendChild(tr);
     });
     seen = r.tags.length;

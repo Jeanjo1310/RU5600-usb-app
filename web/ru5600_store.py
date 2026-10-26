@@ -53,7 +53,12 @@ CREATE TABLE IF NOT EXISTS trabajos (
     extra   TEXT
 );
 
-CREATE TABLE IF NOT EXISTS log (
+CREATE TABLE IF NOT EXISTS tag_flags (
+            epc TEXT PRIMARY KEY,
+            motivo TEXT,
+            creado TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS log (
     id     INTEGER PRIMARY KEY,
     ts     TEXT NOT NULL,
     level  TEXT,
@@ -340,3 +345,36 @@ def clear_tags() -> dict:
     finally:
         con.close()
     return {"tags": int(tags), "lecturas": int(lecturas)}
+
+
+def set_tag_flag(epc, motivo=""):
+    """Marca un EPC como problematico (observacion)."""
+    epc = (epc or "").upper().strip()
+    if not epc:
+        return False
+    c = _connect()
+    try:
+        c.execute("INSERT INTO tag_flags(epc, motivo, creado) VALUES(?,?,datetime('now')) "
+                  "ON CONFLICT(epc) DO UPDATE SET motivo=excluded.motivo",
+                  (epc, motivo or ""))
+        c.commit()
+        return True
+    finally:
+        c.close()
+
+
+def clear_tag_flag(epc):
+    c = _connect()
+    try:
+        c.execute("DELETE FROM tag_flags WHERE epc=?", ((epc or "").upper(),))
+        c.commit()
+    finally:
+        c.close()
+
+
+def tag_flags():
+    c = _connect()
+    try:
+        return {r[0]: r[1] for r in c.execute("SELECT epc, motivo FROM tag_flags")}
+    finally:
+        c.close()
