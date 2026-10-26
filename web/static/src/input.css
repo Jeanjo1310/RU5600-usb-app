@@ -15,6 +15,9 @@
   --color-success-content: oklch(0.38 0.09 155);
   --color-info: oklch(0.88 0.05 235);
   --color-info-content: oklch(0.38 0.08 240);
+  /* Superficies: el fondo de pagina baja un escalon para que las tarjetas blancas se despeguen */
+  --color-base-200: oklch(0.952 0.005 265);
+  --color-base-300: oklch(0.902 0.007 265);
 }
 
 [data-theme="dark"] {
@@ -28,4 +31,40 @@
   --color-success-content: oklch(0.97 0.02 155);
   --color-info: oklch(0.64 0.07 240);
   --color-info-content: oklch(0.97 0.02 240);
+}
+
+/* Tarjetas con borde hairline: separacion sin depender solo de la sombra */
+.card {
+  border: 1px solid color-mix(in oklab, var(--color-base-300) 70%, transparent);
+}
+
+/* Campos con relleno propio: no se confunden con la tarjeta blanca */
+.input,
+.select,
+.textarea {
+  background-color: color-mix(in oklab, var(--color-base-200) 88%, var(--color-base-100));
+  border-color: var(--color-base-300);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--color-primary);
+}
+
+/* Botones secundarios: fondo suave y borde gris, no blanco con borde negro */
+.btn-outline {
+  --btn-bg: color-mix(in oklab, var(--color-base-200) 60%, var(--color-base-100));
+  --btn-border: color-mix(in oklab, var(--color-base-content) 20%, transparent);
+  color: var(--color-base-content);
+}
+
+.btn-outline:hover {
+  --btn-bg: var(--color-base-300);
+  --btn-border: color-mix(in oklab, var(--color-base-content) 30%, transparent);
+}
+
+/* Modales de ayuda */
+.help-item + .help-item {
+  margin-top: 0.75rem;
 }

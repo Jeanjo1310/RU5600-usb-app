@@ -7,10 +7,11 @@
         <label class="block mb-1 text-sm font-medium">Segundos (0 = hasta parar)</label>
         <input id="seconds" type="number" value="60" min="0" class="input input-bordered w-28">
       </div>
-      <button id="startBtn" class="text-white bg-blue-700 hover:bg-blue-800 font-medium rounded-lg px-5 py-2">Iniciar lectura</button>
-      <button id="stopBtn" class="text-white bg-red-700 hover:bg-red-800 font-medium rounded-lg px-5 py-2" disabled>Parar</button>
-      <span id="status" class="text-sm opacity-80">Listo.</span>
+      <button id="startBtn" class="btn btn-primary">Iniciar lectura</button>
+      <button id="stopBtn" class="btn btn-error" disabled>Parar</button>
+      <span id="status" class="text-sm opacity-80 pb-2">Listo.</span>
     </div>
+    <p class="text-xs mt-2 text-gray-500">Lee durante el tiempo indicado y suma tags distintos: la relectura del mismo tag no crea fila nueva. Apoyá el cursor en el EPC para ver la trama cruda.</p>
   </div>
   <div class="card bg-base-100 shadow-sm overflow-x-auto">
     <table class="table table-zebra w-full text-sm">

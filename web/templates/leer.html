@@ -3,36 +3,38 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Leer memoria del tag</h2>
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
-    <select id="rmem" class="select select-bordered"><option value="1">EPC</option><option value="2">TID</option><option value="3">USER</option><option value="0">RESERVED</option></select>
-    <input id="rptr" value="00" title="Word inicial (hex)" class="input input-bordered">
-    <input id="rlen" value="06" title="Palabras (hex)" class="input input-bordered">
-    <input id="rpwd" value="00000000" title="Password 4 bytes hex" class="input input-bordered font-mono">
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-2">
+    <div><label class="block text-sm mb-1" for="rmem">Banco</label><select id="rmem" class="select select-bordered w-full"><option value="1">EPC</option><option value="2">TID</option><option value="3">USER</option><option value="0">RESERVED</option></select></div>
+    <div><label class="block text-sm mb-1" for="rptr">Inicio (hex)</label><input id="rptr" value="00" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="rlen">Longitud (hex)</label><input id="rlen" value="06" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="rpwd">Contraseña</label><input id="rpwd" value="00000000" class="input input-bordered font-mono w-full"></div>
     <button id="rgo" class="btn btn-primary">Leer</button>
   </div>
   <pre id="rout" class="font-mono text-sm whitespace-pre-wrap">-</pre>
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir memoria (verificada)</h2>
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
-    <select id="wmem" class="select select-bordered"><option value="3">USER</option><option value="1">EPC</option><option value="0">RESERVED</option></select>
-    <input id="wptr" value="00" title="Word inicial (hex)" class="input input-bordered">
-    <input id="wdata" placeholder="datos hex" class="input input-bordered font-mono">
-    <input id="wpwd" value="00000000" class="input input-bordered font-mono">
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-2">
+    <div><label class="block text-sm mb-1" for="wmem">Banco</label><select id="wmem" class="select select-bordered w-full"><option value="3">USER</option><option value="1">EPC</option><option value="0">RESERVED</option></select></div>
+    <div><label class="block text-sm mb-1" for="wptr">Inicio (hex)</label><input id="wptr" value="00" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="wdata">Datos (hex)</label><input id="wdata" placeholder="datos hex" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="wpwd">Contraseña</label><input id="wpwd" value="00000000" class="input input-bordered font-mono w-full"></div>
     <button id="wgo" class="btn btn-error">Escribir</button>
   </div>
-  <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wfp"> Verificar huella antes de escribir</label>
+  <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wfp"> Verificar huella antes de escribir</label>
   <p id="wout" class="mt-1 text-sm"></p>
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir EPC</h2>
-  <div class="flex flex-wrap gap-2">
-    <input id="wepc" value="3034333234353536373839303132" class="input input-bordered font-mono flex-1">
-    <input id="wpwd" value="00000000" title="password 4 bytes hex" class="input input-bordered font-mono">
-    <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wep_fp"> Verificar huella</label>
-    <button id="wepcgo" class="btn btn-error">Escribir EPC</button>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+    <div class="md:col-span-2"><label class="block text-sm mb-1" for="wepc">EPC (hex)</label><input id="wepc" value="3034333234353536373839303132" class="input input-bordered font-mono w-full"></div>
+    <div><label class="block text-sm mb-1" for="wepcpwd">Contraseña</label><input id="wepcpwd" value="00000000" class="input input-bordered font-mono w-full"></div>
+    <div class="flex items-center gap-3 pb-2">
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wep_fp"> Verificar huella</label>
+      <button id="wepcgo" class="btn btn-error">Escribir EPC</button>
+    </div>
   </div>
-  <p id="wepout" class="mt-1 text-sm"></p>
+  <p id="wepout" class="mt-2 text-sm"></p>
 </div>
 <div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">Huella (anti-clonado)</h2>
@@ -56,7 +58,7 @@ if (localStorage.getItem('ru5600_dmem')) document.querySelector('#rmem').selecte
 for (const [id, k] of [['rptr','dptr'],['rlen','dlen']]) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(id).value = v; }
 document.getElementById('wepcgo').onclick = async () => {
   if (!confirm('Escribir EPC (verificado). ¿Confirmás?')) return;
-  const r = await post('/api/epc_write', {epc: document.getElementById('wepc').value, pwd: document.getElementById('wpwd').value, fp: document.getElementById('wep_fp').checked});
+  const r = await post('/api/epc_write', {epc: document.getElementById('wepc').value, pwd: document.getElementById('wepcpwd').value, fp: document.getElementById('wep_fp').checked});
   document.getElementById('wepout').textContent = r.ok ? 'EPC escrito y verificado.' : 'Error: ' + r.error;
 };
 document.getElementById('fplearn').onclick = async () => {

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Idioma y apariencia</h2>
-  <div class="flex gap-6">
+  <div class="flex flex-wrap gap-10">
     <div><div class="text-sm text-gray-500 mb-1">Idioma</div>
       <label class="mr-3"><input type="radio" class="radio radio-sm" name="lang" value="es" checked> Español</label>
       <label><input type="radio" class="radio radio-sm" name="lang" value="en"> English</label></div>
@@ -53,6 +53,7 @@
     <button id="relayOff" class="btn btn-outline">Cerrar relé</button>
     <button id="relayOn" class="btn btn-outline">Liberar relé</button>
   </div>
+  <p class="mt-2 text-xs text-gray-500">Exportar/Importar config guardan y restauran los parámetros del lector en un archivo. Cerrar relé y Liberar relé conmutan el contacto del relé del lector.</p>
   <p id="devMsg" class="mt-1 text-sm"></p>
 </div>
 {% endblock %}
