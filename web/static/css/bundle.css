@@ -2383,31 +2383,6 @@
   .static {
     position: static;
   }
-  @layer daisyui.l1.l2 {
-    .btn-active {
-      --btn-bg: var(--btn-color, var(--color-base-200));
-    }
-    @supports (color: color-mix(in lab, red, red)) {
-      .btn-active {
-        --btn-bg: color-mix(in oklab, var(--btn-color, var(--color-base-200)), #000 5%);
-      }
-    }
-    .btn-active {
-      color: var(--btn-fg, var(--color-base-content));
-      --btn-border: var(--btn-color, var(--color-base-200));
-    }
-    @supports (color: color-mix(in lab, red, red)) {
-      .btn-active {
-        --btn-border: color-mix(in oklab, var(--btn-color, var(--color-base-200)), #000 7%);
-      }
-    }
-    .btn-active {
-      --btn-border-style: solid;
-      --btn-inset: 0 0 0 0 oklch(0% 0 0/0);
-      --btn-shadow: 0 0 0 0 oklch(0% 0 0/0);
-      isolation: isolate;
-    }
-  }
   @layer daisyui.l1.l2.l3 {
     .modal-backdrop {
       grid-column-start: 1;
@@ -2420,50 +2395,6 @@
     }
     .modal-backdrop button {
       cursor: pointer;
-    }
-  }
-  .join {
-    display: inline-flex;
-    align-items: stretch;
-    --join-ss: 0;
-    --join-se: 0;
-    --join-es: 0;
-    --join-ee: 0;
-    --join-ml: 0;
-    --join-mt: 0;
-    --join-v: 0;
-    --join-h: 1;
-    @scope (&) {
-       > :where(:focus, :has(:focus)) {
-        z-index: 2;
-      }
-      @media (hover: hover) {
-         > :where(.btn:hover, :has(.btn:hover)) {
-          z-index: 1;
-        }
-      }
-      :where(:scope > :first-child) {
-        --join-ss: var(--radius-field);
-        --join-se: calc(var(--radius-field) * var(--join-v));
-        --join-es: calc(var(--radius-field) * var(--join-h));
-        --join-ee: 0;
-      }
-      :where(:scope > :last-child) {
-        --join-ss: 0;
-        --join-se: calc(var(--radius-field) * var(--join-h));
-        --join-es: calc(var(--radius-field) * var(--join-v));
-        --join-ee: var(--radius-field);
-      }
-      :where(:scope > :only-child) {
-        --join-ss: var(--radius-field);
-        --join-se: var(--radius-field);
-        --join-es: var(--radius-field);
-        --join-ee: var(--radius-field);
-      }
-      :where(:scope > :not(:first-child)) {
-        --join-ml: calc(var(--border, 1px) * -1 * var(--join-h));
-        --join-mt: calc(var(--border, 1px) * -1 * var(--join-v));
-      }
     }
   }
   .col-span-2 {
@@ -2618,33 +2549,6 @@
         border-inline-start: var(--border) solid color-mix(in oklab, currentColor 10%, #0000);
       }
     }
-  }
-  .join-item {
-    @layer daisyui.l1.l2.l3.l4 {
-       > * {
-        --join-ss: initial;
-        --join-se: initial;
-        --join-es: initial;
-        --join-ee: initial;
-      }
-    }
-    border-style: solid;
-    border-width: var(--border, 1px);
-    border-start-start-radius: var(--join-ss);
-    border-start-end-radius: var(--join-se);
-    border-end-start-radius: var(--join-es);
-    border-end-end-radius: var(--join-ee);
-    &:not(:disabled, [disabled], .btn-disabled) {
-      margin-inline-start: var(--join-ml, 0);
-      margin-block-start: var(--join-mt, 0);
-    }
-    &:is(:disabled, [disabled], .btn-disabled) {
-      border-width: var(--border, 1px);
-      border-inline-end-width: calc(var(--border, 1px) * var(--join-v));
-      border-block-end-width: calc(var(--border, 1px) * var(--join-h));
-    }
-  }
-  @layer daisyui.l1.l2.l3 {
     .modal-action {
       margin-top: calc(0.25rem * 6);
       display: flex;
@@ -2865,6 +2769,9 @@
   .gap-4 {
     gap: calc(var(--spacing) * 4);
   }
+  .gap-5 {
+    gap: calc(var(--spacing) * 5);
+  }
   :where(.space-y-1 > :not(:last-child)) {
     --tw-space-y-reverse: 0;
     margin-block-start: calc(var(--spacing) * var(--tw-space-y-reverse));
@@ -3024,6 +2931,9 @@
   .uppercase {
     text-transform: uppercase;
   }
+  .opacity-50 {
+    opacity: 50%;
+  }
   .opacity-70 {
     opacity: 70%;
   }
@@ -3080,6 +2990,24 @@
     .badge-warning {
       --badge-color: var(--color-warning);
       --badge-fg: var(--color-warning-content);
+    }
+  }
+  .select-none {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  @layer daisyui.l1.l2 {
+    .toggle-primary:checked {
+      --input-color: var(--color-primary);
+    }
+    .toggle-primary[aria-checked="true"] {
+      --input-color: var(--color-primary);
+    }
+    .toggle-sm:is([type="checkbox"]) {
+      --size: calc(var(--size-selector, 0.25rem) * 5);
+    }
+    .toggle-sm:has([type="checkbox"]) {
+      --size: calc(var(--size-selector, 0.25rem) * 5);
     }
   }
   @layer daisyui.l1.l2.l3 {
@@ -3308,6 +3236,61 @@
   @supports (color: color-mix(in lab, red, red)) {
     border-color: color-mix(in oklab, var(--color-info) 45%, transparent);
   }
+}
+.input:disabled, .select:disabled, .textarea:disabled {
+  background-color: var(--color-base-100);
+  border-color: var(--color-base-300);
+  @supports (color: color-mix(in lab, red, red)) {
+    border-color: color-mix(in oklab, var(--color-base-300) 55%, transparent);
+  }
+  color: var(--color-base-content);
+  @supports (color: color-mix(in lab, red, red)) {
+    color: color-mix(in oklab, var(--color-base-content) 32%, transparent);
+  }
+  opacity: 1;
+  cursor: not-allowed;
+}
+.btn:disabled, .btn[disabled] {
+  background-color: var(--color-base-100);
+  @supports (color: color-mix(in lab, red, red)) {
+    background-color: color-mix(in oklab, var(--color-base-100) 92%, var(--color-base-200));
+  }
+  border-color: var(--color-base-300);
+  @supports (color: color-mix(in lab, red, red)) {
+    border-color: color-mix(in oklab, var(--color-base-300) 55%, transparent);
+  }
+  color: var(--color-base-content);
+  @supports (color: color-mix(in lab, red, red)) {
+    color: color-mix(in oklab, var(--color-base-content) 32%, transparent);
+  }
+  opacity: 1;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.btn-outline:disabled, .btn-outline[disabled] {
+  --btn-bg: var(--color-base-100);
+  @supports (color: color-mix(in lab, red, red)) {
+    --btn-bg: color-mix(in oklab, var(--color-base-100) 92%, var(--color-base-200));
+  }
+  --btn-border: var(--color-base-300);
+  @supports (color: color-mix(in lab, red, red)) {
+    --btn-border: color-mix(in oklab, var(--color-base-300) 55%, transparent);
+  }
+  color: var(--color-base-content);
+  @supports (color: color-mix(in lab, red, red)) {
+    color: color-mix(in oklab, var(--color-base-content) 32%, transparent);
+  }
+}
+.radio:disabled, .checkbox:disabled, .toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+label:has(> .radio:disabled), label:has(> .checkbox:disabled) {
+  color: var(--color-base-content);
+  @supports (color: color-mix(in lab, red, red)) {
+    color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+  }
+  cursor: not-allowed;
 }
 @layer base {
   :where(:root),:root:has(input.theme-controller[value=light]:checked),[data-theme=light] {
