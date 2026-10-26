@@ -2,18 +2,6 @@
 {% block title %}Parámetros{% endblock %}
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
-  <h2 class="text-lg font-semibold mb-3">Perfiles de lectura</h2>
-  <p class="text-xs text-base-content/60 mb-2">Un perfil cambia junto las tres cosas que definen cómo lee: el WorkMode del lector, la pausa entre lecturas dirigidas y el camino del barrido (stream o dirigido). Así lector e interfaz quedan coincidentes.</p>
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-    <select id="perfil" size="5" class="select select-bordered w-full h-auto py-1"></select>
-    <div>
-      <p id="perfilDesc" class="text-sm"></p>
-      <p id="perfilSets" class="text-xs font-mono text-base-content/60 mt-2"></p>
-    </div>
-  </div>
-  <p id="perfilMsg" class="mt-2 text-sm"></p>
-</div>
-<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Parámetros del lector</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
     <div><label class="block text-sm mb-1" for="rf">RF Power</label><select id="rf" class="select select-bordered w-full"></select></div>
@@ -21,6 +9,17 @@
     <div><label class="block text-sm mb-1" for="wm">WorkMode</label><select id="wm" class="select select-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></div>
     <div><label class="block text-sm mb-1" for="filt">FilterTime(s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
     <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mt-4 pt-4 border-t border-base-200 items-start">
+    <div>
+      <label class="block text-sm mb-1" for="perfil" title="Un perfil cambia junto las tres cosas que definen cómo lee: el WorkMode del lector, la pausa entre lecturas dirigidas y el camino del barrido. Así lector e interfaz quedan coincidentes.">Perfiles de lectura</label>
+      <select id="perfil" size="5" class="w-full text-sm border border-base-300 rounded-lg bg-base-200 px-2 py-1 leading-tight"></select>
+    </div>
+    <div class="md:col-span-2">
+      <p id="perfilDesc" class="text-sm"></p>
+      <p id="perfilSets" class="text-xs font-mono text-base-content/60 mt-2"></p>
+      <p id="perfilMsg" class="mt-2 text-sm"></p>
+    </div>
   </div>
   <div class="flex flex-wrap gap-2">
     <button id="papply" class="btn btn-primary">Aplicar</button>
