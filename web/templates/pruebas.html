@@ -12,17 +12,17 @@
     </button>
     <button class="btn probe-tall flex-col items-start text-left probe" data-what="scan">
       <span class="text-base">Buscar tags de a uno (rápido)</span>
-      <span class="text-xs opacity-60 font-mono">scan() · stream 3 s</span>
+      <span class="text-xs opacity-60">búsqueda (scan()) · stream 3 s</span>
       <span class="text-xs opacity-70">Debería traer varios tags. Hoy trae 0.</span>
     </button>
     <button class="btn probe-tall flex-col items-start text-left probe" data-what="inventory">
       <span class="text-base">Preguntar qué tags ve (una vez)</span>
-      <span class="text-xs opacity-60 font-mono">InventoryG2 · anticolisión</span>
+      <span class="text-xs opacity-60">inventario (InventoryG2) · anticoli­sión</span>
       <span class="text-xs opacity-70">Un solo pedido, sin stream. Hoy no contesta.</span>
     </button>
     <button class="btn probe-tall flex-col items-start text-left probe" data-what="startread">
       <span class="text-base">Ver si el lector empuja datos</span>
-      <span class="text-xs opacity-60 font-mono">StartRead + poll · callback</span>
+      <span class="text-xs opacity-60">lectura activa (StartRead + poll) · callback</span>
       <span class="text-xs opacity-70">Bien si «callback» sube de 0.</span>
     </button>
     <button class="btn probe-tall flex-col items-start text-left probe" data-what="callback">
@@ -37,12 +37,12 @@
     </button>
     <button class="btn probe-tall flex-col items-start text-left probe" data-what="maintenance">
       <span class="text-base">Limpieza rápida</span>
-      <span class="text-xs opacity-60 font-mono">StopRead + ClearTagBuf + AnswerMode</span>
+      <span class="text-xs opacity-60">limpieza (StopRead + ClearTagBuf + AnswerMode)</span>
       <span class="text-xs opacity-70">No reabre el equipo. Probala antes que Destrabar.</span>
     </button>
     <button id="recoverBtn" class="btn btn-error probe-tall flex-col items-start text-left">
       <span class="text-base">Destrabar el lector</span>
-      <span class="text-xs opacity-60 font-mono">stop + clear + AnswerMode + reabrir</span>
+      <span class="text-xs opacity-60">detener + limpiar + AnswerMode + reabrir</span>
       <span class="text-xs opacity-70">Lo más fuerte. Es el que te sirvió cuando no respondía.</span>
     </button>
   </div>
