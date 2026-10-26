@@ -1545,6 +1545,9 @@ def _run(seconds, target=0, mode="answer"):
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True
                     last_hit = time.monotonic()
+                    # pausa entre lecturas dirigidas: sin esto se saturan ~16/s
+                    # y el lector deja de contestar (medido 2026-10-26)
+                    time.sleep(max(poll, 0.12))
                     continue
                 stream_tags = r.poll_tags()
                 if stream_tags:
