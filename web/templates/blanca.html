@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-1">Cómo funciona la lista blanca</h2>
-  <p class="text-sm text-gray-500 mb-2">La lista vive en el lector: guarda los EPC que el lector tiene autorizados. Esta pantalla lee y escribe esa tabla directamente, no una copia local.</p>
+  <p class="text-sm text-base-content/60 mb-2">La lista vive en el lector: guarda los EPC que el lector tiene autorizados. Esta pantalla lee y escribe esa tabla directamente, no una copia local.</p>
   <ol class="list-decimal ml-5 text-sm space-y-1">
     <li>Actualizar trae la lista real del lector: cuántas entradas tiene y cuáles son.</li>
     <li>Agregar suma una entrada escrita en hex, hasta 32 bytes.</li>
@@ -13,7 +13,7 @@
   </ol>
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
-  <h2 class="text-lg font-semibold mb-3">Lista blanca <span id="wlcount" class="text-sm text-gray-500"></span></h2>
+  <h2 class="text-lg font-semibold mb-3">Lista blanca <span id="wlcount" class="text-sm text-base-content/60"></span></h2>
   <div class="flex flex-wrap gap-2 mb-2">
     <button id="wlref" class="btn btn-outline">Actualizar</button>
     <button id="wlclear" class="btn btn-outline">Borrar todas</button>
@@ -39,7 +39,7 @@ async function wlrefresh() {
   const tb = document.getElementById('wlrows'); tb.innerHTML = '';
   (r.entries || []).forEach((e, i) => {
     const tr = document.createElement('tr'); tr.className = 'border-b border-base-300';
-    tr.innerHTML = `<td class="px-4 py-2">${i}</td><td class="px-4 py-2 font-mono">${e}</td><td class="px-4 py-2"><button class="text-red-600" data-e="${e}">Borrar</button></td>`;
+    tr.innerHTML = `<td class="px-4 py-2">${i}</td><td class="px-4 py-2 font-mono">${e}</td><td class="px-4 py-2"><button class="text-danger" data-e="${e}">Borrar</button></td>`;
     tb.appendChild(tr);
   });
   document.querySelectorAll('#wlrows button').forEach(b => b.onclick = async () => { await post('/api/wl/del', {hex: b.dataset.e}); wlrefresh(); });

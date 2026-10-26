@@ -3,35 +3,35 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-1">Escribir EPC secuenciales por lote</h2>
-  <p class="text-sm text-gray-500 mb-3">Cada tag que aparece recibe el siguiente EPC de la serie. El primero es el EPC inicial; después se le suma el incremento por cada tag.</p>
+  <p class="text-sm text-base-content/60 mb-3">Cada tag que aparece recibe el siguiente EPC de la serie. El primero es el EPC inicial; después se le suma el incremento por cada tag.</p>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-start">
     <div class="md:col-span-2">
       <label class="block text-sm mb-1" for="bbase">EPC inicial (hex)</label>
       <input id="bbase" value="E2004704D9A06820068E0001" class="input input-bordered font-mono w-full">
-      <p class="text-xs mt-1 text-gray-500">24 caracteres hex (12 bytes). Es el EPC del primer tag del lote.</p>
+      <p class="text-xs mt-1 text-base-content/60">24 caracteres hex (12 bytes). Es el EPC del primer tag del lote.</p>
     </div>
     <div>
       <label class="block text-sm mb-1" for="bstep">Incremento (hex)</label>
       <input id="bstep" value="1" class="input input-bordered font-mono w-full">
-      <p class="text-xs mt-1 text-gray-500">Cuánto se le suma al EPC en cada tag. 1 = correlativo.</p>
+      <p class="text-xs mt-1 text-base-content/60">Cuánto se le suma al EPC en cada tag. 1 = correlativo.</p>
     </div>
     <div>
       <label class="block text-sm mb-1" for="btotal">Cantidad de tags</label>
       <input id="btotal" type="number" value="10" min="1" class="input input-bordered w-full">
-      <p class="text-xs mt-1 text-gray-500">Cuántos tags se van a escribir. Podés frenar cuando quieras con Parar.</p>
+      <p class="text-xs mt-1 text-base-content/60">Cuántos tags se van a escribir. Podés frenar cuando quieras con Parar.</p>
     </div>
   </div>
-  <p id="bpreview" class="text-xs font-mono text-gray-500 mb-4"></p>
+  <p id="bpreview" class="text-xs font-mono text-base-content/60 mb-4"></p>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
     <div>
       <div class="text-sm mb-1">Verificación</div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="bcheck" checked>Verificar tras escribir</label>
-      <p class="text-xs mt-1 ml-6 text-gray-500">Relee el EPC grabado y lo compara con el esperado.</p>
+      <p class="text-xs mt-1 ml-6 text-base-content/60">Relee el EPC grabado y lo compara con el esperado.</p>
     </div>
     <div>
       <div class="text-sm mb-1">Bloqueo</div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="block">Bloquear tras escribir</label>
-      <p class="text-xs mt-1 ml-6 text-gray-500">Deja el tag sin posibilidad de reescritura. Conviene hacerlo aparte, es <span class="text-danger">Peligroso</span>.</p>
+      <p class="text-xs mt-1 ml-6 text-base-content/60">Deja el tag sin posibilidad de reescritura. Conviene hacerlo aparte, es <span class="text-danger">Peligroso</span>.</p>
     </div>
   </div>
   <div class="flex gap-2">

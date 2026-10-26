@@ -10,7 +10,7 @@
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-1">A · Bloquear un tag para siempre</h2>
-  <p class="text-sm text-gray-500 mb-3">Deja el tag fijo: no se puede volver a escribir ni desbloquear. Usalo solo en tags que ya van a quedar pegados a su producto final. Antes de bloquear, leé el tag en Leer/Escribir y guardá su EPC.</p>
+  <p class="text-sm text-base-content/60 mb-3">Deja el tag fijo: no se puede volver a escribir ni desbloquear. Usalo solo en tags que ya van a quedar pegados a su producto final. Antes de bloquear, leé el tag en Leer/Escribir y guardá su EPC.</p>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
     <div><label class="block text-sm mb-1" for="lkdata">Datos de bloqueo (hex)</label><input id="lkdata" value="00000000" class="input input-bordered font-mono w-full"></div>
     <div><label class="block text-sm mb-1" for="lkact">Acción (hex)</label><input id="lkact" value="00" class="input input-bordered font-mono w-full"></div>
@@ -20,7 +20,7 @@
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-1">B · Enviar un comando al lector (soporte)</h2>
-  <p class="text-sm text-gray-500 mb-3">Herramienta de soporte técnico: manda un comando hexadecimal directo al lector, sin validación. Si no sabés qué número va, no la uses; el catálogo de comandos lo maneja el soporte.</p>
+  <p class="text-sm text-base-content/60 mb-3">Herramienta de soporte técnico: manda un comando hexadecimal directo al lector, sin validación. Si no sabés qué número va, no la uses; el catálogo de comandos lo maneja el soporte.</p>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
     <div><label class="block text-sm mb-1" for="rcmd">Comando (hex)</label><input id="rcmd" value="10" class="input input-bordered font-mono w-full"></div>
     <div><label class="block text-sm mb-1" for="rpay">Datos (hex)</label><input id="rpay" placeholder="hex" class="input input-bordered font-mono w-full"></div>
@@ -31,7 +31,7 @@
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-1">C · Escritura cifrada (experimental)</h2>
-  <p class="text-sm text-gray-500 mb-3">Este lector no responde a la escritura cifrada, así que la función queda visible pero inactiva. No la uses en producción.</p>
+  <p class="text-sm text-base-content/60 mb-3">Este lector no responde a la escritura cifrada, así que la función queda visible pero inactiva. No la uses en producción.</p>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
     <div><label class="block text-sm mb-1" for="cwmode">Modo (hex)</label><input id="cwmode" value="00" class="input input-bordered font-mono w-full"></div>
     <div><label class="block text-sm mb-1" for="cwpwd">Contraseña</label><input id="cwpwd" placeholder="00000000" class="input input-bordered font-mono w-full"></div>
