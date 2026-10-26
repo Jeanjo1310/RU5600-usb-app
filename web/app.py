@@ -1484,6 +1484,28 @@ def api_probe():
             return jsonify(ok=True, count=len(tags),
                            callback=r.callback_stats(),
                            tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+        if what == "maintenance":
+            # limpieza barata: cortar stream, vaciar buffer y volver a AnswerMode
+            steps = []
+            try:
+                r.stop_read(); steps.append("StopRead")
+            except Exception as exc:  # noqa: BLE001
+                steps.append("stop: " + str(exc)[:30])
+            try:
+                r.clear_tag_buf(); steps.append("ClearTagBuf")
+            except Exception:  # noqa: BLE001
+                steps.append("clear: error")
+            try:
+                from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
+                                         WORKMODE_ANSWER as _WA)
+                r._pace(settle=True)
+                r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
+                r._pace(settle=True)
+                steps.append("AnswerMode")
+            except Exception:  # noqa: BLE001
+                steps.append("mode: error")
+            _log("info", "mantenimiento: " + ", ".join(steps))
+            return jsonify(ok=True, steps=steps)
         if what == "callback":
             stats = r.callback_stats()
             _log("info", "callback: %s" % stats)
