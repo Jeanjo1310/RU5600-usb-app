@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Lote{% endblock %}
 {% block content %}
-<div class="card bg-base-100 shadow-sm p-6 mb-4">
+<div role="tablist" class="tabs tabs-border mb-4" id="loteTabs">
+  <button role="tab" class="tab tab-active" data-lote="seq">Secuencial</button>
+  <button role="tab" class="tab" data-lote="plan">Planilla</button>
+</div>
+<div id="loteSeq" class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Escribir EPC secuenciales por lote</h2>
   <p class="text-sm text-base-content/60 mb-3">Cada tag que aparece recibe el siguiente EPC de la serie. El primero es el EPC inicial; después se le suma el incremento por cada tag.</p>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-start">
@@ -40,7 +44,7 @@
   <div class="flex justify-end mt-2"><button class="btn btn-outline btn-sm" onclick="exportTable('#brows', 'lote-secuencial')">Exportar</button></div>
   <div class="overflow-x-auto mt-2"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Tag</th><th class="px-4 py-2">EPC escrito</th><th class="px-4 py-2">Resultado</th><th class="px-4 py-2">RSSI</th></tr></thead><tbody id="brows"></tbody></table></div>
 </div>
-<div class="card bg-base-100 shadow-sm p-6 mb-4">
+<div id="lotePlan" class="card bg-base-100 shadow-sm p-6 mb-4 hidden">
   <h2 class="text-lg font-semibold mb-1">Cambiar EPC según planilla</h2>
   <p class="text-sm text-base-content/60 mb-3">Para cambiar tags uno por uno: la columna A es el EPC que el tag tiene hoy y la columna B el que tiene que quedar. Se validan todas las filas antes de escribir; el resto de las columnas se ignora. Los tags que ya tienen el EPC nuevo se ignoran (no se reescriben) y la fila se marca como cumplida.</p>
   <div class="flex flex-wrap items-end gap-3 mb-3">
@@ -108,6 +112,17 @@ document.getElementById('bToggle').onclick = async () => {
   if (!r.ok) { document.getElementById('bmsg').textContent = 'Error: ' + r.error; return; }
   btimer = setInterval(bpoll, 500); bpoll();
 };
+// --- subtabs de Lote: una seccion visible a la vez (las tablas no empujan la otra) ---
+(function () {
+  const tabs = document.querySelectorAll('#loteTabs .tab');
+  const panes = {seq: document.getElementById('loteSeq'), plan: document.getElementById('lotePlan')};
+  tabs.forEach(btn => {
+    btn.onclick = () => {
+      tabs.forEach(b => b.classList.toggle('tab-active', b === btn));
+      Object.entries(panes).forEach(([k, el]) => el.classList.toggle('hidden', k !== btn.dataset.lote));
+    };
+  });
+})();
 let mPlan = null, mTimer2 = null;
 document.getElementById('mtpl').onclick = () => { window.location = '/api/map_template'; };
 document.getElementById('mfile').onchange = async (ev) => {
