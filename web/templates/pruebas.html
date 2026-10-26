@@ -133,7 +133,7 @@ async function pullLog() {
   (r.entries || []).forEach(e => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td class="px-3 py-1 font-mono">${e.t}</td><td class="px-3 py-1">${levelBadge(e.level)}</td><td class="px-3 py-1">${e.msg}</td>`;
-    tb.appendChild(tr);
+    tb.insertBefore(tr, tb.firstChild);   // el mas nuevo arriba
   });
   if (autoscroll) tb.parentElement.parentElement.scrollTop = 1e6;
 }
@@ -147,8 +147,8 @@ async function runProbe(what) {
   const r = await post('/api/probe', {what: what});
   out.textContent = JSON.stringify(r, null, 2);
   function exportLog() {
-  const rows = [...document.querySelectorAll('#logRows tr')].map(tr =>
-    [...tr.children].map(td => td.textContent.trim()).join('\t'));
+  const rows = [...document.querySelectorAll('#logRows tr')].reverse().map(tr =>
+    [...tr.children].map(td => td.textContent.trim()).join('\t'));   // export: viejo -> nuevo
   if (!rows.length) { alert('El log está vacío'); return; }
   const txt = 'hora\tnivel\tevento\n' + rows.join('\n');
   downloadExport('/api/export/txt', {name: 'log-lector', text: txt});

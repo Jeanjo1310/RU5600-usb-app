@@ -1596,6 +1596,31 @@ def api_read_until():
         _store_result(last_epc, True, len(tries), elapsed_ms)
     else:
         _store_result(None, False, len(tries), elapsed_ms)
+    # --- tarea 10: chip por TID (4 bytes de prefijo) ---
+    if found:
+        try:
+            tid = r.read_card(2, 0, 2, b"\x00" * 4, retries=2)
+            prefix = tid.hex().upper()[:8]
+            entry = TID_PREFIX_DB.get(prefix)
+            if isinstance(entry, tuple) and len(entry) >= 2:
+                chip = ("%s %s" % (entry[0], entry[1])).strip()
+            else:
+                chip = prefix
+            out["chip"] = chip
+            out["tid_prefix"] = prefix
+        except Exception as exc:  # noqa: BLE001
+            out["chip"] = None
+            out["chip_error"] = str(exc)[:80]
+    # --- tarea 9: RSSI (solo lo entrega el stream; se intenta si lo piden) ---
+    if found and cfg.get("with_rssi"):
+        try:
+            tags = r.scan()
+            hit = next((t for t in tags if (t.epc_hex or "").upper() == epc), None)
+            if hit is not None:
+                out["rssi"] = hit.rssi
+        except Exception as exc:  # noqa: BLE001
+            out["rssi_error"] = str(exc)[:80]
+
     _log("ok" if found else "warn",
          "read_until: %s en %d/%d intentos (%d ms)"
          % (last_epc if found else "sin tag", len(tries), attempts, elapsed_ms))
