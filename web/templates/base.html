@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RU5600 · {% block title %}{% endblock %}</title>
+<script>
+try { var _tt = localStorage.getItem('ru5600_theme'); if (_tt === 'dark' || _tt === 'light') { document.documentElement.dataset.theme = _tt; } } catch (e) {}
+</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bundle.css') }}">
 </head>
 <body class="bg-base-200 text-base-content">
@@ -102,12 +105,14 @@ async function post(url, body) {
 }
 function setTheme(t) {
   document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('ru5600_theme', t); } catch (e) {}
   document.querySelectorAll('input[name=theme]').forEach(function(el){ el.checked = (el.value === t); });
 }
 document.getElementById('themeBtn').onclick = () => {
   setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
 };
 document.querySelectorAll('input[name=lang]').forEach(function(el){ el.onchange = function(){ if(el.checked) applyLang(el.value); }; });
+try{ var _th=localStorage.getItem('ru5600_theme')||'light'; var _thr=document.querySelector('input[name=theme][value="'+_th+'"]'); if(_thr)_thr.checked=true; document.documentElement.dataset.theme=_th; }catch(e){}
 try{ var _l=localStorage.getItem('ru5600_lang')||'es'; var _r=document.querySelector('input[name=lang][value="'+_l+'"]'); if(_r)_r.checked=true; applyLang(_l);}catch(e){applyLang('es');}
 </script>
 {% block scripts %}{% endblock %}
