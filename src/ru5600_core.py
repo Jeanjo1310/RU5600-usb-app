@@ -746,7 +746,14 @@ class Ru5600Reader:
             self._cb_stats = {"calls": 0, "msg": {}, "data_frames": 0,
                               "last_len": 0, "last_count": 0}
         self._cb = _CB(_cb)
-        self._lib.CFHid_SetCallback(self._cb)
+        # NO registrar el callback: lo invoca un hilo C (y el monitor de hotplug
+        # incluso despues de cerrar), y llamar a Python desde ahi puede tumbar el
+        # proceso sin traceback (segfault). El buffer de tags se llena igual sin
+        # callback: se drena con GetTagBuf.
+        try:
+            self._lib.CFHid_SetCallback(ctypes.cast(None, _CB))
+        except Exception:  # noqa: BLE001
+            pass
 
     # -- device information ------------------------------------------------
     def system_info(self) -> SystemInfo:
