@@ -775,21 +775,42 @@ def api_wl_import():
 
 @app.route("/api/batch_start", methods=["POST"])
 def api_batch_start():
+    """Escribe EPC secuenciales: base + step * n por cada tag que aparece."""
     cfg = request.get_json(silent=True) or {}
     with _lock:
         if _batch["running"]:
             return jsonify(ok=False, error="ya corriendo")
+        raw = str(cfg.get("base") or cfg.get("epc") or "")
+        raw = raw.replace(" ", "").replace("0x", "").replace("0X", "")
         try:
-            epc = bytes.fromhex(str(cfg.get("epc", "")).replace(" ", ""))
+            base = bytes.fromhex(raw)
         except ValueError:
             return jsonify(ok=False, error="EPC hex invalido")
-        if len(epc) % 2:
+        if not base:
+            return jsonify(ok=False, error="EPC vacio")
+        if len(base) % 2:
             return jsonify(ok=False, error="EPC par (multiplo de 2 bytes)")
-        _batch.update(running=True, done=0,
-                      total=int(cfg.get("total", 10) or 10), rows=[])
+        raw_step = str(cfg.get("step", "1")).strip().replace("0x", "") or "1"
+        try:
+            step = int(raw_step, 16)
+        except ValueError:
+            return jsonify(ok=False, error="incremento hex invalido")
+        if step < 0:
+            return jsonify(ok=False, error="el incremento no puede ser negativo")
+        try:
+            total = int(cfg.get("total", 10) or 10)
+        except (TypeError, ValueError):
+            return jsonify(ok=False, error="cantidad invalida")
+        if total < 1:
+            return jsonify(ok=False, error="cantidad invalida")
+        limit = (1 << (8 * len(base))) - 1
+        if int.from_bytes(base, "big") + step * (total - 1) > limit:
+            return jsonify(ok=False,
+                           error="la serie se desborda: achicá la cantidad o el incremento")
+        _batch.update(running=True, done=0, total=total, rows=[])
         _batch_stop.clear()
     threading.Thread(target=_batch_run,
-                     args=(epc, bool(cfg.get("check", True))),
+                     args=(base, step, bool(cfg.get("check", True))),
                      kwargs={"lock_note": bool(cfg.get("lock", False))},
                      daemon=True).start()
     return jsonify(ok=True)
@@ -807,7 +828,9 @@ def api_batch_stop():
     return jsonify(ok=True)
 
 
-def _batch_run(epc, check, lock_note=False):
+def _batch_run(base, step, check, lock_note=False):
+    base_int = int.from_bytes(base, "big")
+    width = len(base)
     try:
         r = _get_reader()
         seen = set()
@@ -824,6 +847,7 @@ def _batch_run(epc, check, lock_note=False):
                 if key in seen:
                     continue
                 seen.add(key)
+                epc = (base_int + step * _batch["done"]).to_bytes(width, "big")
                 try:
                     r.write_epc(epc)
                     res = "written"
@@ -840,7 +864,8 @@ def _batch_run(epc, check, lock_note=False):
                 except Exception as exc:  # noqa: BLE001
                     res = "ERROR: " + str(exc)[:60]
                 _batch["rows"].append(
-                    {"epc": key[0], "result": res, "rssi": tag.rssi})
+                    {"tag": key[0], "epc": epc.hex().upper(),
+                     "result": res, "rssi": tag.rssi})
             if not progressed:
                 import time as _t
                 _t.sleep(0.5)

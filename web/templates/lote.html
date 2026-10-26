@@ -2,12 +2,18 @@
 {% block title %}Lote{% endblock %}
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
-  <h2 class="text-lg font-semibold mb-3">Escribir el mismo EPC en un lote</h2>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 items-start">
+  <h2 class="text-lg font-semibold mb-1">Escribir EPC secuenciales por lote</h2>
+  <p class="text-sm text-gray-500 mb-3">Cada tag que aparece recibe el siguiente EPC de la serie. El primero es el EPC inicial; después se le suma el incremento por cada tag.</p>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-start">
     <div class="md:col-span-2">
-      <label class="block text-sm mb-1" for="bepc">EPC a escribir</label>
-      <input id="bepc" value="E2004704D9A06820068E0112" class="input input-bordered font-mono w-full">
-      <p class="text-xs mt-1 text-gray-500">Cada tag del lote queda con este mismo EPC. 24 caracteres hex.</p>
+      <label class="block text-sm mb-1" for="bbase">EPC inicial (hex)</label>
+      <input id="bbase" value="E2004704D9A06820068E0001" class="input input-bordered font-mono w-full">
+      <p class="text-xs mt-1 text-gray-500">24 caracteres hex (12 bytes). Es el EPC del primer tag del lote.</p>
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="bstep">Incremento (hex)</label>
+      <input id="bstep" value="1" class="input input-bordered font-mono w-full">
+      <p class="text-xs mt-1 text-gray-500">Cuánto se le suma al EPC en cada tag. 1 = correlativo.</p>
     </div>
     <div>
       <label class="block text-sm mb-1" for="btotal">Cantidad de tags</label>
@@ -15,6 +21,7 @@
       <p class="text-xs mt-1 text-gray-500">Cuántos tags se van a escribir. Podés frenar cuando quieras con Parar.</p>
     </div>
   </div>
+  <p id="bpreview" class="text-xs font-mono text-gray-500 mb-4"></p>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
     <div>
       <div class="text-sm mb-1">Verificación</div>
@@ -24,7 +31,7 @@
     <div>
       <div class="text-sm mb-1">Bloqueo</div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="block">Bloquear tras escribir</label>
-      <p class="text-xs mt-1 ml-6 text-gray-500">Deja el tag sin posibilidad de reescritura. Conviene hacerlo aparte, en Peligroso.</p>
+      <p class="text-xs mt-1 ml-6 text-gray-500">Deja el tag sin posibilidad de reescritura. Conviene hacerlo aparte, es <span class="text-danger">Peligroso</span>.</p>
     </div>
   </div>
   <div class="flex gap-2">
@@ -32,11 +39,26 @@
     <button id="bstop" class="btn btn-error" disabled>Parar</button>
   </div>
   <p id="bmsg" class="mt-2 text-sm"></p>
-  <div class="overflow-x-auto mt-2"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">Tag</th><th class="px-4 py-2">Resultado</th><th class="px-4 py-2">RSSI</th></tr></thead><tbody id="brows"></tbody></table></div>
+  <div class="overflow-x-auto mt-2"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Tag</th><th class="px-4 py-2">EPC escrito</th><th class="px-4 py-2">Resultado</th><th class="px-4 py-2">RSSI</th></tr></thead><tbody id="brows"></tbody></table></div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
+function bpreview() {
+  const clean = s => (s || '').replace(/[^0-9a-fA-F]/g, '');
+  const base = clean(document.getElementById('bbase').value);
+  const step = clean(document.getElementById('bstep').value) || '1';
+  const total = parseInt(document.getElementById('btotal').value, 10) || 0;
+  const out = document.getElementById('bpreview');
+  if (!base.length || base.length % 2) { out.textContent = ''; return; }
+  try {
+    const b = BigInt('0x' + base), s = BigInt('0x' + step);
+    const hex = v => v.toString(16).toUpperCase().padStart(base.length, '0');
+    out.textContent = total > 1 ? (hex(b) + '  ...  ' + hex(b + s * BigInt(total - 1))) : hex(b);
+  } catch (e) { out.textContent = ''; }
+}
+['bbase', 'bstep', 'btotal'].forEach(id => { const el = document.getElementById(id); if (el) el.oninput = bpreview; });
+bpreview();
 let btimer = null;
 async function bpoll() {
   const r = await fetch('/api/batch_status').then(r => r.json());
@@ -44,15 +66,21 @@ async function bpoll() {
   document.getElementById('bstop').disabled = !r.running;
   document.getElementById('bmsg').textContent = r.running ? `Escribiendo… ${r.done}/${r.total}` : `Listo: ${r.done}/${r.total}.`;
   const tb = document.getElementById('brows'); tb.innerHTML = '';
-  (r.rows || []).forEach(x => {
+  (r.rows || []).forEach((x, i) => {
     const tr = document.createElement('tr'); tr.className = 'border-b border-base-300';
-    tr.innerHTML = `<td class="px-4 py-2 font-mono">${x.epc}</td><td class="px-4 py-2">${x.result}</td><td class="px-4 py-2">${x.rssi}</td>`;
+    tr.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono">${x.tag || ''}</td><td class="px-4 py-2 font-mono">${x.epc || ''}</td><td class="px-4 py-2">${x.result}</td><td class="px-4 py-2">${x.rssi}</td>`;
     tb.appendChild(tr);
   });
   if (!r.running && btimer) { clearInterval(btimer); btimer = null; }
 }
 document.getElementById('bstart').onclick = async () => {
-  const r = await post('/api/batch_start', {epc: document.getElementById('bepc').value, total: parseInt(document.getElementById('btotal').value) || 10, check: document.getElementById('bcheck').checked, lock: document.getElementById('block').checked});
+  const r = await post('/api/batch_start', {
+    base: document.getElementById('bbase').value,
+    step: document.getElementById('bstep').value,
+    total: parseInt(document.getElementById('btotal').value, 10) || 10,
+    check: document.getElementById('bcheck').checked,
+    lock: document.getElementById('block').checked
+  });
   if (!r.ok) { document.getElementById('bmsg').textContent = 'Error: ' + r.error; return; }
   btimer = setInterval(bpoll, 500); bpoll();
 };

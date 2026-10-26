@@ -29,7 +29,7 @@
   <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
     <div class="md:col-span-2"><label class="block text-sm mb-1" for="wepc">EPC (hex)</label><input id="wepc" value="3034333234353536373839303132" class="input input-bordered font-mono w-full"></div>
     <div><label class="block text-sm mb-1" for="wepcpwd">Contraseña</label><input id="wepcpwd" value="00000000" class="input input-bordered font-mono w-full"></div>
-    <div class="flex items-center gap-3 pb-2">
+    <div class="flex items-center justify-between gap-3 h-10">
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wep_fp"> Verificar huella</label>
       <button id="wepcgo" class="btn btn-error">Escribir EPC</button>
     </div>
@@ -38,8 +38,10 @@
 </div>
 <div class="card bg-base-100 shadow-sm p-4">
   <h2 class="text-lg font-semibold mb-3">Huella (anti-clonado)</h2>
-  <button id="fplearn" class="btn btn-outline mr-2">Aprender huella del tag actual</button>
-  <button id="fpcheck" class="btn btn-outline">Verificar huella</button>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+    <button id="fplearn" class="btn btn-outline">Aprender huella del tag actual</button>
+    <button id="fpcheck" class="btn btn-outline">Verificar huella</button>
+  </div>
   <p id="fpout" class="mt-1 text-sm"></p>
 </div>
 {% endblock %}

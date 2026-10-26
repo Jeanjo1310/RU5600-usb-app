@@ -2,6 +2,17 @@
 {% block title %}Lista blanca{% endblock %}
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Cómo funciona la lista blanca</h2>
+  <p class="text-sm text-gray-500 mb-2">La lista vive en el lector: guarda los EPC que el lector tiene autorizados. Esta pantalla lee y escribe esa tabla directamente, no una copia local.</p>
+  <ol class="list-decimal ml-5 text-sm space-y-1">
+    <li>Actualizar trae la lista real del lector: cuántas entradas tiene y cuáles son.</li>
+    <li>Agregar suma una entrada escrita en hex, hasta 32 bytes.</li>
+    <li>Importar carga varias de una vez, un EPC por línea.</li>
+    <li>Borrar quita una entrada; Borrar todas vacía la tabla completa.</li>
+    <li>Los cambios quedan grabados en el lector y sobreviven a cerrar la aplicación.</li>
+  </ol>
+</div>
+<div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Lista blanca <span id="wlcount" class="text-sm text-gray-500"></span></h2>
   <div class="flex flex-wrap gap-2 mb-2">
     <button id="wlref" class="btn btn-outline">Actualizar</button>

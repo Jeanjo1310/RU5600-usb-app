@@ -14,29 +14,30 @@
 </div>
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Conexión</h2>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
-    <div class="space-y-3">
-      <div><div class="text-sm mb-1">Transporte</div><div class="flex gap-3 pt-1"><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="usb" checked> USB</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="com"> COM</label><label class="text-sm"><input type="radio" class="radio radio-sm" name="t" value="net"> Net</label></div></div>
-      <div><div class="text-sm mb-1">IP de red</div><input id="ip" value="192.168.1.250" class="input input-bordered input-sm w-full"></div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
+    <div>
+      <div class="text-sm mb-1">Transporte</div>
+      <div class="flex items-center gap-4 h-10">
+        <label class="text-sm"><input type="radio" class="radio radio-sm mr-1" name="t" value="usb" checked> USB</label>
+        <label class="text-sm"><input type="radio" class="radio radio-sm mr-1" name="t" value="com"> COM</label>
+        <label class="text-sm"><input type="radio" class="radio radio-sm mr-1" name="t" value="net"> NET</label>
+      </div>
     </div>
-    <div class="space-y-3">
-      <div><div class="text-sm mb-1">Puerto</div><select id="dev" class="select select-bordered select-sm w-full"></select></div>
-      <div><div class="text-sm mb-1">Puerto de red</div><input id="port" value="60000" class="input input-bordered input-sm w-full"></div>
-    </div>
-    <div class="space-y-3">
-      <div><div class="text-sm mb-1">Baudrate</div><select id="baud" class="select select-bordered select-sm w-full"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></div>
-      <div><div class="text-sm mb-1">Modo de lectura</div><select id="mode" class="select select-bordered select-sm w-full"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></div>
-    </div>
+    <div><label class="block text-sm mb-1" for="dev">Puerto</label><select id="dev" class="select select-bordered w-full" disabled></select></div>
+    <div><label class="block text-sm mb-1" for="baud">Baudrate</label><select id="baud" class="select select-bordered w-full"><option>9600bps</option><option>19200bps</option><option>38400bps</option><option>57600bps</option><option selected>115200bps</option><option>230400bps</option></select></div>
+    <div><label class="block text-sm mb-1" for="ip">IP de red</label><input id="ip" value="192.168.1.250" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="port">Puerto de red</label><input id="port" value="60000" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="mode">Modo de lectura</label><select id="mode" class="select select-bordered w-full"><option value="burst">Ráfaga (rápido)</option><option value="balanced" selected>Balanceado</option><option value="reliable">Confiable</option></select></div>
   </div>
   <div class="grid grid-cols-2 gap-2">
     <button id="openBtn" class="btn btn-primary">Abrir</button>
-    <button id="closeBtn" class="btn btn-primary" disabled>Cerrar</button>
+    <button id="closeBtn" class="btn btn-outline" disabled>Cerrar</button>
     <button id="scanBtn" class="btn btn-outline">Escanear puerto</button>
     <button id="netBtn" class="btn btn-outline">Escanear red</button>
     <button id="tcpBtn" class="btn btn-outline">TCPServer</button>
     <button id="helpBtn" class="btn btn-outline">Ayuda</button>
+    <button id="udevBtn" class="btn btn-outline col-span-2">Instalar regla de acceso USB</button>
   </div>
-  <button id="udevBtn" class="mt-2 w-full btn btn-outline">Instalar regla de acceso USB</button>
   <pre id="udevout" class="mt-1 text-xs whitespace-pre-wrap hidden"></pre>
   <p id="connMsg" class="mt-2 text-sm"></p>
 </div>
@@ -59,6 +60,26 @@
 {% endblock %}
 {% block scripts %}
 <script>
+const TRANSPORT = {
+  usb: { on: ['dev'], off: ['baud', 'ip', 'port'], btnOn: ['scanBtn', 'udevBtn'], btnOff: ['netBtn', 'tcpBtn'] },
+  com: { on: ['dev', 'baud'], off: ['ip', 'port'], btnOn: ['scanBtn'], btnOff: ['netBtn', 'tcpBtn', 'udevBtn'] },
+  net: { on: ['ip', 'port'], off: ['dev', 'baud'], btnOn: ['netBtn', 'tcpBtn'], btnOff: ['scanBtn', 'udevBtn'] }
+};
+function syncTransport() {
+  const t = (document.querySelector('input[name=t]:checked') || {}).value || 'usb';
+  const cfg = TRANSPORT[t] || TRANSPORT.usb;
+  cfg.off.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
+  cfg.on.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
+  cfg.btnOff.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
+  cfg.btnOn.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
+  syncDev();
+}
+function syncDev() {
+  const sel = document.getElementById('dev');
+  const t = (document.querySelector('input[name=t]:checked') || {}).value || 'usb';
+  if (t === 'net') { sel.disabled = true; return; }
+  sel.disabled = sel.options.length === 0;
+}
 async function refreshState() {
   const s = await fetch('/api/conn_state').then(r => r.json());
   document.getElementById('openBtn').disabled = s.open;
@@ -69,6 +90,7 @@ async function refreshState() {
     document.getElementById('hw').textContent = s.info.hw || '-';
   }
 }
+document.querySelectorAll('input[name=t]').forEach(el => el.onchange = syncTransport);
 document.getElementById('openBtn').onclick = async () => {
   const t = document.querySelector('input[name=t]:checked').value;
   const r = await post('/api/open', {transport: t, ip: document.getElementById('ip').value, port: document.getElementById('port').value, baud: document.getElementById('baud').value});
@@ -79,7 +101,8 @@ document.getElementById('closeBtn').onclick = async () => { await post('/api/clo
 document.getElementById('scanBtn').onclick = async () => {
   const r = await post('/api/scan_port', {});
   const sel = document.getElementById('dev'); sel.innerHTML = '';
-  (r.devices || ['1a86:e010 (SWUSB_HID)']).forEach(d => { const o = document.createElement('option'); o.textContent = d; sel.appendChild(o); });
+  (r.devices || []).forEach(d => { const o = document.createElement('option'); o.textContent = d; sel.appendChild(o); });
+  syncDev();
   document.getElementById('connMsg').textContent = (r.devices || []).length + ' lector(es).';
 };
 document.getElementById('tcpBtn').onclick = async () => {
@@ -115,6 +138,7 @@ document.getElementById('netBtn').onclick = async () => {
   document.getElementById('connMsg').textContent = r.ok ? 'Red OK.' : ('Red: ' + r.error);
 };
 document.querySelectorAll('input[name=theme]').forEach(el => el.onchange = () => setTheme(document.querySelector('input[name=theme]:checked').value));
+syncTransport();
 refreshState();
 </script>
 {% endblock %}
