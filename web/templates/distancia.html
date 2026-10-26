@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}Distancia{% endblock %}
+{% block content %}
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Curva distancia / RSSI</h2>
+  <p class="text-sm text-base-content/60 mb-3">Un punto por medición: barre el stream durante los segundos indicados y guarda lecturas/s y RSSI por EPC.</p>
+  <div class="flex flex-wrap items-end gap-3">
+    <div class="grow min-w-56">
+      <label class="block text-sm mb-1" for="dlabel">Etiqueta</label>
+      <input id="dlabel" class="input input-bordered w-full" placeholder="monza / altura 20cm">
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="ddist">Distancia cm</label>
+      <input id="ddist" type="number" min="0" step="any" class="input input-bordered w-32" placeholder="20">
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="dsecs">Segundos de medición</label>
+      <input id="dsecs" type="number" min="1" max="120" value="5" class="input input-bordered w-32">
+    </div>
+    <button id="dgo" class="btn btn-primary">Medir punto</button>
+  </div>
+  <div id="dmsg" class="text-sm mt-3"></div>
+  <div class="alert alert-warning items-start mt-3 text-sm">
+    <div>
+      <p><b>Los H10 no entran al stream:</b> para esos tags usá la lectura dirigida (Chip info / Pruebas). Acá la curva queda vacía.</p>
+      <p class="mt-1"><b>Medí con el tag quieto en cada distancia</b> y esperá a que termine la medición antes de moverlo.</p>
+    </div>
+  </div>
+</div>
+
+<div class="grid gap-4 md:grid-cols-2 mb-4">
+  <div class="card bg-base-100 shadow-sm p-6">
+    <h3 class="text-base font-semibold mb-1">Lecturas por segundo vs distancia</h3>
+    <p class="text-xs text-base-content/60 mb-2">Cada serie es una etiqueta.</p>
+    <svg id="chartDps" class="w-full" height="300" viewBox="0 0 520 300" role="img" aria-label="Lecturas por segundo contra distancia"></svg>
+    <div id="legendDps" class="flex flex-wrap gap-3 text-xs mt-2"></div>
+  </div>
+  <div class="card bg-base-100 shadow-sm p-6">
+    <h3 class="text-base font-semibold mb-1">RSSI promedio vs distancia</h3>
+    <p class="text-xs text-base-content/60 mb-2">Solo los puntos con RSSI medido.</p>
+    <svg id="chartRssi" class="w-full" height="300" viewBox="0 0 520 300" role="img" aria-label="RSSI promedio contra distancia"></svg>
+    <div id="legendRssi" class="flex flex-wrap gap-3 text-xs mt-2"></div>
+  </div>
+</div>
+
+<div class="card bg-base-100 shadow-sm overflow-x-auto p-2 mb-4">
+  <div class="flex justify-between items-center px-2 pt-2">
+    <span id="dcount" class="text-sm text-base-content/60"></span>
+    <button class="btn btn-outline btn-sm" onclick="exportTable('#distRows', 'distancias')">Exportar</button>
+  </div>
+  <table class="table table-zebra w-full text-sm" id="distTable">
+    <thead class="text-xs uppercase opacity-70">
+      <tr>
+        <th class="px-4 py-2">Hora</th>
+        <th class="px-4 py-2">Etiqueta</th>
+        <th class="px-4 py-2">Dist. cm</th>
+        <th class="px-4 py-2">EPC</th>
+        <th class="px-4 py-2">Chip</th>
+        <th class="px-4 py-2">Lecturas</th>
+        <th class="px-4 py-2">Lec/s</th>
+        <th class="px-4 py-2">RSSI prom</th>
+        <th class="px-4 py-2">RSSI mín</th>
+        <th class="px-4 py-2">RSSI máx</th>
+      </tr>
+    </thead>
+    <tbody id="distRows"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const $d = id => document.getElementById(id);
+const PALETTE = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626', '#0891b2', '#be185d', '#4d7c0f'];
+const SVGNS = 'http://www.w3.org/2000/svg';
+let lastPoints = [];
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function el(name, attrs, text) {
+  const n = document.createElementNS(SVGNS, name);
+  Object.keys(attrs || {}).forEach(k => n.setAttribute(k, attrs[k]));
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function niceBounds(values, forceZero) {
+  let lo = Math.min(...values), hi = Math.max(...values);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.12;
+  lo = forceZero ? 0 : lo - pad;
+  hi = hi + pad;
+  return [lo, hi];
+}
+
+function drawChart(svg, points, field, yLabel, forceZero) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 520, H = 300, M = {l: 58, r: 14, t: 12, b: 42};
+  const plotW = W - M.l - M.r, plotH = H - M.t - M.b;
+  const valid = points.filter(p => p.distance_cm !== null && p.distance_cm !== undefined &&
+                                  p[field] !== null && p[field] !== undefined && !isNaN(Number(p[field])));
+  if (!valid.length) {
+    svg.appendChild(el('text', {x: W / 2, y: H / 2, 'text-anchor': 'middle',
+      'font-size': 13, fill: 'currentColor', opacity: 0.6}, 'Sin puntos todavía: medí uno.'));
+    return [];
+  }
+  const xs = valid.map(p => Number(p.distance_cm));
+  const ys = valid.map(p => Number(p[field]));
+  const [x0, x1] = niceBounds(xs, true);
+  const [y0, y1] = niceBounds(ys, forceZero);
+  const sx = v => M.l + (Number(v) - x0) / (x1 - x0) * plotW;
+  const sy = v => M.t + plotH - (Number(v) - y0) / (y1 - y0) * plotH;
+
+  // grilla + ejes
+  for (let i = 0; i <= 5; i++) {
+    const gy = M.t + plotH - (plotH * i / 5);
+    svg.appendChild(el('line', {x1: M.l, y1: gy, x2: M.l + plotW, y2: gy,
+      stroke: 'currentColor', 'stroke-opacity': 0.15, 'stroke-width': 1}));
+    const yv = y0 + (y1 - y0) * i / 5;
+    svg.appendChild(el('text', {x: M.l - 6, y: gy + 4, 'text-anchor': 'end',
+      'font-size': 10, fill: 'currentColor', opacity: 0.7}, yv.toFixed(1)));
+  }
+  for (let i = 0; i <= 5; i++) {
+    const gx = M.l + (plotW * i / 5);
+    svg.appendChild(el('line', {x1: gx, y1: M.t, x2: gx, y2: M.t + plotH,
+      stroke: 'currentColor', 'stroke-opacity': 0.08, 'stroke-width': 1}));
+    const xv = x0 + (x1 - x0) * i / 5;
+    svg.appendChild(el('text', {x: gx, y: M.t + plotH + 16, 'text-anchor': 'middle',
+      'font-size': 10, fill: 'currentColor', opacity: 0.7}, String(Math.round(xv))));
+  }
+  svg.appendChild(el('line', {x1: M.l, y1: M.t + plotH, x2: M.l + plotW, y2: M.t + plotH,
+    stroke: 'currentColor', 'stroke-opacity': 0.5}));
+  svg.appendChild(el('line', {x1: M.l, y1: M.t, x2: M.l, y2: M.t + plotH,
+    stroke: 'currentColor', 'stroke-opacity': 0.5}));
+  svg.appendChild(el('text', {x: M.l + plotW / 2, y: H - 6, 'text-anchor': 'middle',
+    'font-size': 11, fill: 'currentColor', opacity: 0.8}, 'Distancia (cm)'));
+  const yl = el('text', {x: 12, y: M.t + plotH / 2, 'text-anchor': 'middle',
+    'font-size': 11, fill: 'currentColor', opacity: 0.8,
+    transform: `rotate(-90 12 ${M.t + plotH / 2})`}, yLabel);
+  svg.appendChild(yl);
+
+  // series por etiqueta
+  const groups = new Map();
+  valid.forEach(p => {
+    const k = p.label || '—';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  });
+  const legend = [];
+  [...groups.keys()].forEach((label, idx) => {
+    const color = PALETTE[idx % PALETTE.length];
+    const pts = groups.get(label).slice().sort((a, b) => Number(a.distance_cm) - Number(b.distance_cm));
+    if (pts.length > 1) {
+      svg.appendChild(el('polyline', {
+        points: pts.map(p => `${sx(p.distance_cm)},${sy(p[field])}`).join(' '),
+        fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round'
+      }));
+    }
+    pts.forEach(p => {
+      const c = el('circle', {cx: sx(p.distance_cm), cy: sy(p[field]), r: 4,
+        fill: color, stroke: 'white', 'stroke-width': 1});
+      c.appendChild(el('title', {}, `${label} · ${p.distance_cm} cm · ${field === 'dps' ? 'Lec/s' : 'RSSI'}: ${Number(p[field]).toFixed(2)} · EPC ${p.epc}`));
+      svg.appendChild(c);
+    });
+    legend.push({label, color});
+  });
+  return legend;
+}
+
+function renderLegend(box, legend) {
+  box.innerHTML = '';
+  legend.forEach(it => {
+    const s = document.createElement('span');
+    s.className = 'inline-flex items-center gap-1';
+    const dot = document.createElement('span');
+    dot.className = 'inline-block w-3 h-3 rounded-sm';
+    dot.style.background = it.color;
+    const txt = document.createElement('span');
+    txt.textContent = it.label;
+    s.appendChild(dot); s.appendChild(txt);
+    box.appendChild(s);
+  });
+}
+
+function renderTable(points) {
+  const tb = $d('distRows');
+  tb.innerHTML = '';
+  const rows = points.slice().reverse();
+  $d('dcount').textContent = points.length ? `${points.length} puntos guardados` : '';
+  rows.forEach(p => {
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-base-300';
+    tr.innerHTML = `<td class="px-4 py-2 whitespace-nowrap">${esc(p.ts)}</td>
+      <td class="px-4 py-2">${esc(p.label)}</td>
+      <td class="px-4 py-2">${esc(p.distance_cm)}</td>
+      <td class="px-4 py-2 font-mono">${esc(p.epc)}</td>
+      <td class="px-4 py-2">${esc(p.chip || '-')}</td>
+      <td class="px-4 py-2">${esc(p.lecturas)}</td>
+      <td class="px-4 py-2">${p.dps == null ? '-' : Number(p.dps).toFixed(2)}</td>
+      <td class="px-4 py-2">${p.rssi_avg == null ? '-' : Number(p.rssi_avg).toFixed(1)}</td>
+      <td class="px-4 py-2">${p.rssi_min == null ? '-' : esc(p.rssi_min)}</td>
+      <td class="px-4 py-2">${p.rssi_max == null ? '-' : esc(p.rssi_max)}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function renderAll(points) {
+  lastPoints = points;
+  renderLegend($d('legendDps'), drawChart($d('chartDps'), points, 'dps', 'Lecturas por segundo', true));
+  renderLegend($d('legendRssi'), drawChart($d('chartRssi'), points, 'rssi_avg', 'RSSI promedio', false));
+  renderTable(points);
+}
+
+async function loadPoints() {
+  const r = await fetch('/api/distance_points').then(x => x.json());
+  if (!r.ok) { $d('dmsg').textContent = 'Error al leer los puntos: ' + (r.error || '?'); return; }
+  renderAll(r.points || []);
+}
+
+$d('dgo').onclick = async () => {
+  const label = $d('dlabel').value.trim();
+  const distance = $d('ddist').value;
+  const seconds = parseFloat($d('dsecs').value) || 5;
+  if (!label) { $d('dmsg').textContent = 'Poné una etiqueta (tag y altura).'; $d('dlabel').focus(); return; }
+  if (distance === '') { $d('dmsg').textContent = 'Poné la distancia en cm.'; $d('ddist').focus(); return; }
+  const btn = $d('dgo');
+  btn.disabled = true;
+  $d('dmsg').textContent = `Midiendo ${seconds} s… no muevas el tag.`;
+  try {
+    const r = await post('/api/distance_point', {label, distance, seconds});
+    if (!r.ok) { $d('dmsg').textContent = 'Error: ' + (r.error || '?'); return; }
+    if (!r.count) {
+      $d('dmsg').textContent = `0 tags en el stream (${r.seconds} s). Si es un H10, no entra al stream: usá lectura dirigida.`;
+    } else {
+      const nombres = (r.rows || []).map(x => `${x.epc} (${x.lecturas} lec, ${x.dps}/s${x.rssi_avg == null ? '' : ', RSSI ' + x.rssi_avg})`).join(' · ');
+      $d('dmsg').textContent = `${r.count} fila(s) en ${r.seconds} s: ${nombres}`;
+    }
+    await loadPoints();
+  } catch (e) {
+    $d('dmsg').textContent = 'Error: ' + e;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+loadPoints();
+</script>
+{% endblock %}

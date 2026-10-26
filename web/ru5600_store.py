@@ -59,6 +59,20 @@ CREATE TABLE IF NOT EXISTS log (
     level  TEXT,
     msg    TEXT
 );
+
+CREATE TABLE IF NOT EXISTS mediciones (
+    id           INTEGER PRIMARY KEY,
+    ts           TEXT NOT NULL,
+    label        TEXT NOT NULL,
+    distance_cm  REAL NOT NULL,
+    epc          TEXT NOT NULL,
+    chip         TEXT,
+    lecturas     INTEGER NOT NULL DEFAULT 0,
+    dps          REAL,
+    rssi_avg     REAL,
+    rssi_min     INTEGER,
+    rssi_max     INTEGER
+);
 """
 
 UPSERT_TAG = """
@@ -120,6 +134,15 @@ def _clean_int(value) -> int | None:
         return None
 
 
+def _clean_float(value) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def upsert_tag(epc: str, chip=None, rssi=None, attempts=None) -> dict:
     """Suma una lectura del tag ``epc`` y recalcula su promedio de intentos.
 
@@ -138,6 +161,78 @@ def upsert_tag(epc: str, chip=None, rssi=None, attempts=None) -> dict:
     finally:
         con.close()
     return dict(row) if row is not None else {}
+
+
+MEDICION_COLS = ("id", "ts", "label", "distance_cm", "epc", "chip",
+                 "lecturas", "dps", "rssi_avg", "rssi_min", "rssi_max")
+
+
+def add_medicion(label: str, distance_cm, epc: str, chip=None, lecturas=0,
+                 dps=None, rssi_avg=None, rssi_min=None,
+                 rssi_max=None) -> dict:
+    """Guarda un punto de la curva distancia/RSSI. Devuelve la fila creada.
+
+    ``label`` agrupa los puntos de una misma tanda (tag y altura) y
+    ``distance_cm`` es la distancia del tag a la antena en esa medicion.
+    """
+    epc = _clean_epc(epc)
+    name = str(label or "").strip()[:120]
+    if not name:
+        raise ValueError("label vacio")
+    dist = _clean_float(distance_cm)
+    if dist is None:
+        raise ValueError("distance_cm invalida")
+    con = _connect()
+    try:
+        cur = con.execute(
+            "INSERT INTO mediciones (ts, label, distance_cm, epc, chip,"
+            " lecturas, dps, rssi_avg, rssi_min, rssi_max)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (_now(), name, dist, epc, _clean_chip(chip),
+             _clean_int(lecturas) or 0, _clean_float(dps),
+             _clean_float(rssi_avg), _clean_int(rssi_min),
+             _clean_int(rssi_max)))
+        con.commit()
+        row = con.execute("SELECT * FROM mediciones WHERE id = ?",
+                          (cur.lastrowid,)).fetchone()
+    finally:
+        con.close()
+    return dict(row) if row is not None else {}
+
+
+def list_mediciones(limit: int = 500, label: str = "") -> list[dict]:
+    """Ultimos ``limit`` puntos, en orden cronologico (para dibujar la curva)."""
+    try:
+        limit = max(1, min(int(limit), 5000))
+    except (TypeError, ValueError):
+        limit = 500
+    sql = ("SELECT id, ts, label, distance_cm, epc, chip, lecturas, dps,"
+           " rssi_avg, rssi_min, rssi_max FROM mediciones")
+    args: list = []
+    name = str(label or "").strip()
+    if name:
+        sql += " WHERE label = ?"
+        args.append(name)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    con = _connect()
+    try:
+        rows = con.execute(sql, args).fetchall()
+    finally:
+        con.close()
+    return [dict(row) for row in reversed(rows)]
+
+
+def list_medicion_labels() -> list[str]:
+    """Etiquetas presentes en ``mediciones``, de la mas nueva a la mas vieja."""
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT label, MAX(id) AS ultimo FROM mediciones"
+            " GROUP BY label ORDER BY ultimo DESC").fetchall()
+    finally:
+        con.close()
+    return [row["label"] for row in rows]
 
 
 def add_lectura(epc: str, rssi=None, distance=None, attempts=None,

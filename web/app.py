@@ -1217,6 +1217,167 @@ def barrido():
     return render_template("barrido.html")
 
 
+@app.route("/distancia")
+def distancia():
+    return render_template("distancia.html")
+
+
+def _rssi_stats(values):
+    vals = [v for v in values if v]
+    if not vals:
+        return None, None, None
+    return (round(sum(vals) / float(len(vals)), 1), min(vals), max(vals))
+
+
+def _chip_from_prefix(tid_hex):
+    prefix = (tid_hex or "")[:8].upper()
+    if not prefix:
+        return None
+    entry = TID_PREFIX_DB.get(prefix)
+    if isinstance(entry, tuple) and len(entry) >= 2:
+        return ("%s %s" % (entry[0], entry[1])).strip()
+    return prefix
+
+
+def _stream_sweep(r, seconds):
+    """Barrido de stream en ActiveMode: lecturas y RSSI por EPC.
+
+    Es la misma secuencia del stream de la app (ActiveMode + StartRead +
+    poll_tags), pero acumulando por tag en vez de quedarse con el primero:
+    asi cada punto de la curva tiene sus propias lecturas y su RSSI.
+    Devuelve ``(filas, elapsed)`` con rssi_avg/min/max ya calculados.
+    """
+    from ru5600_core import (DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE,
+                             WORKMODE_ANSWER)
+    r._pace()
+    r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE)
+    r._pace(settle=True)
+    r._lib.CFHid_ClearTagBuf()
+    r._pace()
+    r._lib.CFHid_StartRead()
+    r._pace(settle=True)
+    t0 = time.monotonic()
+    stats: dict = {}
+    elapsed = 0.0
+    try:
+        while time.monotonic() - t0 < seconds:
+            for tag in r.poll_tags():
+                epc = (getattr(tag, "epc_hex", "") or "").upper()
+                chip = None
+                tid = bytes(getattr(tag, "tid", b"") or b"")
+                if tid:
+                    chip = _chip_from_prefix(tid.hex().upper())
+                if not epc:
+                    epc, carved = _carve(bytes(tag.raw_id) if tag.raw_id
+                                         else bytes(tag.epc))
+                    chip = chip or carved
+                if not epc:
+                    continue
+                row = stats.setdefault(epc, {"epc": epc, "chip": chip,
+                                             "lecturas": 0, "rssi": []})
+                row["lecturas"] += 1
+                if tag.rssi:
+                    row["rssi"].append(int(tag.rssi))
+                if chip and not row["chip"]:
+                    row["chip"] = chip
+            time.sleep(0.1)
+    finally:
+        # el tiempo de medicion termina con el loop: el StopRead y la vuelta a
+        # AnswerMode son saneamiento, no cuentan para las lecturas por segundo
+        elapsed = max(time.monotonic() - t0, 0.001)
+        try:
+            r._lib.CFHid_StopRead()
+        except Exception:  # noqa: BLE001
+            pass
+        r._pace(settle=True)
+        try:
+            r._lib.CFHid_ClearTagBuf()
+            r._pace()
+            r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                           WORKMODE_ANSWER)
+            r._pace(settle=True)
+        except Exception:  # noqa: BLE001
+            pass
+    rows = []
+    for row in stats.values():
+        avg, lo, hi = _rssi_stats(row.pop("rssi"))
+        row.update(dps=round(row["lecturas"] / elapsed, 2),
+                   rssi_avg=avg, rssi_min=lo, rssi_max=hi)
+        rows.append(row)
+    rows.sort(key=lambda x: x["lecturas"], reverse=True)
+    return rows, elapsed
+
+
+@app.route("/api/distance_point", methods=["POST"])
+def api_distance_point():
+    """Mide un punto de la curva: seconds de stream y guarda una fila por EPC."""
+    cfg = request.get_json(silent=True) or {}
+    label = str(cfg.get("label") or "").strip()
+    if not label:
+        return jsonify(ok=False, error="poné una etiqueta (tag y altura)"), 400
+    try:
+        distance = float(cfg.get("distance", ""))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="distancia invalida (cm)"), 400
+    if distance < 0:
+        return jsonify(ok=False, error="la distancia no puede ser negativa"), 400
+    try:
+        seconds = float(cfg.get("seconds", 5))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="segundos invalidos"), 400
+    seconds = max(1.0, min(seconds, 120.0))
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    try:
+        measured, elapsed = _stream_sweep(r, seconds)
+    except Exception as exc:  # noqa: BLE001
+        _log("error", "distance_point: %s" % exc)
+        return jsonify(ok=False, error="barrido falló: " + str(exc))
+    rows = []
+    save_error = None
+    for row in measured:
+        try:
+            saved = store.add_medicion(label, distance, row["epc"],
+                                       row["chip"], row["lecturas"],
+                                       row["dps"], row["rssi_avg"],
+                                       row["rssi_min"], row["rssi_max"])
+        except Exception as exc:  # noqa: BLE001
+            save_error = str(exc)
+            _log("warn", "distance_point: no pude guardar: %s" % exc)
+            break
+        rows.append(saved)
+    if measured and not rows:
+        return jsonify(ok=False,
+                       error="no pude guardar las mediciones: " +
+                             (save_error or "error desconocido"))
+    if rows:
+        best = rows[0]
+        _log("ok", "distancia %s @ %s cm: %d tags, %d lecturas, %.1f/s"
+             % (label, distance, len(rows), best["lecturas"], best["dps"] or 0))
+    else:
+        _log("warn", "distancia %s @ %s cm: 0 tags en el stream"
+             % (label, distance))
+    return jsonify(ok=True, label=label, distance=distance,
+                   seconds=round(elapsed, 1), count=len(rows), rows=rows)
+
+
+@app.route("/api/distance_points")
+def api_distance_points():
+    try:
+        limit = int(request.args.get("limit", 500) or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    label = request.args.get("label", "")
+    try:
+        points = store.list_mediciones(limit, label)
+        labels = store.list_medicion_labels()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    return jsonify(ok=True, count=len(points), labels=labels, points=points)
+
+
 @app.route("/api/status")
 def status():
     now = time.monotonic()
@@ -1717,6 +1878,159 @@ def api_read_until():
          "read_until: %s en %d/%d intentos (%d ms)"
          % (last_epc if found else "sin tag", len(tries), attempts, elapsed_ms))
     return jsonify(out)
+
+
+# --- clonacion de EPC: el TID manda, el EPC obedece ------------------------
+# El TID viene grabado de fabrica y no se puede cambiar: un clon se detecta
+# por TID, no por EPC.  Por eso se compara el TID antes de escribir.
+_clone_src = None
+
+
+def _clone_probe(r, attempts=25, pause=0.1):
+    """Lectura dirigida hasta enganchar un tag. ``(epc, raw)`` o ``(None, None)``."""
+    for n in range(1, attempts + 1):
+        result, epc, raw, _detail = _direct_read(r)
+        if result == "ok" and epc:
+            return epc, raw
+        if n < attempts:
+            try:
+                r.clear_tag_buf()
+            except Exception:  # noqa: BLE001
+                pass
+            if pause:
+                time.sleep(pause)
+    return None, None
+
+
+def _read_tid(r):
+    """TID estable: 4 palabras (modelo + serial) leídas dos veces.
+
+    Leer 6 palabras devuelve dos palabras de cola que no son TID y cambian
+    entre lecturas (medido en el H10: E28038132000662B estable, la cola
+    alterna).  Comparar esa cola haría pasar el tag origen por destino.
+    Si el tag tiene TID de 4 bytes, se cae a 2 palabras.
+    """
+    for words in (4, 2):
+        reads = []
+        for _ in range(2):
+            try:
+                tid = r.read_card(2, 0, words, b"\x00" * 4, retries=3)
+            except Exception:  # noqa: BLE001
+                tid = None
+            if not tid:
+                reads = []
+                break
+            reads.append(bytes(tid).hex().upper())
+            time.sleep(0.05)
+        if reads and reads[0] == reads[1]:
+            return reads[0]
+    return None
+
+
+def _tid_compare(src, dst):
+    """``True``/``False`` si se puede decidir; ``None`` si el TID es muy corto."""
+    if not src or not dst or len(src) < 15 or len(dst) < 15:
+        return None
+    n = min(len(src), len(dst))
+    return src[:n] == dst[:n]
+
+
+@app.route("/api/clone_read", methods=["POST"])
+def api_clone_read():
+    """Lee el tag origen (EPC + TID) y lo deja en memoria para clonar."""
+    global _clone_src
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    try:
+        epc, raw = _clone_probe(r)
+        if not epc:
+            _log("warn", "clone_read: sin tag a la vista")
+            return jsonify(ok=False,
+                           error="sin tag a la vista: poné el tag origen sobre la antena")
+        tid = _read_tid(r)
+        if not tid:
+            return jsonify(ok=False,
+                           error="leí el EPC %s pero no el TID: no puedo clonar sin TID" % epc)
+        chip = _chip_from_prefix(tid)
+        with _lock:
+            _clone_src = {"epc": epc, "tid": tid, "chip": chip,
+                          "ts": time.strftime("%Y-%m-%d %H:%M:%S")}
+        _log("ok", "clone_read: EPC %s / TID %s (%s)" % (epc, tid, chip))
+        return jsonify(ok=True, epc=epc, tid=tid, chip=chip, rssi=None,
+                       raw=raw, note="rssi: la lectura dirigida no lo entrega")
+    except Exception as exc:  # noqa: BLE001
+        _log("error", "clone_read: %s" % exc)
+        return jsonify(ok=False, error="no pude leer el origen: " + str(exc))
+
+
+@app.route("/api/clone_write", methods=["POST"])
+def api_clone_write():
+    """Escribe el EPC del origen en el tag destino, previa verificacion de TID."""
+    src = _clone_src
+    if not src:
+        return jsonify(ok=False, error="primero leé el tag origen")
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    try:
+        cur_epc, _raw = _clone_probe(r)
+        if not cur_epc:
+            return jsonify(ok=False,
+                           error="sin tag a la vista: poné el tag destino sobre la antena")
+        tid_dst = _read_tid(r)
+        if not tid_dst:
+            return jsonify(ok=False,
+                           error="no pude leer el TID del tag destino: no escribo sin verificar")
+        same = _tid_compare(src["tid"], tid_dst)
+        if same is None:
+            return jsonify(ok=False,
+                           error="el TID del destino es demasiado corto para distinguirlo del origen (%s): no escribo a ciegas" % tid_dst)
+        if same:
+            _log("warn", "clone_write: el tag presente es el origen (TID %s)" % tid_dst)
+            return jsonify(ok=False,
+                           error="el tag presente es el ORIGEN (mismo TID %s): poné el tag destino" % tid_dst)
+        epc_src = bytes.fromhex(src["epc"])
+        try:
+            r.write_epc(epc_src, b"\x00" * 4, verify=True)
+        except Exception as exc:  # noqa: BLE001
+            _log("error", "clone_write: %s" % exc)
+            try:
+                store.add_trabajo("clone", "error", total=1, hechos=0,
+                                  extra={"origen": src, "tid_destino": tid_dst,
+                                         "error": str(exc)[:200]})
+            except Exception:  # noqa: BLE001
+                pass
+            return jsonify(ok=False, escrito=False, verificado=False,
+                           tid_destino=tid_dst,
+                           error="no pude escribir el EPC: " + str(exc))
+        epc_after, _raw2 = _clone_probe(r, attempts=10)
+        verificado = (epc_after or "").upper() == src["epc"].upper()
+        _log("ok" if verificado else "warn",
+             "clone_write: EPC %s en TID %s (%s)"
+             % (src["epc"], tid_dst, "verificado" if verificado else "NO verificado"))
+        try:
+            store.add_trabajo("clone", "ok" if verificado else "warn",
+                              total=1, hechos=1 if verificado else 0,
+                              extra={"origen": src, "tid_destino": tid_dst,
+                                     "epc_destino_previo": cur_epc,
+                                     "epc_leido": epc_after,
+                                     "verificado": verificado,
+                                     "nota": "solo EPC: no se tocó USER ni contraseñas"})
+            store.add_log("ok", "clone: %s -> TID %s (%s)"
+                          % (src["epc"], tid_dst,
+                             "verificado" if verificado else "no verificado"))
+        except Exception as exc:  # noqa: BLE001
+            _log("warn", "clone_write: no pude guardar en SQLite: %s" % exc)
+        return jsonify(ok=True, escrito=True, verificado=verificado,
+                       tid_destino=tid_dst, epc_origen=src["epc"],
+                       epc_destino_previo=cur_epc, epc_leido=epc_after,
+                       origen=src)
+    except Exception as exc:  # noqa: BLE001
+        _log("error", "clone_write: %s" % exc)
+        return jsonify(ok=False, error="clone_write falló: " + str(exc))
 
 
 @app.route("/api/bench", methods=["POST"])

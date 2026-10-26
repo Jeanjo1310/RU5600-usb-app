@@ -12,6 +12,21 @@
   <div class="flex justify-end mt-3"><button class="btn btn-outline btn-sm" onclick="exportText('#cout', 'chip-info')">Exportar</button></div>
   <pre id="cout" class="font-mono text-sm whitespace-pre-wrap bg-base-200/60 border border-base-300 rounded-lg p-4 mt-4 max-h-[30rem] overflow-auto">Poné un tag y apretá Analizar.</pre>
 </div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Clonación de tag</h2>
+  <p class="text-sm text-base-content/60 mb-3">Copia el <b>EPC</b> del tag origen al tag destino. En esta primera versión <b>no</b> escribe USER ni contraseñas.</p>
+  <div class="alert alert-warning items-start text-sm mb-3">
+    <div>
+      <p><b>No copia el TID (no se puede cambiar): un clon se detecta por TID.</b></p>
+      <p class="mt-1">Antes de escribir se lee el TID del tag presente: si es el mismo que el del origen, la operación se rechaza («poné el tag destino»).</p>
+    </div>
+  </div>
+  <div class="flex flex-wrap items-center gap-3">
+    <button id="cloneRead" class="btn btn-outline">Leer tag origen</button>
+    <button id="cloneWrite" class="btn btn-primary" disabled>Clonar en el tag que está ahora</button>
+  </div>
+  <div id="cloneInfo" class="text-sm mt-3 font-mono whitespace-pre-wrap"></div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -23,6 +38,51 @@ document.getElementById('cgo').onclick = async () => {
   document.getElementById('cout').textContent = 'Analizando...';
   const r = await post('/api/chip_analyze', {pwd: document.getElementById('cpwd').value, deep: document.getElementById('cdeep').checked});
   document.getElementById('cout').textContent = r.ok ? r.report : 'Error: ' + r.error;
+};
+const cloneInfo = document.getElementById('cloneInfo');
+const cloneWrite = document.getElementById('cloneWrite');
+let cloneSrc = null;
+document.getElementById('cloneRead').onclick = async () => {
+  const btn = document.getElementById('cloneRead');
+  btn.disabled = true;
+  cloneInfo.textContent = 'Leyendo el tag origen (lectura dirigida + TID)...';
+  try {
+    const r = await post('/api/clone_read', {});
+    if (!r.ok) { cloneSrc = null; cloneWrite.disabled = true; cloneInfo.textContent = 'Error: ' + r.error; return; }
+    cloneSrc = r;
+    cloneWrite.disabled = false;
+    cloneInfo.textContent =
+      'ORIGEN\nEPC: ' + r.epc + '\nTID: ' + r.tid + '\nChip: ' + (r.chip || '?') +
+      '\n\nAhora poné el tag destino y apretá «Clonar en el tag que está ahora».';
+  } catch (e) {
+    cloneInfo.textContent = 'Error: ' + e;
+  } finally {
+    btn.disabled = false;
+  }
+};
+cloneWrite.onclick = async () => {
+  if (!cloneSrc) return;
+  cloneWrite.disabled = true;
+  cloneInfo.textContent = 'Verificando TID del tag presente y escribiendo el EPC...';
+  try {
+    const r = await post('/api/clone_write', {});
+    if (!r.ok) {
+      cloneInfo.textContent = 'RECHAZADO: ' + r.error +
+        (r.tid_destino ? '\nTID del tag presente: ' + r.tid_destino : '');
+      return;
+    }
+    cloneInfo.textContent =
+      'EPC escrito: ' + r.epc_origen +
+      '\nEPC leído después de escribir: ' + (r.epc_leido || '?') +
+      '\nTID del destino: ' + r.tid_destino +
+      '\nVerificado: ' + (r.verificado ? 'SÍ' : 'NO') +
+      '\n\nSolo se copió el EPC: USER y contraseñas no se tocaron.' +
+      '\nUn clon se detecta por TID: el TID del destino sigue siendo el suyo.';
+  } catch (e) {
+    cloneInfo.textContent = 'Error: ' + e;
+  } finally {
+    cloneWrite.disabled = !cloneSrc;
+  }
 };
 </script>
 {% endblock %}
