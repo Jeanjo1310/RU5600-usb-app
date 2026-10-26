@@ -4,11 +4,11 @@
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Parámetros del lector</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
-    <div><label class="block text-sm mb-1" for="rf">RF Power</label><select id="rf" class="select select-bordered w-full"></select></div>
-    <div><label class="block text-sm mb-1" for="wm">WorkMode</label><select id="wm" class="select select-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></div>
+    <div><label class="block text-sm mb-1" for="rf" title="RF Power: potencia de emisión, en dBm (máximo del lector: 18)">Potencia RF</label><select id="rf" class="select select-bordered w-full"></select></div>
+    <div><label class="block text-sm mb-1" for="wm" title="WorkMode: AnswerMode responde cuando el programa lo pide; ActiveMode emite y reporta tags solo">Modo de trabajo</label><select id="wm" class="select select-bordered w-full"><option value="0">AnswerMode · a pedido</option><option value="1">ActiveMode · automático</option></select></div>
     <div><label class="block text-sm mb-1" for="perfil" title="Un perfil cambia junto las tres cosas que definen cómo lee: el WorkMode, la pausa entre lecturas dirigidas y el camino del barrido. La explicación está en Ayuda (?).">Perfiles de lectura</label><select id="perfil" class="select select-bordered w-full"></select></div>
-    <div><label class="block text-sm mb-1" for="filt">FilterTime(s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
-    <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
+    <div><label class="block text-sm mb-1" for="filt" title="FilterTime: durante estos segundos el mismo tag no se vuelve a informar">Filtro antirrepetición (s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
+    <div><div class="text-sm mb-1" title="Buzzer: el pitido del lector en cada lectura">Aviso sonoro</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
   </div>
   <p id="perfilMsg" class="mt-1 text-sm"></p>
   <div class="flex flex-wrap gap-2">
@@ -35,14 +35,14 @@
     <div><label class="block text-sm mb-1" for="dmem">Área</label><select id="dmem" class="select select-bordered w-full"><option>EPC</option><option>TID</option><option>USER</option></select></div>
     <div><label class="block text-sm mb-1" for="dptr">Inicio (hex)</label><input id="dptr" value="00" class="input input-bordered w-full"></div>
     <div><label class="block text-sm mb-1" for="dlen">Longitud (hex)</label><input id="dlen" value="06" class="input input-bordered w-full"></div>
-    <div><label class="block text-sm mb-1" for="drt" title="Todavía no se aplica al lector: falta la dirección del parámetro (tarea pendiente). Se guarda como preferencia.">ReadTime</label><input id="drt" value="2" class="input input-bordered w-full" disabled></div>
+    <div><label class="block text-sm mb-1" for="drt" title="ReadTime: tiempo de lectura del tag. Todavía no se aplica al lector: falta la dirección del parámetro (tarea pendiente).">Tiempo de lectura</label><input id="drt" value="2" class="input input-bordered w-full" disabled></div>
   </div>
 </div>
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Salida teclado (cuña: solo app de escritorio)</h2>
   <div class="grid grid-cols-2 gap-3 items-start">
-    <div><label class="block text-sm mb-1" for="dout" title="La cuña de teclado la maneja la app de escritorio del fabricante. Acá solo se guarda la preferencia.">Formato</label><select id="dout" class="select select-bordered w-full" disabled><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></div>
-    <div><div class="text-sm mb-1">Fin de lectura</div><label class="flex items-center gap-2 text-sm pt-1.5"><input type="checkbox" class="checkbox checkbox-sm" id="denter" checked> OutWithEnterKey</label></div>
+    <div><label class="block text-sm mb-1" for="dout" title="Formato en que la cuña escribe el EPC. La cuña (OutWithEnterKey y demás) la maneja la app de escritorio del fabricante.">Formato</label><select id="dout" class="select select-bordered w-full" disabled><option>Todo (Hex)</option><option>EPC (Hex)</option><option>EPC (ASCII)</option></select></div>
+    <div><div class="text-sm mb-1">Fin de lectura</div><label class="flex items-center gap-2 text-sm pt-1.5"><input type="checkbox" class="checkbox checkbox-sm" id="denter" checked title="OutWithEnterKey: la cuña agrega un Enter al terminar de escribir">Agregar Enter al final</label></div>
   </div>
 </div>
 <div class="card bg-base-100 shadow-sm p-6">
