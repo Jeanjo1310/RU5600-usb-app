@@ -42,8 +42,11 @@
 .input,
 .select,
 .textarea {
-  background-color: color-mix(in oklab, var(--color-base-200) 88%, var(--color-base-100));
+  /* relleno apenas gris: ni blanco puro ni gris marcado */
+  background-color: color-mix(in oklab, var(--color-base-200) 40%, var(--color-base-100));
   border-color: var(--color-base-300);
+  /* lo que va adentro del campo es dato: mono. Las etiquetas siguen en la fuente normal */
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 
 .input:focus,
