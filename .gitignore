@@ -10,5 +10,8 @@ triage/
 __pycache__/
 *.pyc
 
+# Base local del piloto web (SQLite, se recrea sola)
+web/data/
+
 # Ghidra snapshot (large, regenerable)
 notes/snap_*

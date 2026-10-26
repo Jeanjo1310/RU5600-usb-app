@@ -2560,11 +2560,26 @@
       justify-content: center;
     }
   }
+  @layer daisyui.l1.l2.l3 {
+    .stats {
+      position: relative;
+      display: inline-grid;
+      grid-auto-flow: column;
+      overflow-x: auto;
+      border-radius: var(--radius-box);
+    }
+  }
   .fixed {
     position: fixed;
   }
   .static {
     position: static;
+  }
+  .sticky {
+    position: sticky;
+  }
+  .top-0 {
+    top: 0px;
   }
   @layer daisyui.l1.l2.l3 {
     .file-input {
@@ -2874,11 +2889,6 @@
     .modal-backdrop button {
       cursor: pointer;
     }
-  }
-  .col-span-2 {
-    grid-column: span 2 / span 2;
-  }
-  @layer daisyui.l1.l2.l3 {
     .modal-box {
       grid-column-start: 1;
       grid-row-start: 1;
@@ -3232,6 +3242,15 @@
   .h-10 {
     height: calc(var(--spacing) * 10);
   }
+  .max-h-48 {
+    max-height: calc(var(--spacing) * 48);
+  }
+  .max-h-\[24rem\] {
+    max-height: 24rem;
+  }
+  .max-h-\[28rem\] {
+    max-height: 28rem;
+  }
   .max-h-\[30rem\] {
     max-height: 30rem;
   }
@@ -3321,6 +3340,9 @@
   .justify-between {
     justify-content: space-between;
   }
+  .justify-end {
+    justify-content: flex-end;
+  }
   .gap-2 {
     gap: calc(var(--spacing) * 2);
   }
@@ -3349,6 +3371,9 @@
   }
   .overflow-x-auto {
     overflow-x: auto;
+  }
+  .overflow-y-auto {
+    overflow-y: auto;
   }
   .rounded-full {
     border-radius: calc(infinity * 1px);
@@ -3487,20 +3512,44 @@
   .p-2 {
     padding: calc(var(--spacing) * 2);
   }
+  .p-3 {
+    padding: calc(var(--spacing) * 3);
+  }
   .p-4 {
     padding: calc(var(--spacing) * 4);
   }
   .p-6 {
     padding: calc(var(--spacing) * 6);
   }
+  @layer daisyui.l1.l2 {
+    .table-xs :not(thead, tfoot) tr {
+      font-size: 0.6875rem;
+    }
+    .table-xs :where(th, td) {
+      padding-inline: calc(0.25rem * 2);
+      padding-block: 0.25rem;
+    }
+  }
+  .px-2 {
+    padding-inline: calc(var(--spacing) * 2);
+  }
+  .px-3 {
+    padding-inline: calc(var(--spacing) * 3);
+  }
   .px-4 {
     padding-inline: calc(var(--spacing) * 4);
+  }
+  .py-1 {
+    padding-block: var(--spacing);
   }
   .py-2 {
     padding-block: calc(var(--spacing) * 2);
   }
   .pt-1\.5 {
     padding-top: calc(var(--spacing) * 1.5);
+  }
+  .pt-2 {
+    padding-top: calc(var(--spacing) * 2);
   }
   .pb-2 {
     padding-bottom: calc(var(--spacing) * 2);
@@ -3526,6 +3575,12 @@
   .text-xs {
     font-size: var(--text-xs);
     line-height: var(--tw-leading, var(--text-xs--line-height));
+  }
+  @layer daisyui.l1.l2 {
+    .badge-sm {
+      --size: calc(var(--size-selector, 0.25rem) * 5);
+      font-size: 0.75rem;
+    }
   }
   .font-medium {
     --tw-font-weight: var(--font-weight-medium);

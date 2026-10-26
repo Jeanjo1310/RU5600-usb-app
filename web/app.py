@@ -18,13 +18,14 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from flask import (Flask, jsonify, render_template, request,
                     send_file, redirect)
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "..", "src"))
+BASE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(BASE, "..", "src"))
+sys.path.insert(0, BASE)
 
 from ru5600_chip import TID_PREFIX_DB  # noqa: E402
-from ru5600_core import Ru5600Reader, interpret_active_blob  # noqa: E402
+from ru5600_core import Ru5600Reader, interpret_active_blob, ReaderError  # noqa: E402
+import ru5600_store as store  # noqa: E402
 
-BASE = os.path.dirname(os.path.abspath(__file__))
 EXCEL = os.path.normpath(os.path.join(BASE, "..", "..", "CONOCIMIENTO",
                                       "TAGS EPC.xlsx"))
 
@@ -51,6 +52,10 @@ def _guarded(fn, timeout=40):
 
 
 app = Flask(__name__)
+try:
+    store.init_db()
+except Exception as exc:  # noqa: BLE001 - la DB es aparte del lector
+    print("ru5600_store: init_db fallo: %s" % exc, file=sys.stderr)
 _reader: Ru5600Reader | None = None
 _net_reader = None
 _net_info: dict = {"mode": "usb"}
@@ -1484,6 +1489,13 @@ def api_probe():
             return jsonify(ok=True, count=len(tags),
                            callback=r.callback_stats(),
                            tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+        if what == "checkant":
+            try:
+                code = r._lib.CFHid_CheckAnt()
+            except Exception as exc:  # noqa: BLE001
+                return jsonify(ok=False, error="CheckAnt: " + str(exc))
+            _log("info", "CheckAnt() -> %s" % code)
+            return jsonify(ok=True, code=code)
         if what == "maintenance":
             # limpieza barata: cortar stream, vaciar buffer y volver a AnswerMode
             steps = []
@@ -1514,6 +1526,128 @@ def api_probe():
     except Exception as exc:  # noqa: BLE001
         _log("error", "prueba %s: %s" % (what, exc))
         return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/read_until", methods=["POST"])
+def api_read_until():
+    """Lectura dirigida repetida hasta enganchar el tag del EPC.
+
+    Los fallos del camino dirigido son en su mayoria ``stale``: el lector
+    contesta con el frame de una orden anterior.  Por eso entre intento e
+    intento se vacia el buffer del lector y se espera ``pause``.
+    """
+    cfg = request.get_json(silent=True) or {}
+    try:
+        attempts = int(cfg.get("attempts", 20))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="attempts invalido"), 400
+    attempts = max(1, min(attempts, 100))
+    try:
+        pause = float(cfg.get("pause", 0.1))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="pause invalido"), 400
+    pause = max(0.0, min(pause, 2.0))
+    expected = re.sub(r"\s+", "", str(cfg.get("expected") or "")).upper() or None
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+    t0 = time.monotonic()
+    tries = []
+    last_epc = None
+    last_hex = None
+    found = False
+    for n in range(1, attempts + 1):
+        a0 = time.monotonic()
+        result = "error"
+        try:
+            data = r.read_card(1, 0, 6, b"\x00" * 4, retries=1)
+            last_hex = data.hex().upper()
+            # 12 bytes = CRC(2) + PC(2) + EPC(8)
+            last_epc = data[4:].hex().upper() if len(data) >= 12 else last_hex
+            result = "ok"
+            _log("ok", "read_until %d/%d ok: %s" % (n, attempts, last_hex))
+        except ReaderError as exc:
+            result = "stale" if "stale" in str(exc).lower() else "error"
+            _log("warn", "read_until %d/%d %s" % (n, attempts, result))
+        except Exception as exc:  # noqa: BLE001
+            _log("warn", "read_until %d/%d error: %s" % (n, attempts, str(exc)[:120]))
+        tries.append({"n": n, "result": result,
+                      "ms": round((time.monotonic() - a0) * 1000)})
+        if result == "ok" and (expected is None or last_epc == expected):
+            found = True
+            break
+        if n < attempts:
+            try:
+                r.clear_tag_buf()
+            except Exception:  # noqa: BLE001
+                pass
+            if pause:
+                time.sleep(pause)
+
+    elapsed_ms = round((time.monotonic() - t0) * 1000)
+    out = {"ok": True, "found": found, "epc": last_epc, "hex": last_hex,
+           "rssi": None, "attempts_used": len(tries),
+           "elapsed_ms": elapsed_ms, "tries": tries}
+    if expected is not None:
+        out["match"] = bool(found and last_epc == expected)
+    if found:
+        _store_result(last_epc, True, len(tries), elapsed_ms)
+    else:
+        _store_result(None, False, len(tries), elapsed_ms)
+    _log("ok" if found else "warn",
+         "read_until: %s en %d/%d intentos (%d ms)"
+         % (last_epc if found else "sin tag", len(tries), attempts, elapsed_ms))
+    return jsonify(out)
+
+
+def _store_result(epc, found, attempts, elapsed_ms):
+    """Guarda el resultado; si SQLite falla, la lectura sigue igual."""
+    try:
+        if found:
+            store.upsert_tag(epc, None, None, attempts)
+            store.add_lectura(epc, None, "", attempts, elapsed_ms, "read_until")
+        store.add_log("ok" if found else "warn",
+                      "read_until %s (%d intentos, %d ms)"
+                      % (epc if found else "sin tag", attempts, elapsed_ms))
+    except Exception as exc:  # noqa: BLE001
+        _log("warn", "no pude guardar en SQLite: %s" % exc)
+
+
+@app.route("/api/tags")
+def api_tags():
+    """Tags guardados, el mas reciente primero."""
+    try:
+        limit = int(request.args.get("limit", 200) or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    try:
+        rows = store.list_tags(limit)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    return jsonify(ok=True, count=len(rows), tags=rows)
+
+
+@app.route("/api/tags/stats")
+def api_tags_stats():
+    try:
+        out = store.stats()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    out["ok"] = True
+    return jsonify(out)
+
+
+@app.route("/api/tags/clear", methods=["POST"])
+def api_tags_clear():
+    try:
+        deleted = store.clear_tags()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    _log("info", "tags guardados vaciados: %d tags, %d lecturas"
+         % (deleted["tags"], deleted["lecturas"]))
+    return jsonify(ok=True, deleted=deleted)
 
 
 @app.route("/api/scan_now")

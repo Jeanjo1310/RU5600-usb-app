@@ -13,6 +13,21 @@
     <button class="btn btn-outline probe" data-what="maintenance">Mantenimiento (stop + vaciar buffer)</button>
     <button id="recoverBtn" class="btn btn-error">Destrabar lector</button>
   </div>
+  <div class="rounded-lg border border-base-300 p-3 mb-3">
+    <div class="text-sm font-semibold mb-1">Leer hasta enganchar</div>
+    <p class="text-xs text-base-content/60 mb-2">Lectura dirigida al EPC con vaciado del buffer entre intentos: los fallos de este camino son frames viejos (<b>stale</b>).</p>
+    <div class="flex flex-wrap items-end gap-3">
+      <div>
+        <label class="block mb-1 text-sm font-medium" for="ruAttempts">Intentos</label>
+        <input id="ruAttempts" type="number" value="20" min="1" max="100" class="input input-bordered w-32">
+      </div>
+      <div>
+        <label class="block mb-1 text-sm font-medium" for="ruPause">Pausa (ms)</label>
+        <input id="ruPause" type="number" value="100" min="0" max="2000" class="input input-bordered w-32">
+      </div>
+      <button id="readUntilBtn" class="btn btn-soft btn-success">Leer hasta enganchar</button>
+    </div>
+  </div>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="rounded-lg border border-base-300 p-3">
       <div class="text-sm font-semibold mb-1">Estado del lector</div>
@@ -22,6 +37,24 @@
       <div class="text-sm font-semibold mb-1">Resultado de la última prueba</div>
       <pre id="probeOut" class="font-mono text-xs whitespace-pre-wrap max-h-48 overflow-auto">-</pre>
     </div>
+  </div>
+</div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+    <div>
+      <h2 class="text-lg font-semibold">Tags guardados</h2>
+      <p id="tagStats" class="text-xs text-base-content/60">-</p>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-outline btn-sm" onclick="exportTable('#tagsTable', 'tags-guardados')">Exportar</button>
+      <button id="clearTagsBtn" class="btn btn-outline btn-sm">Vaciar</button>
+    </div>
+  </div>
+  <div class="overflow-x-auto max-h-[24rem] overflow-y-auto">
+    <table class="table table-zebra table-xs w-full" id="tagsTable">
+      <thead class="text-xs uppercase opacity-70 sticky top-0"><tr><th class="px-3 py-1">EPC</th><th class="px-3 py-1">Chip</th><th class="px-3 py-1">RSSI</th><th class="px-3 py-1">Veces</th><th class="px-3 py-1">Última vez</th><th class="px-3 py-1">Intentos prom.</th></tr></thead>
+      <tbody id="tagRows"></tbody>
+    </table>
   </div>
 </div>
 <div class="card bg-base-100 shadow-sm p-6">
@@ -70,6 +103,59 @@ async function runProbe(what) {
   out.textContent = JSON.stringify(r, null, 2);
   pullState(); pullLog();
 }
+function cell(text) {
+  const td = document.createElement('td');
+  td.className = 'px-3 py-1 font-mono';
+  td.textContent = text;
+  return td;
+}
+async function pullTags() {
+  const r = await fetch('/api/tags?limit=200').then(x => x.json());
+  const tb = document.getElementById('tagRows');
+  if (!tb) return;
+  tb.innerHTML = '';
+  (r.tags || []).forEach(t => {
+    const tr = document.createElement('tr');
+    tr.appendChild(cell(t.epc || ''));
+    tr.appendChild(cell(t.chip || '—'));
+    tr.appendChild(cell(t.rssi === null || t.rssi === undefined ? '—' : t.rssi));
+    tr.appendChild(cell(t.veces));
+    tr.appendChild(cell(t.last_seen || ''));
+    tr.appendChild(cell(t.attempts_avg === null || t.attempts_avg === undefined ? '—' : t.attempts_avg));
+    tb.appendChild(tr);
+  });
+}
+async function pullTagStats() {
+  const el = document.getElementById('tagStats');
+  if (!el) return;
+  const s = await fetch('/api/tags/stats').then(x => x.json());
+  el.textContent = s.ok
+    ? `${s.tags} tags · ${s.lecturas} lecturas · ${s.tasa_acierto}% de acierto (${s.intentos} intentos)`
+    : (s.error || 'sin datos');
+}
+document.getElementById('readUntilBtn').onclick = async (e) => {
+  const btn = e.target;
+  const attempts = Math.max(1, Math.min(100, parseInt(document.getElementById('ruAttempts').value, 10) || 20));
+  const pause = Math.max(0, Math.min(2000, parseInt(document.getElementById('ruPause').value, 10) || 0)) / 1000;
+  const out = document.getElementById('probeOut');
+  out.textContent = `leyendo hasta ${attempts} intentos (pausa ${pause * 1000} ms)…`;
+  btn.disabled = true;
+  try {
+    const r = await post('/api/read_until', {attempts: attempts, pause: pause});
+    out.textContent = JSON.stringify(r, null, 2);
+  } catch (err) {
+    out.textContent = 'error: ' + err;
+  } finally {
+    btn.disabled = false;
+  }
+  pullState(); pullLog(); pullTags(); pullTagStats();
+};
+document.getElementById('clearTagsBtn').onclick = async () => {
+  if (!confirm('¿Vaciar la tabla de tags guardados y las lecturas?')) return;
+  const r = await post('/api/tags/clear', {});
+  document.getElementById('probeOut').textContent = JSON.stringify(r, null, 2);
+  pullTags(); pullTagStats();
+};
 document.querySelectorAll('.probe').forEach(b => b.onclick = () => runProbe(b.dataset.what));
 document.getElementById('recoverBtn').onclick = async () => {
   const r = await post('/api/recover', {});
@@ -85,8 +171,10 @@ document.getElementById('autoBtn').onclick = (e) => {
   autoscroll = !autoscroll;
   e.target.textContent = autoscroll ? 'Pausar' : 'Reanudar';
 };
-pullState(); pullLog();
+pullState(); pullLog(); pullTags(); pullTagStats();
 setInterval(pullLog, 1000);
 setInterval(pullState, 2000);
+setInterval(pullTags, 5000);
+setInterval(pullTagStats, 5000);
 </script>
 {% endblock %}
