@@ -1965,14 +1965,15 @@ def _clone_probe(r, attempts=25, pause=0.1):
 
 
 def _read_tid(r):
-    """TID estable: 4 palabras (modelo + serial) leídas dos veces.
+    """TID completo y estable, leído dos veces.
 
-    Leer 6 palabras devuelve dos palabras de cola que no son TID y cambian
-    entre lecturas (medido en el H10: E28038132000662B estable, la cola
-    alterna).  Comparar esa cola haría pasar el tag origen por destino.
-    Si el tag tiene TID de 4 bytes, se cae a 2 palabras.
+    Medido en la tanda de H10: los 12 bytes son el TID real
+    (E28038132000662B + serial 03A00BB1).  Los primeros 8 son iguales en todo
+    el lote; el serial único está en los últimos 4.  Leer sólo 8 bytes hacía
+    que dos tags distintos parecieran el mismo (bug detectado 2026-10-26).
+    Se prueban 6, 4 y 2 palabras para tags con TID corto.
     """
-    for words in (4, 2):
+    for words in (6, 4, 2):
         reads = []
         for _ in range(2):
             try:
