@@ -136,8 +136,8 @@ CUSTOM = {
 }
 _lock = threading.Lock()
 _stop = threading.Event()
-_state = {"running": False, "tags": [], "seen": set(), "started": 0.0,
-          "error": ""}
+_state = {"running": False, "tags": [], "seen": {}, "started": 0.0,
+          "error": ""}   # "seen" es dict epc->info: el bucle hace .get() y [key]=
 
 
 def _usb_nodes():
@@ -1582,6 +1582,7 @@ def status():
                    reason=_state.get("reason", ""),
                    stabilized=_state.get("stabilized", 0),
                    mode_used=_state.get("mode_used", "stream"),
+                   stall=_state.get("stall_after", 30.0),
                    flags=_flags_safe(),
                    dps=round(len(ts) / 10.0, 1),
                    last_seen=None if last is None else round(last, 1),
@@ -1602,6 +1603,20 @@ def start():
         return jsonify(ok=False, error="tope de tags invalido"), 400
     if target < 0:
         target = 0
+    # ventana de estancamiento: segundos sin tags NUEVOS antes de cortar (antes fijo en 30)
+    try:
+        stall = float(cfg.get("stall", 30) or 30)
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="estancamiento invalido"), 400
+    stall = max(5.0, min(stall, 600.0))
+    # espera del fallback a modo dirigido (antes siempre 6 s o 35% de la ventana)
+    try:
+        fb = cfg.get("fallback")
+        fallback = float(fb) if fb not in (None, "") else None
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="fallback invalido"), 400
+    if fallback is not None:
+        fallback = max(2.0, min(fallback, 120.0))
     # el stream de tags solo existe en ActiveMode; AnswerMode es para comandos dirigidos.
     # Sin "mode" explicito manda el perfil activo (perfiles de Parámetros).
     mode = (cfg.get("mode") or _sweep_cfg.get("mode") or "active").lower()
@@ -1609,12 +1624,15 @@ def start():
         if _state["running"]:
             return jsonify(ok=False, error="ya corriendo"), 409
         _state.update(running=True, tags=[], error="", target=target,
-                      reason="", started=time.monotonic(), hits=[])
+                      reason="", started=time.monotonic(), hits=[],
+                      stall_after=stall, fallback_after=fallback)
+        # el modo mostrado era el de la corrida anterior hasta que el hilo arrancaba
+        _state["mode_used"] = "stream"
         _state["seen"] = {}
     _stop.clear()
     threading.Thread(target=_run, args=(seconds, target, mode),
                      daemon=True).start()
-    return jsonify(ok=True, target=target, mode=mode)
+    return jsonify(ok=True, target=target, mode=mode, stall=stall)
 
 
 @app.route("/api/stop", methods=["POST"])
@@ -1655,6 +1673,7 @@ def _run(seconds, target=0, mode="answer"):
         fallback_after = float(_state.get("fallback_after") or
                                (min(6.0, max(2.0, seconds * 0.35)) if seconds > 0 else 6.0))
         stream_saw = False
+        last_stream = None
         _state["mode_used"] = "stream"
         try:
             while ((deadline is None or time.monotonic() < deadline)
@@ -1669,9 +1688,19 @@ def _run(seconds, target=0, mode="answer"):
                 # poll adaptativo: rapido cuando entrega, mas lento cuando no
                 time.sleep(poll)
                 got = False
-                # --- fallback: tags que no entran al stream (H10, UCODE8) ---
-                if (not stream_saw and not _state["tags"] and not direct_mode
-                        and (time.monotonic() - t_start) > fallback_after):
+                # --- fallback a dirigido: dos casos ---
+                # (a) el stream nunca entrego nada (H10, UCODE 8/9, o no hay tags);
+                # (b) el entrego pero se calla con el objetivo sin cumplir: en grupos
+                #     mixtos los tags no-stream quedarian inalcanzables y la corrida se
+                #     estancaba sin siquiera intentar el camino dirigido.
+                _fb_ref = last_stream if (stream_saw and last_stream) else t_start
+                _fb_falta = bool(target) and len(_state["tags"]) < target
+                _fb_silencio = stream_saw and last_stream and (
+                    (time.monotonic() - last_stream) > fallback_after)
+                if (not direct_mode
+                        and (time.monotonic() - _fb_ref) > fallback_after
+                        and (not _state["tags"]
+                             or (_fb_falta and _fb_silencio))):
                     direct_mode = True
                     _state["mode_used"] = "dirigido"
                     # ventana nueva para el modo dirigido: no heredar el tiempo
@@ -1693,30 +1722,35 @@ def _run(seconds, target=0, mode="answer"):
                     if res != "ok" or not epc_d:
                         time.sleep(poll)
                         continue
-                    info = {"epc": epc_d.upper(), "chip": "", "xl": "-",
-                            "conf": "candidato",
-                            "code": epc_d[6:14] if len(epc_d) >= 14 else ""}
-                    try:
-                        tid = r.read_card(2, 0, 2, b"\x00" * 4, retries=2)
-                        prefix = tid.hex().upper()[:8]
-                        ent = TID_PREFIX_DB.get(prefix)
-                        info["chip"] = ("%s %s" % (ent[0], ent[1])).strip() if isinstance(ent, tuple) and len(ent) >= 2 else prefix
-                        if isinstance(ent, tuple):
-                            info["conf"] = "confirmado"
-                    except Exception:  # noqa: BLE001
-                        pass
-                    if idx is not None:
-                        hit = idx.get(info["epc"])
-                        if hit is not None:
-                            info["xl"] = "%s #%s" % (hit[0], hit[1])
-                    key = info["epc"]
+                    key = epc_d.upper()
                     prev = _state["seen"].get(key)
                     if prev is not None:
+                        # tag ya conocido: se cuenta y se sigue. Antes se releia el TID
+                        # igual, o sea un comando extra por relectura (~50% mas de ordenes).
                         prev["n"] = prev.get("n", 1) + 1
                         _state.setdefault("hits", []).append(time.monotonic())
                         got = True
                         last_hit = time.monotonic()
                         continue
+                    info = {"epc": key, "chip": "", "xl": "-",
+                            "conf": "candidato",
+                            "code": epc_d[6:14] if len(epc_d) >= 14 else ""}
+                    # TID solo para tags nuevos; si contesta frame viejo, un reintento
+                    for _attempt in range(2):
+                        try:
+                            tid = r.read_card(2, 0, 2, b"\x00" * 4, retries=2)
+                            prefix = tid.hex().upper()[:8]
+                            ent = TID_PREFIX_DB.get(prefix)
+                            info["chip"] = ("%s %s" % (ent[0], ent[1])).strip() if isinstance(ent, tuple) and len(ent) >= 2 else prefix
+                            if isinstance(ent, tuple):
+                                info["conf"] = "confirmado"
+                            break
+                        except Exception:  # noqa: BLE001
+                            time.sleep(0.12)
+                    if idx is not None:
+                        hit = idx.get(info["epc"])
+                        if hit is not None:
+                            info["xl"] = "%s #%s" % (hit[0], hit[1])
                     info.update(raw=hex_d[:48], ant=0, rssi=None, n=1)
                     _state["seen"][key] = info
                     last_new = time.monotonic()
@@ -1731,6 +1765,7 @@ def _run(seconds, target=0, mode="answer"):
                 stream_tags = r.poll_tags()
                 if stream_tags:
                     stream_saw = True
+                    last_stream = time.monotonic()
                 for tag in stream_tags:
                     # el parser nuevo ya entrega EPC/TID/RSSI: no re-parsear el blob
                     epc = (getattr(tag, "epc_hex", "") or "").upper()

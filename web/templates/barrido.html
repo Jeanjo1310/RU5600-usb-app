@@ -11,6 +11,10 @@
       <label class="block mb-1 text-sm font-medium" for="target">Detener al llegar a N tags</label>
       <input id="target" type="number" value="0" min="0" class="input input-bordered w-32">
     </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium" for="stall" title="Si pasa este tiempo sin tags nuevos, la corrida corta sola">Sin tags nuevos en (s)</label>
+      <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-32">
+    </div>
     <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
     <div class="pb-2">
       <div class="flex items-center gap-2">
@@ -134,7 +138,8 @@ $('sweepToggle').onclick = async () => {
   const running = $('sweepToggle').textContent.trim() === t('Parar');
   if (running) { await post('/api/stop', {}); poll(); return; }
   const r = await post('/api/start', {seconds: parseFloat($('seconds').value) || 0,
-                                      target: parseInt($('target').value) || 0});
+                                      target: parseInt($('target').value) || 0,
+                                      stall: parseFloat($('stall').value) || 30});
   if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
   $('rows').innerHTML = ''; seen = 0;
   timer = setInterval(poll, 400); poll();
