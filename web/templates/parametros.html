@@ -6,20 +6,11 @@
   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
     <div><label class="block text-sm mb-1" for="rf">RF Power</label><select id="rf" class="select select-bordered w-full"></select></div>
     <div><label class="block text-sm mb-1" for="wm">WorkMode</label><select id="wm" class="select select-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></div>
-    <div><label class="block text-sm mb-1" for="filt">FilterTime(s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
     <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
+    <div><label class="block text-sm mb-1" for="filt">FilterTime(s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="perfil" title="Un perfil cambia junto las tres cosas que definen cómo lee: el WorkMode, la pausa entre lecturas dirigidas y el camino del barrido. La explicación está en Ayuda (?).">Perfiles de lectura</label><select id="perfil" class="select select-bordered w-full"></select></div>
   </div>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mt-4 pt-4 border-t border-base-200 items-start">
-    <div>
-      <label class="block text-sm mb-1" for="perfil" title="Un perfil cambia junto las tres cosas que definen cómo lee: el WorkMode del lector, la pausa entre lecturas dirigidas y el camino del barrido. Así lector e interfaz quedan coincidentes.">Perfiles de lectura</label>
-      <select id="perfil" size="6" class="w-full text-sm border border-base-300 rounded-lg bg-base-200 px-2 py-1 leading-tight"></select>
-    </div>
-    <div class="md:col-span-2">
-      <p id="perfilDesc" class="text-sm"></p>
-      <p id="perfilSets" class="text-xs font-mono text-base-content/60 mt-2"></p>
-      <p id="perfilMsg" class="mt-2 text-sm"></p>
-    </div>
-  </div>
+  <p id="perfilMsg" class="mt-1 text-sm"></p>
   <div class="flex flex-wrap gap-2">
     <button id="papply" class="btn btn-primary">Aplicar</button>
     <button id="pdef" class="btn btn-outline">Defecto</button>
@@ -130,9 +121,7 @@ document.getElementById('reboot').onclick = async () => {
 };
 pread();
 
-/* ---- perfiles de lectura (lista + aplicacion + personalizado) ---- */
-const WM_LBL = {0: 'AnswerMode', 1: 'ActiveMode'};
-const PACE_LBL = {burst: 'R\u00e1faga (30 ms)', balanced: 'Balanceado (120 ms)', reliable: 'Confiable (250 ms + 2 reintentos)'};
+/* ---- perfiles de lectura (select de DaisyUI + aplicacion + personalizado) ---- */
 async function profData() {
   try { return await fetch('/api/profiles').then(r => r.json()); } catch (e) { return null; }
 }
@@ -149,26 +138,22 @@ async function profLoad() {
   profShow(d.current, d);
 }
 function profShow(id, d) {
-  const list = (d && d.profiles) || [];
-  const p = list.find(x => x.id === id);
-  if (!p) return;
-  const esCustom = id === 'custom';
-  document.getElementById('perfilDesc').textContent =
-    t(p.desc) + (esCustom ? ' ' + t('Base:') + ' ' + t(d.base_label || d.base || '') : '');
-  const wm = (d.base === 'rafaga' || d.base === 'continuo') ? 1 : 0;
-  const ch = Object.keys(d.changed || {}).map(k =>
-      k + ' ' + (d.changed[k] || {}).de + ' \u2192 ' + (d.changed[k] || {}).a).join(' \u00b7 ');
-  document.getElementById('perfilSets').textContent =
-    'WorkMode=' + WM_LBL[wm] + ' \u00b7 ' + t('lectura') + '=' + t(PACE_LBL[d.read_mode] || PACE_LBL.balanced) +
-    ' \u00b7 ' + t('barrido') + '=' + (d.sweep === 'active' ? t('stream') : t('dirigido'))
-    + (esCustom && ch ? ' \u00b7 ' + t('cambios') + ': ' + ch : '');
+  const msg = document.getElementById('perfilMsg'); if (!msg) return;
+  if (id === 'custom') {
+    const ch = Object.keys((d && d.changed) || {}).map(k =>
+        k + ' ' + d.changed[k].de + ' \u2192 ' + d.changed[k].a).join(' \u00b7 ');
+    msg.textContent = t('Personalizado') + ' \u00b7 ' + t('Base:') + ' ' + t((d && d.base_label) || '')
+      + (ch ? ' \u00b7 ' + t('cambios') + ': ' + ch : '');
+  } else {
+    msg.textContent = '';
+  }
 }
 document.getElementById('perfil').onchange = async (ev) => {
   const id = ev.target.value;
   const d = await profData();
   const p = ((d && d.profiles) || []).find(x => x.id === id) || {};
   const msg = document.getElementById('perfilMsg');
-  if (p.applyable === false) { profShow(id, d); msg.textContent = t('Conservando tu mezcla.'); return; }
+  if (p.applyable === false) { profShow(id, d); return; }
   const r = await fetch('/api/profiles/apply', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({id: id})}).then(x => x.json()).catch(e => ({ok: false, error: String(e)}));
   if (!r.ok) { msg.textContent = 'Error: ' + r.error; return; }
@@ -179,7 +164,6 @@ document.getElementById('perfil').onchange = async (ev) => {
     + ((r.reader && r.reader.ok) ? '' : ' \u00b7 ' + t('el WorkMode del lector no se pudo cambiar'));
   if (window.pread) pread();
 };
-/* Aplicar (params) puede volver el perfil "Personalizado": refrescar la lista */
 (function () {
   const btn = document.getElementById('papply'); if (!btn) return;
   const prev = btn.onclick;
