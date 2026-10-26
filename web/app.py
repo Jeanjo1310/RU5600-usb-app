@@ -1562,10 +1562,20 @@ def api_read_until():
         a0 = time.monotonic()
         result = "error"
         try:
-            data = r.read_card(1, 0, 6, b"\x00" * 4, retries=1)
+            # 8 palabras = CRC(2) + PC(2) + hasta 12 bytes de EPC
+            data = r.read_card(1, 0, 8, b"\x00" * 4, retries=1)
             last_hex = data.hex().upper()
-            # 12 bytes = CRC(2) + PC(2) + EPC(8)
-            last_epc = data[4:].hex().upper() if len(data) >= 12 else last_hex
+            # el PC declara el largo del EPC: bits 15-11 = palabras
+            if len(data) >= 4:
+                pc = (data[2] << 8) | data[3]
+                epc_words = (pc >> 11) & 0x1F
+                epc_len = epc_words * 2
+                if 2 <= epc_len <= len(data) - 4:
+                    last_epc = data[4:4 + epc_len].hex().upper()
+                else:
+                    last_epc = data[4:].hex().upper()
+            else:
+                last_epc = last_hex
             result = "ok"
             _log("ok", "read_until %d/%d ok: %s" % (n, attempts, last_hex))
         except ReaderError as exc:
@@ -1592,10 +1602,6 @@ def api_read_until():
            "elapsed_ms": elapsed_ms, "tries": tries}
     if expected is not None:
         out["match"] = bool(found and last_epc == expected)
-    if found:
-        _store_result(last_epc, True, len(tries), elapsed_ms)
-    else:
-        _store_result(None, False, len(tries), elapsed_ms)
     # --- tarea 10: chip por TID (4 bytes de prefijo) ---
     if found:
         try:
@@ -1615,11 +1621,15 @@ def api_read_until():
     if found and cfg.get("with_rssi"):
         try:
             tags = r.scan()
-            hit = next((t for t in tags if (t.epc_hex or "").upper() == epc), None)
+            hit = next((t for t in tags if (t.epc_hex or "").upper() == last_epc), None)
             if hit is not None:
                 out["rssi"] = hit.rssi
         except Exception as exc:  # noqa: BLE001
             out["rssi_error"] = str(exc)[:80]
+
+    # guardar recien ahora, con chip y rssi ya resueltos
+    _store_result(last_epc if found else None, found, len(tries), elapsed_ms,
+                  chip=out.get("chip"), rssi=out.get("rssi"))
 
     _log("ok" if found else "warn",
          "read_until: %s en %d/%d intentos (%d ms)"
@@ -1627,12 +1637,12 @@ def api_read_until():
     return jsonify(out)
 
 
-def _store_result(epc, found, attempts, elapsed_ms):
+def _store_result(epc, found, attempts, elapsed_ms, chip=None, rssi=None):
     """Guarda el resultado; si SQLite falla, la lectura sigue igual."""
     try:
         if found:
-            store.upsert_tag(epc, None, None, attempts)
-            store.add_lectura(epc, None, "", attempts, elapsed_ms, "read_until")
+            store.upsert_tag(epc, chip, rssi, attempts)
+            store.add_lectura(epc, rssi, "", attempts, elapsed_ms, "read_until")
         store.add_log("ok" if found else "warn",
                       "read_until %s (%d intentos, %d ms)"
                       % (epc if found else "sin tag", attempts, elapsed_ms))
