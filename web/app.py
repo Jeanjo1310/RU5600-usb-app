@@ -1079,6 +1079,7 @@ def api_map_stop():
 
 def _map_run(plan):
     pending = {e["a"]: e["b"] for e in plan}
+    targets = {e["b"]: e["a"] for e in plan}   # ya modificado -> ignorar
     try:
         r = _get_reader()
         seen = set()
@@ -1095,6 +1096,14 @@ def _map_run(plan):
                 seen.add(key)
                 cur = (tag.epc_hex or "").upper()
                 if cur not in pending:
+                    # si ya tiene el EPC nuevo, la fila se da por cumplida y no se escribe
+                    if cur in targets:
+                        origen = targets.pop(cur)
+                        pending.pop(origen, None)
+                        _map["done"] += 1
+                        _map["rows"].append({"tag": cur, "new": cur,
+                                             "result": "ya tenía el EPC nuevo (sin escribir)"})
+                        progressed = True
                     continue
                 new_hex = pending[cur]
                 new_bytes = bytes.fromhex(new_hex)
@@ -1223,6 +1232,19 @@ def _run(seconds, target=0):
             reason = "usuario" if _stop.is_set() else "tiempo"
         _state["reason"] = reason
         _state["running"] = False
+
+
+@app.route("/api/scan_now")
+def api_scan_now():
+    """Un escaneo puntual (answer mode, sin escritura). Sirve para diagnostico."""
+    try:
+        r = _need_usb()
+        tags = r.scan()
+        return jsonify(ok=True, count=len(tags),
+                       tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi}
+                             for t in tags])
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
 
 
 @app.route("/api/compare", methods=["POST"])
