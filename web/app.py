@@ -1528,6 +1528,38 @@ def api_probe():
         return jsonify(ok=False, error=str(exc))
 
 
+def _direct_read(r):
+    """Una sola tirada de lectura dirigida al banco EPC (ReadCardG2).
+
+    La usan ``/api/read_until`` (una tirada por intento) y ``/api/bench``
+    (una muestra por intento), asi el benchmark mide exactamente el mismo
+    camino que la lectura repetida.  Devuelve ``(resultado, epc, hex, detalle)``
+    con ``resultado`` en ``ok | stale | error``; ``detalle`` es el texto que
+    el llamador pone en el log (o ``None`` cuando no hay nada que loguear).
+    """
+    try:
+        # 8 palabras = CRC(2) + PC(2) + hasta 12 bytes de EPC
+        data = r.read_card(1, 0, 8, b"\x00" * 4, retries=1)
+        raw = data.hex().upper()
+        # el PC declara el largo del EPC: bits 15-11 = palabras
+        if len(data) >= 4:
+            pc = (data[2] << 8) | data[3]
+            epc_words = (pc >> 11) & 0x1F
+            epc_len = epc_words * 2
+            if 2 <= epc_len <= len(data) - 4:
+                epc = data[4:4 + epc_len].hex().upper()
+            else:
+                epc = data[4:].hex().upper()
+        else:
+            epc = raw
+        return "ok", epc, raw, None
+    except ReaderError as exc:
+        label = "stale" if "stale" in str(exc).lower() else "error"
+        return label, None, None, label
+    except Exception as exc:  # noqa: BLE001
+        return "error", None, None, "error: " + str(exc)[:120]
+
+
 @app.route("/api/read_until", methods=["POST"])
 def api_read_until():
     """Lectura dirigida repetida hasta enganchar el tag del EPC.
@@ -1560,29 +1592,15 @@ def api_read_until():
     found = False
     for n in range(1, attempts + 1):
         a0 = time.monotonic()
-        result = "error"
-        try:
-            # 8 palabras = CRC(2) + PC(2) + hasta 12 bytes de EPC
-            data = r.read_card(1, 0, 8, b"\x00" * 4, retries=1)
-            last_hex = data.hex().upper()
-            # el PC declara el largo del EPC: bits 15-11 = palabras
-            if len(data) >= 4:
-                pc = (data[2] << 8) | data[3]
-                epc_words = (pc >> 11) & 0x1F
-                epc_len = epc_words * 2
-                if 2 <= epc_len <= len(data) - 4:
-                    last_epc = data[4:4 + epc_len].hex().upper()
-                else:
-                    last_epc = data[4:].hex().upper()
-            else:
-                last_epc = last_hex
-            result = "ok"
+        result, epc, raw, detail = _direct_read(r)
+        if raw is not None:
+            last_hex = raw
+        if epc is not None:
+            last_epc = epc
+        if result == "ok":
             _log("ok", "read_until %d/%d ok: %s" % (n, attempts, last_hex))
-        except ReaderError as exc:
-            result = "stale" if "stale" in str(exc).lower() else "error"
-            _log("warn", "read_until %d/%d %s" % (n, attempts, result))
-        except Exception as exc:  # noqa: BLE001
-            _log("warn", "read_until %d/%d error: %s" % (n, attempts, str(exc)[:120]))
+        else:
+            _log("warn", "read_until %d/%d %s" % (n, attempts, detail))
         tries.append({"n": n, "result": result,
                       "ms": round((time.monotonic() - a0) * 1000)})
         if result == "ok" and (expected is None or last_epc == expected):
@@ -1634,6 +1652,80 @@ def api_read_until():
     _log("ok" if found else "warn",
          "read_until: %s en %d/%d intentos (%d ms)"
          % (last_epc if found else "sin tag", len(tries), attempts, elapsed_ms))
+    return jsonify(out)
+
+
+@app.route("/api/bench", methods=["POST"])
+def api_bench():
+    """Benchmark de antena: N lecturas dirigidas, una sola tirada cada una.
+
+    Cada muestra usa el mismo camino que ``/api/read_until`` con
+    ``attempts=1``: si engancha, cuenta como acierto.  La tasa de enganche es
+    el indicador de calidad de antena/posicion (el SDK no expone RSSI en la
+    lectura dirigida).  Una fila en ``trabajos`` deja la medicion en SQLite.
+    """
+    cfg = request.get_json(silent=True) or {}
+    try:
+        trials = int(cfg.get("trials", 20))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="trials invalido"), 400
+    trials = max(1, min(trials, 200))
+    try:
+        pause = float(cfg.get("pause", 0.1))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="pause invalido"), 400
+    pause = max(0.0, min(pause, 2.0))
+    label = str(cfg.get("label") or "").strip()[:80]
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+    ms_list = []
+    epcs = {}
+    hits = 0
+    for n in range(1, trials + 1):
+        a0 = time.monotonic()
+        result, epc, _raw, _detail = _direct_read(r)
+        ms_list.append(round((time.monotonic() - a0) * 1000))
+        if result == "ok":
+            hits += 1
+            if epc:
+                epcs[epc] = epcs.get(epc, 0) + 1
+        if n < trials:
+            try:
+                r.clear_tag_buf()
+            except Exception:  # noqa: BLE001
+                pass
+            if pause:
+                time.sleep(pause)
+
+    ordered = sorted(ms_list)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        ms_median = ordered[mid]
+    else:
+        ms_median = round((ordered[mid - 1] + ordered[mid]) / 2.0, 1)
+    tasa = round(hits / trials, 4)
+    top_epc = max(epcs, key=epcs.get) if epcs else None
+    out = {"ok": True, "label": label, "trials": trials, "hits": hits,
+           "tasa": tasa, "ms_min": ordered[0], "ms_mediana": ms_median,
+           "ms_max": ordered[-1], "epc": top_epc, "epcs": epcs,
+           "intentos_por_hit": 1}
+    _log("ok" if hits else "warn",
+         "bench %s: %d/%d enganchados (%.1f%%), %s / %s / %s ms"
+         % (label or "sin etiqueta", hits, trials, tasa * 100,
+            ordered[0], ms_median, ordered[-1]))
+    try:
+        store.add_trabajo("bench", "ok", total=trials, hechos=hits,
+                          extra={"label": label, "tasa": tasa,
+                                 "ms_min": ordered[0],
+                                 "ms_mediana": ms_median,
+                                 "ms_max": ordered[-1],
+                                 "epc": top_epc, "epcs": epcs,
+                                 "pause": pause})
+    except Exception as exc:  # noqa: BLE001
+        _log("warn", "bench: no pude guardar en SQLite: %s" % exc)
     return jsonify(out)
 
 

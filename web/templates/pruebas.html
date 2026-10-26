@@ -85,6 +85,36 @@
   </div>
 </div>
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Benchmark de antena</h2>
+  <p class="text-sm text-base-content/60 mb-3">Cada intento es una lectura dirigida (<b>ReadCardG2</b>, una sola tirada). Misma etiqueta = misma configuración medida.</p>
+  <div class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block mb-1 text-sm font-medium" for="benchLabel">Etiqueta</label>
+      <input id="benchLabel" type="text" placeholder="antena A / 20 cm" class="input input-bordered w-64">
+    </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium" for="benchTrials">Intentos</label>
+      <input id="benchTrials" type="number" value="20" min="1" max="200" class="input input-bordered w-32">
+    </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium" for="benchPause">Pausa (ms)</label>
+      <input id="benchPause" type="number" value="100" min="0" max="2000" class="input input-bordered w-32">
+    </div>
+    <button id="benchBtn" class="btn btn-soft btn-success">Medir</button>
+    <button class="btn btn-outline btn-sm" onclick="exportTable('#benchTable', 'benchmark-antena')">Exportar</button>
+  </div>
+  <p class="text-xs text-base-content/60 mt-2">Enganchar fácil = antena mejor. Compará cambiando la etiqueta.</p>
+  <p id="benchStatus" class="text-xs text-base-content/60 mt-1">-</p>
+  <div class="overflow-x-auto mt-3">
+    <table class="table table-xs w-full" id="benchTable">
+      <thead class="text-xs uppercase opacity-70">
+        <tr><th class="px-3 py-1">Etiqueta</th><th class="px-3 py-1">Tasa</th><th class="px-3 py-1">Aciertos/Total</th><th class="px-3 py-1">ms mín</th><th class="px-3 py-1">ms mediana</th><th class="px-3 py-1">ms máx</th><th class="px-3 py-1">EPC detectado</th></tr>
+      </thead>
+      <tbody id="benchRows"></tbody>
+    </table>
+  </div>
+</div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
     <div>
       <h2 class="text-lg font-semibold">Tags guardados</h2>
@@ -222,6 +252,37 @@ document.getElementById('clearBtn').onclick = async () => {
 document.getElementById('autoBtn').onclick = (e) => {
   autoscroll = !autoscroll;
   e.target.textContent = autoscroll ? 'Pausar' : 'Reanudar';
+};
+document.getElementById('benchBtn').onclick = async (e) => {
+  const btn = e.target;
+  const label = document.getElementById('benchLabel').value.trim();
+  const trials = Math.max(1, Math.min(200, parseInt(document.getElementById('benchTrials').value, 10) || 20));
+  const pause = Math.max(0, Math.min(2000, parseInt(document.getElementById('benchPause').value, 10) || 0)) / 1000;
+  const status = document.getElementById('benchStatus');
+  btn.disabled = true;
+  status.textContent = `midiendo ${trials} intentos (pausa ${Math.round(pause * 1000)} ms)…`;
+  try {
+    const r = await post('/api/bench', {trials: trials, pause: pause, label: label});
+    if (!r.ok) {
+      status.textContent = 'error: ' + (r.error || 'sin detalle');
+      return;
+    }
+    const tr = document.createElement('tr');
+    tr.appendChild(cell(r.label || '—'));
+    tr.appendChild(cell((r.tasa * 100).toFixed(1) + ' %'));
+    tr.appendChild(cell(r.hits + '/' + r.trials));
+    tr.appendChild(cell(r.ms_min));
+    tr.appendChild(cell(r.ms_mediana));
+    tr.appendChild(cell(r.ms_max));
+    tr.appendChild(cell(r.epc || '—'));
+    document.getElementById('benchRows').appendChild(tr);
+    status.textContent = `${r.hits}/${r.trials} enganchados (${(r.tasa * 100).toFixed(1)} %).`;
+  } catch (err) {
+    status.textContent = 'error: ' + err;
+  } finally {
+    btn.disabled = false;
+  }
+  pullLog(); pullTagStats();
 };
 pullState(); pullLog(); pullTags(); pullTagStats();
 setInterval(pullLog, 1000);

@@ -7,11 +7,11 @@ conexion compartida entre hilos de ``sqlite3`` no es segura.
 Un ``tags`` es un tag fisico identificado por su EPC.  ``lecturas`` guarda
 cada lectura confirmada (una fila por sesion de lectura, no por intento) y
 ``log`` los eventos que tienen que sobrevivir al reinicio del servidor.
-``trabajos`` queda para los procesos por lote; el motor de lectura repetida
-todavia no lo usa.
+``trabajos`` guarda los procesos por lote y los benchmarks de antena.
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -164,6 +164,31 @@ def add_log(level: str, msg: str) -> int:
     try:
         cur = con.execute("INSERT INTO log (ts, level, msg) VALUES (?, ?, ?)",
                           (_now(), str(level or ""), str(msg or "")[:400]))
+        con.commit()
+        return int(cur.lastrowid)
+    finally:
+        con.close()
+
+
+def add_trabajo(tipo: str, estado: str, total=None, hechos=None,
+                extra=None) -> int:
+    """Registra un trabajo (lote o benchmark) y devuelve el id de la fila.
+
+    ``extra`` se guarda como JSON; si ya viene como texto, se respeta tal cual.
+    """
+    if extra is None:
+        extra_txt = None
+    elif isinstance(extra, str):
+        extra_txt = extra
+    else:
+        extra_txt = json.dumps(extra, ensure_ascii=False)
+    con = _connect()
+    try:
+        cur = con.execute(
+            "INSERT INTO trabajos (tipo, estado, total, hechos, creado, extra)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (str(tipo or ""), str(estado or ""), _clean_int(total),
+             _clean_int(hechos), _now(), extra_txt))
         con.commit()
         return int(cur.lastrowid)
     finally:
