@@ -1154,6 +1154,7 @@ def status():
                    count=len(_state["tags"]), tags=_state["tags"],
                    target=_state.get("target", 0),
                    reason=_state.get("reason", ""),
+                   stabilized=_state.get("stabilized", 0),
                    dps=round(len(ts) / 10.0, 1),
                    last_seen=None if last is None else round(last, 1),
                    stalled=bool(running and (last is None or last > 5)),
@@ -1212,13 +1213,19 @@ def _run(seconds, target=0, mode="answer"):
         r._lib.CFHid_StartRead(DEV_ADDR)
         r._pace(settle=True)
         deadline = None if seconds <= 0 else time.monotonic() + seconds
+        poll = 0.1
+        last_hit = time.monotonic()
+        stabilized = 0
+        _state["stabilized"] = 0
         try:
             while ((deadline is None or time.monotonic() < deadline)
                     and not _stop.is_set()):
                 if target and len(_state["tags"]) >= target:
                     reason = "tope"
                     break
-                time.sleep(0.1)
+                # poll adaptativo: rapido cuando entrega, mas lento cuando no
+                time.sleep(poll)
+                got = False
                 for tag in r.poll_tags():
                     blob = (bytes(tag.raw_id) if tag.raw_id
                             else bytes(tag.epc))
@@ -1235,6 +1242,26 @@ def _run(seconds, target=0, mode="answer"):
                     _state["seen"][key] = info
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
+                    got = True
+                    last_hit = time.monotonic()
+                now2 = time.monotonic()
+                if got:
+                    poll = 0.1
+                else:
+                    poll = min(0.3, poll + 0.02)
+                    # prevencion: si dejo de entregar 6 s, rearmar el stream (una vez cada 6 s)
+                    if now2 - last_hit > 6 and stabilized < 40:
+                        try:
+                            r.stop_read()
+                            r._lib.CFHid_ClearTagBuf()
+                            r._pace(settle=True)
+                            r._lib.CFHid_StartRead(DEV_ADDR)
+                            r._pace(settle=True)
+                            stabilized += 1
+                            _state["stabilized"] = stabilized
+                            last_hit = time.monotonic()
+                        except Exception:  # noqa: BLE001
+                            pass
         finally:
             try:
                 r._lib.CFHid_StopRead(DEV_ADDR)

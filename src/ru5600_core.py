@@ -444,7 +444,9 @@ def _declare_signatures(lib) -> None:
         "CFHid_SetFreq": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_ReadFreq": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_SetCallback": ([_CB], ctypes.c_int),
-        "CFHid_GetTagBuf": ([u8p, u16p, u16p], ctypes.c_ubyte),
+        # el SDK declara GetTagBuf(void*, size_t*, int*): en x86_64 son 8 y 4 bytes
+        "CFHid_GetTagBuf": ([u8p, ctypes.POINTER(ctypes.c_size_t),
+                             ctypes.POINTER(ctypes.c_uint)], ctypes.c_ubyte),
         "CFHid_ClearTagBuf": ([], ctypes.c_ubyte),
         "CFHid_RebootDevice": ([u8], ctypes.c_ubyte),
         "CFHid_LockCardG2": ([u8p, u8], ctypes.c_ubyte),
@@ -720,11 +722,17 @@ class Ru5600Reader:
                 if msg == 2 and param1 > 0 and param2:
                     raw = ctypes.string_at(param2, param3)
                     tags = parse_tag_buffer(raw, param1)
-                    if tags and self._on_tags:
-                        self._on_tags(tags)
+                    if tags:
+                        # el callback es la via real por la que llegan los tags:
+                        # guardarlos para que poll_tags los entregue
+                        self._cb_tags.extend(tags)
+                        if self._on_tags:
+                            self._on_tags(tags)
             except Exception:
                 pass
 
+        if not hasattr(self, "_cb_tags"):
+            self._cb_tags = []
         self._cb = _CB(_cb)
         self._lib.CFHid_SetCallback(self._cb)
 
@@ -1031,10 +1039,15 @@ class Ru5600Reader:
         return tags
 
     def poll_tags(self) -> List[Tag]:
-        """Drain the tag buffer filled by active mode."""
+        """Drain the tag buffer filled by active mode (callback primero)."""
+        queued = getattr(self, "_cb_tags", None)
+        if queued:
+            out = list(queued)
+            del queued[:]
+            return out
         buf = (ctypes.c_ubyte * 65536)()
-        total = ctypes.c_ushort(0)
-        count = ctypes.c_ushort(0)
+        total = ctypes.c_size_t(0)
+        count = ctypes.c_uint(0)
         ret = self._lib.CFHid_GetTagBuf(buf, ctypes.byref(total), ctypes.byref(count))
         if not ret or count.value == 0:
             return []
