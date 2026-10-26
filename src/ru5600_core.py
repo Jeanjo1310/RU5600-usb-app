@@ -838,7 +838,8 @@ class Ru5600Reader:
         det.elapsed = time.monotonic() - t0
         return det
 
-    def measure(self, duration: float = 5.0, poll: float = 0.1) -> dict:
+    def measure(self, duration: float = 5.0, poll: float = 0.1,
+                stop=None) -> dict:
         """Measure the read speed and the antenna signal.
 
         The reader is switched to active mode and left streaming while
@@ -862,6 +863,8 @@ class Ru5600Reader:
         t0 = time.monotonic()
         try:
             while time.monotonic() - t0 < duration:
+                if stop is not None and stop.is_set():
+                    break
                 polls += 1
                 tags = self.poll_tags()
                 if tags:

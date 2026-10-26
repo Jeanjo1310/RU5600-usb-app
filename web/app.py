@@ -6,13 +6,15 @@ produccion compila con @tailwindcss/cli segun la guia oficial).
 """
 from __future__ import annotations
 
+import io
 import os
+import re
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "..", "src"))
@@ -625,21 +627,60 @@ def _active_run():
         _active["running"] = False
 
 
+_measure = {"running": False, "result": None, "error": None,
+            "seconds": 0.0, "started": 0.0}
+_measure_stop = threading.Event()
+
+
 @app.route("/api/measure", methods=["POST"])
 def api_measure():
+    """Medicion de antena en segundo plano: se puede cortar con /api/measure_stop."""
     cfg = request.get_json(silent=True) or {}
-    seconds = float(cfg.get("seconds", 10))
-
-    def _do():
-        r = _need_usb()
-        st = r.measure(seconds)
-        return (st["detections"], round(st["detections_per_s"], 2),
-                round(st["rssi_avg"], 1))
     try:
-        det, dps, rssi = _guarded(_do, timeout=max(60, seconds + 30))
-        return jsonify(ok=True, det=det, dps=dps, rssi=rssi)
-    except Exception as exc:  # noqa: BLE001
-        return jsonify(ok=False, error=str(exc))
+        seconds = max(1.0, min(120.0, float(cfg.get("seconds", 10))))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="segundos invalidos")
+    with _lock:
+        if _measure["running"]:
+            return jsonify(ok=False, error="ya esta midiendo")
+        _measure.update(running=True, result=None, error=None,
+                        seconds=seconds, started=time.time())
+        _measure_stop.clear()
+
+    def _run():
+        try:
+            r = _need_usb()
+            st = r.measure(seconds, stop=_measure_stop)
+            _measure["result"] = {
+                "det": st["detections"],
+                "dps": round(st["detections_per_s"], 2),
+                "rssi": round(st["rssi_avg"], 1),
+                "elapsed": round(st["elapsed"], 1),
+                "stopped": _measure_stop.is_set(),
+            }
+        except Exception as exc:  # noqa: BLE001
+            _measure["error"] = str(exc)
+        finally:
+            _measure["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify(ok=True, seconds=seconds)
+
+
+@app.route("/api/measure_status")
+def api_measure_status():
+    left = 0.0
+    if _measure["running"]:
+        left = max(0.0, _measure["seconds"] - (time.time() - _measure["started"]))
+    return jsonify(running=_measure["running"], result=_measure["result"],
+                   error=_measure["error"], left=round(left, 1))
+
+
+@app.route("/api/measure_stop", methods=["POST"])
+def api_measure_stop():
+    if _measure["running"]:
+        _measure_stop.set()
+    return jsonify(ok=True)
 
 
 def _risk_ok(cfg):
@@ -874,6 +915,186 @@ def _batch_run(base, step, check, lock_note=False):
                                "rssi": ""})
     finally:
         _batch["running"] = False
+
+
+_map = {"running": False, "done": 0, "total": 0, "rows": []}
+_map_stop = threading.Event()
+
+
+def _norm_epc(v):
+    s = str(v if v is not None else "").strip().upper()
+    s = s.replace(" ", "").replace(":", "").replace("-", "")
+    if s.startswith("0X"):
+        s = s[2:]
+    return s
+
+
+def _map_problems(a_hex, b_hex):
+    probs = []
+    for label, v in (("columna A", a_hex), ("columna B", b_hex)):
+        if not v:
+            probs.append(label + " vacia")
+        elif not re.fullmatch(r"[0-9A-F]+", v):
+            probs.append(label + " no es hex")
+        elif len(v) % 2:
+            probs.append(label + " tiene largo impar")
+        elif not 12 <= len(v) <= 64:
+            probs.append(label + " fuera de 12..64 caracteres hex")
+    if not probs:
+        if len(a_hex) != len(b_hex):
+            probs.append("A y B tienen distinto largo")
+        elif a_hex == b_hex:
+            probs.append("A y B son iguales")
+    return probs
+
+
+@app.route("/api/map_template")
+def api_map_template():
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "cambios"
+    ws.append(["EPC actual", "EPC nuevo"])
+    ws.append(["E2004704D9A06820068E0001", "E2004704D9A06820068E0101"])
+    ws.append(["E2004704D9A06820068E0002", "E2004704D9A06820068E0102"])
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 32
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True,
+                     download_name="plantilla-cambio-epc.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/api/map_parse", methods=["POST"])
+def api_map_parse():
+    """Lee la planilla (A = EPC actual, B = EPC nuevo) y valida todo antes de escribir."""
+    up = request.files.get("file")
+    if up is None:
+        return jsonify(ok=False, error="falta el archivo")
+    name = (up.filename or "").lower()
+    raw_rows = []
+    try:
+        if name.endswith((".xlsx", ".xlsm")):
+            from openpyxl import load_workbook
+            wb = load_workbook(up, data_only=True, read_only=True)
+            for row in wb.active.iter_rows(values_only=True):
+                if row and any(v not in (None, "") for v in row):
+                    raw_rows.append((row[0], row[1] if len(row) > 1 else None))
+        else:
+            import csv as _csv
+            text = up.read().decode("utf-8-sig", "replace")
+            for row in _csv.reader(io.StringIO(text)):
+                if row and any(v.strip() for v in row):
+                    raw_rows.append((row[0], row[1] if len(row) > 1 else None))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="no pude leer la planilla: " + str(exc))
+
+    if raw_rows:
+        head_a = str(raw_rows[0][0] or "").strip().lower()
+        head_b = str(raw_rows[0][1] or "").strip().lower()
+        if head_a in ("epc actual", "epc", "tag", "actual") and head_b in ("epc nuevo", "nuevo", "epc nuevo ", ""):
+            raw_rows = raw_rows[1:]
+
+    plan, errors = [], []
+    seen_a, seen_b = {}, {}
+    for i, (va, vb) in enumerate(raw_rows, start=1):
+        a_hex, b_hex = _norm_epc(va), _norm_epc(vb)
+        if not a_hex and not b_hex:
+            continue
+        probs = _map_problems(a_hex, b_hex)
+        if not probs:
+            if a_hex in seen_a:
+                probs.append("A repetido (fila %d)" % seen_a[a_hex])
+            if b_hex in seen_b:
+                probs.append("B repetido (fila %d)" % seen_b[b_hex])
+        if probs:
+            errors.append({"row": i, "a": a_hex, "b": b_hex,
+                           "error": "; ".join(probs)})
+        else:
+            seen_a[a_hex] = i
+            seen_b[b_hex] = i
+            plan.append({"row": i, "a": a_hex, "b": b_hex})
+
+    valid = bool(plan) and not errors
+    return jsonify(ok=True, plan=plan, errors=errors, valid=valid,
+                   total=len(plan) + len(errors),
+                   ignored="las demás columnas se ignoran")
+
+
+@app.route("/api/map_start", methods=["POST"])
+def api_map_start():
+    cfg = request.get_json(silent=True) or {}
+    plan = cfg.get("plan") or []
+    if not plan:
+        return jsonify(ok=False, error="la planilla no tiene filas para escribir")
+    clean = []
+    for e in plan:
+        a_hex, b_hex = _norm_epc(e.get("a")), _norm_epc(e.get("b"))
+        if _map_problems(a_hex, b_hex):
+            return jsonify(ok=False, error="fila invalida: " + a_hex)
+        clean.append({"a": a_hex, "b": b_hex})
+    with _lock:
+        if _map["running"]:
+            return jsonify(ok=False, error="ya corriendo")
+        _map.update(running=True, done=0, total=len(clean), rows=[])
+        _map_stop.clear()
+    threading.Thread(target=_map_run, args=(clean,), daemon=True).start()
+    return jsonify(ok=True, total=len(clean))
+
+
+@app.route("/api/map_status")
+def api_map_status():
+    return jsonify(running=_map["running"], done=_map["done"],
+                   total=_map["total"], rows=_map["rows"])
+
+
+@app.route("/api/map_stop", methods=["POST"])
+def api_map_stop():
+    _map_stop.set()
+    return jsonify(ok=True)
+
+
+def _map_run(plan):
+    pending = {e["a"]: e["b"] for e in plan}
+    try:
+        r = _get_reader()
+        seen = set()
+        while not _map_stop.is_set() and pending:
+            try:
+                tags = r.scan()
+            except Exception:  # noqa: BLE001
+                break
+            progressed = False
+            for tag in tags:
+                key = (tag.epc_hex, tag.ant)
+                if key in seen:
+                    continue
+                seen.add(key)
+                cur = (tag.epc_hex or "").upper()
+                if cur not in pending:
+                    continue
+                new_hex = pending[cur]
+                new_bytes = bytes.fromhex(new_hex)
+                try:
+                    r.write_epc(new_bytes)
+                    back = r.read_card(1, 0, max(4, (len(new_bytes) + 4 + 1) // 2),
+                                      b"\x00" * 4, retries=4)
+                    res = "escrito" if back[4:4 + len(new_bytes)] == new_bytes else "verificación FALLÓ"
+                except Exception as exc:  # noqa: BLE001
+                    res = "ERROR: " + str(exc)[:60]
+                _map["done"] += 1
+                _map["rows"].append({"tag": cur, "new": new_hex, "result": res})
+                pending.pop(cur, None)
+                progressed = True
+            if not progressed:
+                time.sleep(0.4)
+    except Exception as exc:  # noqa: BLE001
+        _map["rows"].append({"tag": "", "new": "",
+                             "result": "ERROR: " + str(exc)[:80]})
+    finally:
+        _map["running"] = False
 
 
 @app.route("/barrido")

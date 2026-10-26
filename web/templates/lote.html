@@ -41,6 +41,30 @@
   <p id="bmsg" class="mt-2 text-sm"></p>
   <div class="overflow-x-auto mt-2"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Tag</th><th class="px-4 py-2">EPC escrito</th><th class="px-4 py-2">Resultado</th><th class="px-4 py-2">RSSI</th></tr></thead><tbody id="brows"></tbody></table></div>
 </div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Cambiar EPC según planilla</h2>
+  <p class="text-sm text-base-content/60 mb-3">Para cambiar tags uno por uno: la columna A es el EPC que el tag tiene hoy y la columna B el que tiene que quedar. Se validan todas las filas antes de escribir; el resto de las columnas se ignora.</p>
+  <div class="flex flex-wrap items-end gap-3 mb-3">
+    <button id="mtpl" class="btn btn-outline">Descargar plantilla</button>
+    <div>
+      <label class="block text-sm mb-1" for="mfile">Planilla (.xlsx o .csv)</label>
+      <input id="mfile" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered w-72">
+    </div>
+    <span id="mmsg" class="text-sm pb-2"></span>
+  </div>
+  <div id="mtableWrap" class="overflow-x-auto hidden">
+    <table class="table table-zebra w-full text-sm">
+      <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC actual</th><th class="px-4 py-2">EPC nuevo</th><th class="px-4 py-2">Estado</th></tr></thead>
+      <tbody id="mrows"></tbody>
+    </table>
+  </div>
+  <div class="flex gap-2 mt-3">
+    <button id="mstart" class="btn btn-primary" disabled>Iniciar cambio</button>
+    <button id="mstop" class="btn btn-error" disabled>Parar</button>
+  </div>
+  <p id="mprog" class="mt-2 text-sm"></p>
+  <div class="overflow-x-auto mt-2"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Tag</th><th class="px-4 py-2">EPC nuevo</th><th class="px-4 py-2">Resultado</th></tr></thead><tbody id="mres"></tbody></table></div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -85,6 +109,55 @@ document.getElementById('bstart').onclick = async () => {
   btimer = setInterval(bpoll, 500); bpoll();
 };
 document.getElementById('bstop').onclick = async () => { await post('/api/batch_stop', {}); };
+let mPlan = null, mTimer2 = null;
+document.getElementById('mtpl').onclick = () => { window.location = '/api/map_template'; };
+document.getElementById('mfile').onchange = async (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  const r = await fetch('/api/map_parse', {method: 'POST', body: fd}).then(x => x.json());
+  const tb = document.getElementById('mrows'); tb.innerHTML = '';
+  document.getElementById('mtableWrap').classList.remove('hidden');
+  if (!r.ok) { document.getElementById('mmsg').textContent = 'Error: ' + r.error; document.getElementById('mstart').disabled = true; return; }
+  (r.plan || []).forEach(x => {
+    const tr = document.createElement('tr'); tr.className = 'border-b border-base-300';
+    tr.innerHTML = `<td class="px-4 py-2">${x.row}</td><td class="px-4 py-2 font-mono">${x.a}</td><td class="px-4 py-2 font-mono">${x.b}</td><td class="px-4 py-2"><span class="badge badge-success">ok</span></td>`;
+    tb.appendChild(tr);
+  });
+  (r.errors || []).forEach(x => {
+    const tr = document.createElement('tr'); tr.className = 'border-b border-base-300';
+    tr.innerHTML = `<td class="px-4 py-2">${x.row}</td><td class="px-4 py-2 font-mono">${x.a || '-'}</td><td class="px-4 py-2 font-mono">${x.b || '-'}</td><td class="px-4 py-2"><span class="badge badge-error">${x.error}</span></td>`;
+    tb.appendChild(tr);
+  });
+  mPlan = r.valid ? r.plan : null;
+  document.getElementById('mstart').disabled = !r.valid;
+  document.getElementById('mmsg').textContent = r.valid
+    ? r.plan.length + ' filas listas para escribir'
+    : (r.errors.length + ' filas con problemas: corregí la planilla y volvé a cargarla');
+};
+async function mpoll2() {
+  const r = await fetch('/api/map_status').then(x => x.json());
+  document.getElementById('mstart').disabled = r.running || !mPlan;
+  document.getElementById('mstop').disabled = !r.running;
+  document.getElementById('mprog').textContent = r.running ? `Cambiando… ${r.done}/${r.total}` : `Listo: ${r.done}/${r.total}.`;
+  const tb = document.getElementById('mres'); tb.innerHTML = '';
+  (r.rows || []).forEach((x, i) => {
+    const tr = document.createElement('tr'); tr.className = 'border-b border-base-300';
+    tr.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono">${x.tag}</td><td class="px-4 py-2 font-mono">${x.new}</td><td class="px-4 py-2">${x.result}</td>`;
+    tb.appendChild(tr);
+  });
+  if (!r.running && mTimer2) { clearInterval(mTimer2); mTimer2 = null; }
+}
+document.getElementById('mstart').onclick = async () => {
+  if (!mPlan) return;
+  const r = await post('/api/map_start', {plan: mPlan});
+  if (!r.ok) { document.getElementById('mprog').textContent = 'Error: ' + r.error; return; }
+  if (!mTimer2) mTimer2 = setInterval(mpoll2, 500);
+  mpoll2();
+};
+document.getElementById('mstop').onclick = async () => { await post('/api/map_stop', {}); };
+mpoll2();
+
 bpoll();
 </script>
 {% endblock %}

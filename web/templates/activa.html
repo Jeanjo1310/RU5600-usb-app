@@ -3,48 +3,94 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Lectura continua (stream)</h2>
-  <div class="flex flex-wrap items-center gap-2 mb-2">
-    <button id="astart" class="btn btn-soft btn-success">Leer</button>
-    <button id="astop" class="btn btn-error" disabled>Parar</button>
-    <span id="astatus" class="text-sm opacity-80">Detenido.</span>
+  <div class="flex flex-wrap items-end gap-4 mb-3">
+    <div>
+      <div class="text-sm mb-1">Lectura</div>
+      <button id="aToggle" class="btn btn-soft btn-success">Leer</button>
+    </div>
+    <div class="pb-2"><span id="astatus" class="text-sm text-base-content/60">Detenido.</span></div>
     <span class="flex-1"></span>
-    <input id="mdur" type="number" value="10" min="1" class="input input-bordered w-20" title="segundos">
+    <div>
+      <label class="block text-sm mb-1" for="mdur">Segundos de medición: <span id="mdurv" class="font-mono">10</span></label>
+      <input id="mdur" type="range" class="range range-sm w-48" min="5" max="60" step="5" value="10">
+    </div>
     <button id="mgo" class="btn btn-outline">Medir antena</button>
   </div>
-  <p id="mout" class="text-sm mb-2"></p>
+  <p id="mout" class="text-sm text-base-content/60 mb-2"></p>
   <div class="overflow-x-auto">
     <table class="table table-zebra w-full text-sm">
-      <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">TID</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Ant</th><th class="px-4 py-2">Veces</th></tr></thead>
+      <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Crudo</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Ant</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">RSSI</th><th class="px-4 py-2">Última vez</th></tr></thead>
       <tbody id="arows"></tbody>
     </table>
   </div>
-  <p class="mt-2 text-sm text-base-content/60">Crudo + chip-primero como en Barrido. La relectura suma veces, no filas.</p>
+  <p class="mt-2 text-sm text-base-content/60">Veces = cuántas veces se releyó ese tag (no crea filas nuevas). Ant = antena que lo leyó. RSSI = fuerza de la señal: cuanto más cerca de 0, mejor. Crudo = la trama tal como llega del lector.</p>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-let seen = 0, counts = {}, timer = null;
-function key(t) { return (t.raw || t.epc) + '|' + (t.ant || ''); }
+let timer = null, mTimer = null, isRunning = false;
+function paintToggle() {
+  const b = document.getElementById('aToggle');
+  b.textContent = t(isRunning ? 'Parar' : 'Leer');
+  b.className = 'btn ' + (isRunning ? 'btn-error' : 'btn-soft btn-success');
+}
 async function poll() {
   const r = await fetch('/api/active_tags').then(r => r.json());
-  document.getElementById('astart').disabled = r.running;
-  document.getElementById('astop').disabled = !r.running;
-  document.getElementById('astatus').textContent = r.running ? `Leyendo… ${r.tags.length} tags` : `Detenido. ${r.tags.length} tags.`;
+  isRunning = r.running;
+  paintToggle();
+  document.getElementById('astatus').textContent = r.running
+    ? t('Leyendo…') + ' ' + r.tags.length + ' tags'
+    : t('Detenido.') + ' ' + r.tags.length + ' tags.';
   const tb = document.getElementById('arows');
-  r.tags.forEach((t, i) => {
+  r.tags.forEach((x, i) => {
     let row = document.getElementById('arow' + i);
     if (!row) { row = document.createElement('tr'); row.id = 'arow' + i; row.className = 'border-b border-base-300'; tb.appendChild(row); }
-    row.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.raw}">${t.raw}</td><td class="px-4 py-2 font-mono">${t.epc}</td><td class="px-4 py-2">${t.chip}</td><td class="px-4 py-2">${t.ant}</td><td class="px-4 py-2">${t.rssi}</td><td class="px-4 py-2">${t.n}</td><td class="px-4 py-2">${new Date().toLocaleTimeString()}</td>`;
+    row.innerHTML = `<td class="px-4 py-2">${i + 1}</td>`
+      + `<td class="px-4 py-2 font-mono">${x.epc}</td>`
+      + `<td class="px-4 py-2 font-mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${x.raw}">${x.raw}</td>`
+      + `<td class="px-4 py-2">${x.chip === 'interpreter pending' ? t('sin identificar') : x.chip}</td>`
+      + `<td class="px-4 py-2">${x.ant}</td>`
+      + `<td class="px-4 py-2">${x.n}</td>`
+      + `<td class="px-4 py-2">${x.rssi}</td>`
+      + `<td class="px-4 py-2">${new Date().toLocaleTimeString()}</td>`;
   });
   while (tb.children.length > r.tags.length) tb.removeChild(tb.lastChild);
+  if (!r.running && timer) { clearInterval(timer); timer = null; }
 }
-document.getElementById('astart').onclick = async () => { await post('/api/active_start', {}); timer = setInterval(poll, 500); poll(); };
-document.getElementById('astop').onclick = async () => { await post('/api/active_stop', {}); };
-document.getElementById('mgo').onclick = async () => {
-  document.getElementById('mout').textContent = 'Midiendo...';
-  const r = await post('/api/measure', {seconds: parseFloat(document.getElementById('mdur').value) || 10});
-  document.getElementById('mout').textContent = r.ok ? `${r.det} detecciones (${r.dps}/s), RSSI avg ${r.rssi}` : 'Error: ' + r.error;
+document.getElementById('aToggle').onclick = async () => {
+  if (isRunning) {
+    await post('/api/active_stop', {});
+  } else {
+    const r = await post('/api/active_start', {});
+    if (!r.ok) { document.getElementById('astatus').textContent = 'Error: ' + r.error; return; }
+    if (!timer) timer = setInterval(poll, 500);
+  }
+  poll();
 };
-poll();
+const dur = document.getElementById('mdur');
+dur.oninput = () => { document.getElementById('mdurv').textContent = dur.value; };
+async function mpoll() {
+  const s = await fetch('/api/measure_status').then(r => r.json());
+  const b = document.getElementById('mgo');
+  b.textContent = t(s.running ? 'Detener' : 'Medir antena');
+  b.className = 'btn ' + (s.running ? 'btn-error' : 'btn-outline');
+  dur.disabled = s.running;
+  const out = document.getElementById('mout');
+  if (s.running) out.textContent = t('Midiendo…') + ' ' + s.left + ' s';
+  else if (s.error) out.textContent = 'Error: ' + s.error;
+  else if (s.result) out.textContent = s.result.det + ' ' + t('detecciones') + ' (' + s.result.dps + '/s), RSSI avg ' + s.result.rssi + (s.result.stopped ? ' — ' + t('cortada a los') + ' ' + s.result.elapsed + ' s' : '');
+  if (!s.running && mTimer) { clearInterval(mTimer); mTimer = null; }
+}
+document.getElementById('mgo').onclick = async () => {
+  const s = await fetch('/api/measure_status').then(r => r.json());
+  if (s.running) { await post('/api/measure_stop', {}); }
+  else {
+    const r = await post('/api/measure', {seconds: parseFloat(dur.value) || 10});
+    if (!r.ok) { document.getElementById('mout').textContent = 'Error: ' + r.error; return; }
+    mTimer = setInterval(mpoll, 400);
+  }
+  mpoll();
+};
+poll(); mpoll();
 </script>
 {% endblock %}
