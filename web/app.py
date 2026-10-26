@@ -59,6 +59,21 @@ except Exception as exc:  # noqa: BLE001 - la DB es aparte del lector
 _reader: Ru5600Reader | None = None
 _net_reader = None
 _net_info: dict = {"mode": "usb"}
+
+# Modo de lectura (Conexión): ritmo del CAMINO DIRIGIDO hasta que exista la dirección
+# de ReadTime (TAREA 1 del backlog). Balanceado = el ritmo medido 2026-10-26 (120 ms
+# entre lecturas). Ráfaga acelera y Confiable suma reintentos: son pausas NUESTRAS,
+# no un parámetro del lector.
+_READ_MODES = {
+    "burst":    {"label": "Ráfaga",     "pause": 0.03, "retries": 1},
+    "balanced": {"label": "Balanceado", "pause": 0.12, "retries": 1},
+    "reliable": {"label": "Confiable",  "pause": 0.25, "retries": 2},
+}
+_read_cfg: dict = {"mode": "balanced"}
+
+
+def _read_pace() -> dict:
+    return _READ_MODES.get(_read_cfg.get("mode"), _READ_MODES["balanced"])
 _lock = threading.Lock()
 _stop = threading.Event()
 _state = {"running": False, "tags": [], "seen": set(), "started": 0.0,
@@ -97,10 +112,12 @@ def conn_state():
                     "hw": si.hard_ver}
         except Exception:  # noqa: BLE001
             info = {}
-        return jsonify(open=True, mode="usb", info=info)
+        return jsonify(open=True, mode="usb", info=info,
+                       read_mode=_read_cfg.get("mode", "balanced"))
     if _net_reader is not None and _net_reader.is_open():
         return jsonify(open=True, mode="net", info={})
-    return jsonify(open=False, mode=_net_info.get("mode", "usb"), info={})
+    return jsonify(open=False, mode=_net_info.get("mode", "usb"), info={},
+                   read_mode=_read_cfg.get("mode", "balanced"))
 
 
 def _need_usb():
@@ -387,6 +404,12 @@ def api_open():
     global _reader, _net_reader
     cfg = request.get_json(silent=True) or {}
     t = cfg.get("transport", "usb")
+    rm = str(cfg.get("read_mode") or "").lower()
+    if rm in _READ_MODES:
+        _read_cfg["mode"] = rm
+        _log("info", "modo de lectura: %s (pausa %.0f ms, reintentos %d)" % (
+            _READ_MODES[rm]["label"], _READ_MODES[rm]["pause"] * 1000,
+            _READ_MODES[rm]["retries"]))
     try:
         _log("info", "abrir conexión: transporte=%s ip=%s puerto=%s" % (t, cfg.get("ip"), cfg.get("port")))
         if t == "net":
@@ -401,6 +424,21 @@ def api_open():
         return jsonify(ok=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/read_mode", methods=["POST"])
+def api_read_mode():
+    """Cambia el modo de lectura (Ráfaga/Balanceado/Confiable) sin reabrir el lector."""
+    cfg = request.get_json(silent=True) or {}
+    rm = str(cfg.get("mode") or "").lower()
+    if rm not in _READ_MODES:
+        return jsonify(ok=False, error="modo desconocido: " + rm), 400
+    _read_cfg["mode"] = rm
+    pace = _READ_MODES[rm]
+    _log("info", "modo de lectura: %s (pausa %.0f ms, reintentos %d)" % (
+        pace["label"], pace["pause"] * 1000, pace["retries"]))
+    return jsonify(ok=True, read_mode=rm, label=pace["label"],
+                   pause_ms=pace["pause"] * 1000, retries=pace["retries"])
 
 
 @app.route("/api/tcp_server", methods=["POST"])
@@ -1546,9 +1584,9 @@ def _run(seconds, target=0, mode="answer"):
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True
                     last_hit = time.monotonic()
-                    # pausa entre lecturas dirigidas: sin esto se saturan ~16/s
-                    # y el lector deja de contestar (medido 2026-10-26)
-                    time.sleep(max(poll, 0.12))
+                    # pausa entre lecturas dirigidas: la decide el modo de lectura
+                    # (Conexión): Ráfaga 30 ms · Balanceado 120 ms · Confiable 250 ms
+                    time.sleep(_read_pace()["pause"])
                     continue
                 stream_tags = r.poll_tags()
                 if stream_tags:
@@ -1920,7 +1958,8 @@ def _direct_read(r):
     """
     try:
         # 8 palabras = CRC(2) + PC(2) + hasta 12 bytes de EPC
-        data = r.read_card(1, 0, 8, b"\x00" * 4, retries=1)
+        data = r.read_card(1, 0, 8, b"\x00" * 4,
+                           retries=_read_pace()["retries"])
         raw = data.hex().upper()
         # el PC declara el largo del EPC: bits 15-11 = palabras
         if len(data) >= 4:
@@ -1956,7 +1995,7 @@ def api_read_until():
         return jsonify(ok=False, error="attempts invalido"), 400
     attempts = max(1, min(attempts, 100))
     try:
-        pause = float(cfg.get("pause", 0.1))
+        pause = float(cfg.get("pause", _read_pace()["pause"]))
     except (TypeError, ValueError):
         return jsonify(ok=False, error="pause invalido"), 400
     pause = max(0.0, min(pause, 2.0))
@@ -2215,7 +2254,7 @@ def api_bench():
         return jsonify(ok=False, error="trials invalido"), 400
     trials = max(1, min(trials, 200))
     try:
-        pause = float(cfg.get("pause", 0.1))
+        pause = float(cfg.get("pause", _read_pace()["pause"]))
     except (TypeError, ValueError):
         return jsonify(ok=False, error="pause invalido"), 400
     pause = max(0.0, min(pause, 2.0))

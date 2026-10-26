@@ -86,6 +86,16 @@ async function refreshState() {
   }
 }
 document.querySelectorAll('input[name=t]').forEach(el => el.onchange = syncTransport);
+/* modo de lectura: se guarda, se manda al abrir y se puede cambiar con el lector abierto */
+const rmSel = document.getElementById('mode');
+try { const saved = localStorage.getItem('ru5600_read_mode'); if (saved) rmSel.value = saved; } catch (e) {}
+rmSel.onchange = async () => {
+  try { localStorage.setItem('ru5600_read_mode', rmSel.value); } catch (e) {}
+  const r = await post('/api/read_mode', {mode: rmSel.value});
+  document.getElementById('connMsg').textContent = r.ok
+    ? (t('Modo de lectura: ') + rmSel.selectedOptions[0].textContent)
+    : ('Error: ' + r.error);
+};
 document.getElementById('connToggle').onclick = async () => {
   if (connOpen) {
     await post('/api/close', {});
@@ -94,7 +104,7 @@ document.getElementById('connToggle').onclick = async () => {
     return;
   }
   const tr = document.querySelector('input[name=t]:checked').value;
-  const r = await post('/api/open', {transport: tr, ip: document.getElementById('ip').value, port: document.getElementById('port').value, baud: document.getElementById('baud').value});
+  const r = await post('/api/open', {transport: tr, ip: document.getElementById('ip').value, port: document.getElementById('port').value, baud: document.getElementById('baud').value, read_mode: document.getElementById('mode').value});
   document.getElementById('connMsg').textContent = r.ok ? 'Abierto.' : ('Error: ' + r.error);
   refreshState();
 };
