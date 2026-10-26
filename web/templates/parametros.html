@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Parámetros del lector</h2>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
     <div><label class="block text-sm mb-1" for="rf">RF Power</label><select id="rf" class="select select-bordered w-full"></select></div>
     <div><label class="block text-sm mb-1" for="band">Banda</label><select id="band" class="select select-bordered w-full"></select></div>
     <div><label class="block text-sm mb-1" for="wm">WorkMode</label><select id="wm" class="select select-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></div>
@@ -11,45 +11,64 @@
     <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
   </div>
   <div class="flex flex-wrap gap-2">
-    <button id="pread" class="btn btn-soft btn-success">Obtener</button>
     <button id="papply" class="btn btn-primary">Aplicar</button>
     <button id="pdef" class="btn btn-outline">Defecto</button>
-    <button id="psil" class="btn btn-outline">Silenciar ya</button>
   </div>
-  <h3 class="text-md font-semibold mt-4 mb-2">Lectura por defecto (para Leer/Escribir)</h3>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+  <p class="mt-2 text-xs text-base-content/60">Los valores se leen del lector al abrir esta pantalla. Aplicar escribe y después relee cada valor: si el lector no acepta uno, se avisa acá con el valor que quedó.</p>
+  <p id="pmsg" class="mt-2 text-sm"></p>
+</div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Frecuencia</h2>
+  <div class="flex flex-wrap items-end gap-3">
+    <div><label class="block text-sm mb-1" for="fband">Banda</label><select id="fband" class="select select-bordered w-64"></select></div>
+    <button id="fread" class="btn btn-soft btn-success">Leer</button>
+    <button id="fset" class="btn btn-primary">Grabar banda</button>
+    <div class="text-sm pb-2">Frecuencia cruda: <span id="fraw" class="font-mono">-</span></div>
+  </div>
+  <p class="text-xs mt-2 text-base-content/60">Frecuencia cruda es el valor interno que reporta el lector; no está en MHz ni es un canal. Sirve como referencia: leela antes y después de grabar la banda, y si cambia, la grabación se aplicó.</p>
+  <p id="fmsg" class="mt-2 text-sm"></p>
+</div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Lectura por defecto (para Leer/Escribir)</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 items-start">
     <div><label class="block text-sm mb-1" for="dmem">Área</label><select id="dmem" class="select select-bordered w-full"><option>EPC</option><option>TID</option><option>USER</option></select></div>
     <div><label class="block text-sm mb-1" for="dptr">Inicio (hex)</label><input id="dptr" value="00" class="input input-bordered w-full"></div>
     <div><label class="block text-sm mb-1" for="dlen">Longitud (hex)</label><input id="dlen" value="06" class="input input-bordered w-full"></div>
     <div><label class="block text-sm mb-1" for="drt">ReadTime</label><input id="drt" value="2" class="input input-bordered w-full"></div>
   </div>
-  <h3 class="text-md font-semibold mt-4 mb-2">Salida teclado (cuña: solo app de escritorio)</h3>
-  <div class="grid grid-cols-2 gap-2">
+</div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-1">Salida teclado (cuña: solo app de escritorio)</h2>
+  <div class="grid grid-cols-2 gap-3 items-start">
     <div><label class="block text-sm mb-1" for="dout">Formato</label><select id="dout" class="select select-bordered w-full"><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></div>
     <div><div class="text-sm mb-1">Fin de lectura</div><label class="flex items-center gap-2 text-sm pt-1.5"><input type="checkbox" class="checkbox checkbox-sm" id="denter" checked> OutWithEnterKey</label></div>
   </div>
-  <p class="mt-2 text-xs text-base-content/60">Aplicar escribe y después relee cada valor: si el lector no acepta uno, se avisa acá con el valor que quedó.</p>
-  <p id="pmsg" class="mt-2 text-sm"></p>
+</div>
+<div class="card bg-base-100 shadow-sm p-6">
+  <h2 class="text-lg font-semibold mb-1">Dispositivo</h2>
+  <p class="text-sm text-base-content/60 mb-3">Reiniciar el lector corta la conexión unos segundos; después volvé a abrirla en Conexión.</p>
+  <button id="reboot" class="btn btn-warning">Reiniciar lector</button>
+  <p id="rmsg" class="mt-2 text-sm"></p>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-async function loadBands() {
-  for (let v = 0; v <= 30; v++) { const o = document.createElement('option'); o.textContent = v + 'dBm'; document.getElementById('rf').appendChild(o); }
-  const bands = ["USA","Europe","China","Korea","Australia","Singapore","Taiwan","Canada","Brazil","Israel","South Africa","Thailand","Malaysia","Japan","New Zealand","India","Hongkong","Mexico"];
-  const b = document.getElementById('band'); bands.forEach(x => { const o = document.createElement('option'); o.textContent = x; b.appendChild(o); });
-}
-loadBands();
-document.getElementById('pread').onclick = async () => {
+const BANDS = ["USA","Europe","China","Korea","Australia","Singapore","Taiwan","Canada","Brazil","Israel","South Africa","Thailand","Malaysia","Japan","New Zealand","India","Hongkong","Mexico"];
+for (let v = 0; v <= 30; v++) { const o = document.createElement('option'); o.textContent = v + 'dBm'; document.getElementById('rf').appendChild(o); }
+BANDS.forEach(x => { const o = document.createElement('option'); o.textContent = x; document.getElementById('band').appendChild(o); });
+BANDS.forEach(x => { const o = document.createElement('option'); o.textContent = x; document.getElementById('fband').appendChild(o); });
+async function pread() {
   const r = await post('/api/params_read', {});
   if (r.ok) {
     document.getElementById('rf').selectedIndex = r.rf;
-    document.getElementById('wm').value = String(r.mode);
-    document.getElementById('beep').checked = !!r.beep;
     document.getElementById('filt').value = r.filter;
+    document.getElementById('beep').checked = !!r.beep;
+    document.getElementById('wm').value = String(r.mode);
     document.getElementById('pmsg').textContent = 'Frecuencia: ' + r.freq;
-  } else document.getElementById('pmsg').textContent = 'Error: ' + r.error;
-};
+  } else {
+    document.getElementById('pmsg').textContent = 'Error: ' + r.error;
+  }
+}
 document.getElementById('papply').onclick = async () => {
   for (const k of ['dmem','dptr','dlen','drt','dout']) localStorage.setItem('ru5600_'+k, document.getElementById(k).value);
   localStorage.setItem('ru5600_denter', document.getElementById('denter').checked ? '1' : '0');
@@ -67,21 +86,27 @@ document.getElementById('papply').onclick = async () => {
     msg.textContent = 'Aplicado y verificado releyendo el lector.';
   }
 };
-for (const k of ['dmem','dptr','dlen','drt','dout']) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(k).value = v; }
-if (localStorage.getItem('ru5600_denter') === '0') document.getElementById('denter').checked = false;
-// al abrir la pantalla, traer los valores reales del lector
-setTimeout(() => { document.getElementById('pread').click(); }, 300);
-document.getElementById('psil').onclick = async () => {
-  const r = await post('/api/silence', {});
-  document.getElementById('pmsg').textContent = r.ok ? 'Silenciado.' : 'Error: ' + r.error;
-};
 document.getElementById('pdef').onclick = () => {
-  document.getElementById('rf').selectedIndex = 15;
+  document.getElementById('rf').selectedIndex = 18;
   document.getElementById('band').selectedIndex = 0;
   document.getElementById('wm').value = '0';
-  document.getElementById('filt').value = '0';
-  document.getElementById('beep').checked = true;
-  document.getElementById('pmsg').textContent = 'Defecto (UI). Usá Aplicar para mandarlo al lector.';
+  document.getElementById('filt').value = 0;
 };
+for (const k of ['dmem','dptr','dlen','drt','dout']) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(k).value = v; }
+if (localStorage.getItem('ru5600_denter') === '0') document.getElementById('denter').checked = false;
+document.getElementById('fread').onclick = async () => {
+  const r = await post('/api/freq_read', {});
+  document.getElementById('fmsg').textContent = r.ok ? 'OK' : 'Error: ' + r.error;
+  if (r.ok) document.getElementById('fraw').textContent = r.raw;
+};
+document.getElementById('fset').onclick = async () => {
+  const r = await post('/api/freq_set', {band: document.getElementById('fband').value});
+  document.getElementById('fmsg').textContent = r.ok ? 'Banda aplicada.' : 'Error: ' + r.error;
+};
+document.getElementById('reboot').onclick = async () => {
+  const r = await post('/api/reboot', {});
+  document.getElementById('rmsg').textContent = r.ok ? 'Reinicio enviado. Reabrí la conexión en ~30s.' : 'Error: ' + r.error;
+};
+pread();
 </script>
 {% endblock %}

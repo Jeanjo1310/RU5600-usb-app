@@ -256,3 +256,15 @@ label:has(> .checkbox:disabled) {
   background-color: oklch(0.470 0.100 155);
   border-color: oklch(0.590 0.110 155);
 }
+
+/* Campos numericos sin flechas de subir/bajar */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}

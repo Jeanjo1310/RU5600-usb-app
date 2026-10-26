@@ -3756,6 +3756,14 @@ label:has(> .radio:disabled), label:has(> .checkbox:disabled) {
   background-color: oklch(0.470 0.100 155);
   border-color: oklch(0.590 0.110 155);
 }
+input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
 @layer base {
   :where(:root),:root:has(input.theme-controller[value=light]:checked),[data-theme=light] {
     color-scheme: light;

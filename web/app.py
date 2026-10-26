@@ -14,7 +14,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import (Flask, jsonify, render_template, request,
+                    send_file, redirect)
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "..", "src"))
@@ -109,7 +110,8 @@ def chip():
 
 @app.route("/avanzado")
 def avanzado():
-    return render_template("avanzado.html")
+    # la frecuencia y el reinicio se movieron a Parametros
+    return redirect("/parametros")
 
 
 @app.route("/api/params_read", methods=["POST"])

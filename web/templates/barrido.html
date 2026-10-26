@@ -5,14 +5,13 @@
   <div class="flex flex-wrap items-end gap-4 mb-2">
     <div>
       <label class="block mb-1 text-sm font-medium" for="seconds">Segundos (0 = hasta parar)</label>
-      <input id="seconds" type="number" value="60" min="0" class="input input-bordered w-32">
+      <input id="seconds" type="number" value="0" min="0" class="input input-bordered w-32">
     </div>
     <div>
       <label class="block mb-1 text-sm font-medium" for="target">Detener al llegar a N tags</label>
       <input id="target" type="number" value="0" min="0" class="input input-bordered w-32">
     </div>
-    <button id="startBtn" class="btn btn-primary">Iniciar lectura</button>
-    <button id="stopBtn" class="btn btn-error" disabled>Parar</button>
+    <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
     <span id="status" class="text-sm text-base-content/60 pb-2">Listo.</span>
   </div>
   <p class="text-xs text-base-content/60">Lee durante el tiempo indicado y suma tags distintos. Con "0" en el tope, la única forma de cortar es Parar o que se cumpla el tiempo. La relectura del mismo tag no crea fila: suma en Veces.</p>
@@ -79,8 +78,9 @@ async function poll() {
   $('status').textContent = r.running
     ? `${t('Leyendo…')} ${r.count}${extra} tags`
     : `${t('Detenido.')} ${r.count} tags.` + (r.reason ? ' ' + t('Se detuvo porque') + ' ' + t(reasonText(r.reason)) + '.' : '');
-  $('startBtn').disabled = r.running;
-  $('stopBtn').disabled = !r.running;
+  const tb2 = $('sweepToggle');
+  tb2.textContent = t(r.running ? 'Parar' : 'Iniciar lectura');
+  tb2.className = 'btn ' + (r.running ? 'btn-error' : 'btn-primary');
   if (r.tags.length > seen) {
     const tb = $('rows');
     r.tags.slice(seen).forEach((x, i) => {
@@ -98,14 +98,15 @@ async function poll() {
   });
   if (!r.running && timer) { clearInterval(timer); timer = null; }
 }
-$('startBtn').onclick = async () => {
+$('sweepToggle').onclick = async () => {
+  const running = $('sweepToggle').textContent.trim() === t('Parar');
+  if (running) { await post('/api/stop', {}); poll(); return; }
   const r = await post('/api/start', {seconds: parseFloat($('seconds').value) || 0,
                                       target: parseInt($('target').value) || 0});
   if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
   $('rows').innerHTML = ''; seen = 0;
   timer = setInterval(poll, 400); poll();
 };
-$('stopBtn').onclick = async () => { await post('/api/stop', {}); };
 $('cmpBtn').onclick = async () => {
   const f = $('cmpfile').files[0];
   if (!f) { $('cmpmsg').textContent = 'Elegí la planilla primero.'; return; }
