@@ -21,6 +21,7 @@
     </div>
     <button id="recoverBtn" class="btn btn-outline btn-sm">Destrabar lector</button>
   </div>
+  <p id="perfilBox" class="text-xs text-base-content/60 mt-1"></p>
   <p id="warnBox" class="hidden text-sm alert alert-warning items-center mt-2"></p>
   <p class="text-xs text-base-content/60">Lee durante el tiempo indicado y suma tags distintos. Con "0" en el tope, la única forma de cortar es Parar o que se cumpla el tiempo. La relectura del mismo tag no crea fila: suma en Veces.</p>
 </div>
@@ -164,5 +165,18 @@ $('cmpBtn').onclick = async () => {
   });
 };
 poll();
+
+/* el perfil activo define como va a leer este barrido */
+(async () => {
+  try {
+    const d = await fetch('/api/profiles').then(r => r.json());
+    if (!d.ok) return;
+    const p = (d.profiles || []).find(x => x.id === d.current) || {};
+    const pace = {burst: '30 ms', balanced: '120 ms', reliable: '250 ms'}[d.read_mode] || '';
+    document.getElementById('perfilBox').textContent =
+      t('Perfil activo: ') + t(p.label || d.current) + ' · ' + t('barrido') + ': '
+      + (d.sweep === 'active' ? t('stream') : t('dirigido')) + ' · ' + t('pausa') + ' ' + pace;
+  } catch (e) {}
+})();
 </script>
 {% endblock %}

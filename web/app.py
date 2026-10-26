@@ -74,6 +74,55 @@ _read_cfg: dict = {"mode": "balanced"}
 
 def _read_pace() -> dict:
     return _READ_MODES.get(_read_cfg.get("mode"), _READ_MODES["balanced"])
+
+
+# Perfiles de lectura (2026-10-26): combinaciones MEDIDAS entre el parametro real del
+# lector (WorkMode) y el camino de la app (modo de lectura + camino del barrido).
+# Un perfil cambia las tres cosas juntas para que lector e interfaz coincidan.
+PROFILES = {
+    "rafaga": {
+        "label": "Inventario rápido",
+        "desc": "Stream a máxima velocidad (ActiveMode + 30 ms entre tiradas). Para barrer muchos tags que streamean. Medido: 10/10 tags en 24,1 s.",
+        "workmode": 1,           # ActiveMode: el lector streamea solo
+        "read_mode": "burst",    # 30 ms entre tiradas dirigidas
+        "sweep": "active",       # barrido por stream
+        "evidence": "10/10 tags en 24,1 s (mejor corrida medida)",
+    },
+    "general": {
+        "label": "Uso general",
+        "desc": "AnswerMode con stream y fallback automático a dirigido (120 ms). El equilibrio de todos los días.",
+        "workmode": 0,           # AnswerMode
+        "read_mode": "balanced",  # 120 ms (el ritmo medido)
+        "sweep": "active",       # stream con fallback automatico a dirigido
+        "evidence": "fallback a dirigido si el stream no entrega en 6 s",
+    },
+    "dedicado": {
+        "label": "Lectura dedicada",
+        "desc": "Fuerza la lectura dirigida, sin stream: para H10, UCODE 8/9 y tags de a uno. Medido: 10/10 en las 5 familias de tags (39-108 ms).",
+        "workmode": 0,
+        "read_mode": "balanced",
+        "sweep": "answer",       # fuerza el camino dirigido (sin stream)
+        "evidence": "dirigido 10/10 en las 5 familias de tags (39-108 ms)",
+    },
+    "continuo": {
+        "label": "Continuo",
+        "desc": "ActiveMode permanente: para Lectura continua, Distancia y mover tags con el stream corriendo (12-13 lecturas/s, RSSI 45).",
+        "workmode": 1,           # ActiveMode, para Lectura continua / Distancia
+        "read_mode": "balanced",
+        "sweep": "active",
+        "evidence": "stream 12-13 lecturas/s con RSSI 45 en tags pegados",
+    },
+    "pausado": {
+        "label": "Pausado (cuidado del lector)",
+        "desc": "El más lento: 250 ms y 2 reintentos por tirada, la menor carga de comandos. Para escritura y verificación largas.",
+        "workmode": 0,
+        "read_mode": "reliable",  # 250 ms + 2 reintentos: la menor carga
+        "sweep": "answer",
+        "evidence": "escritura y verificacion largas sin martillar al lector",
+    },
+}
+_sweep_cfg: dict = {"mode": "active"}
+_profile_cfg: dict = {"current": "general"}
 _lock = threading.Lock()
 _stop = threading.Event()
 _state = {"running": False, "tags": [], "seen": set(), "started": 0.0,
@@ -113,11 +162,15 @@ def conn_state():
         except Exception:  # noqa: BLE001
             info = {}
         return jsonify(open=True, mode="usb", info=info,
-                       read_mode=_read_cfg.get("mode", "balanced"))
+                       read_mode=_read_cfg.get("mode", "balanced"),
+                       profile=_profile_cfg.get("current", "general"),
+                       sweep=_sweep_cfg.get("mode", "active"))
     if _net_reader is not None and _net_reader.is_open():
         return jsonify(open=True, mode="net", info={})
     return jsonify(open=False, mode=_net_info.get("mode", "usb"), info={},
-                   read_mode=_read_cfg.get("mode", "balanced"))
+                   read_mode=_read_cfg.get("mode", "balanced"),
+                   profile=_profile_cfg.get("current", "general"),
+                   sweep=_sweep_cfg.get("mode", "active"))
 
 
 def _need_usb():
@@ -424,6 +477,47 @@ def api_open():
         return jsonify(ok=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
+
+
+@app.route("/api/profiles")
+def api_profiles():
+    """Lista de perfiles de lectura y cual esta activo."""
+    return jsonify(ok=True, current=_profile_cfg.get("current", "general"),
+                   sweep=_sweep_cfg.get("mode", "active"),
+                   read_mode=_read_cfg.get("mode", "balanced"),
+                   profiles=[{"id": pid, **cfg} for pid, cfg in PROFILES.items()])
+
+
+@app.route("/api/profiles/apply", methods=["POST"])
+def api_profile_apply():
+    """Aplica un perfil: WorkMode del lector + camino de lectura de la app."""
+    cfg = request.get_json(silent=True) or {}
+    pid = str(cfg.get("id") or "").lower()
+    if pid not in PROFILES:
+        return jsonify(ok=False, error="perfil desconocido: " + pid), 400
+    prof = PROFILES[pid]
+    out = {"profile": pid, "reader": None, "app": {}}
+
+    # lector: WorkMode (unico param real que toca un perfil; verificar releyendo)
+    try:
+        r = _need_usb()
+        r.set_work_mode(int(prof["workmode"]))
+        got = r.work_mode()
+        out["reader"] = {"want": int(prof["workmode"]), "got": int(got),
+                         "ok": int(got) == int(prof["workmode"])}
+    except Exception as exc:  # noqa: BLE001
+        out["reader"] = {"error": str(exc)[:120]}
+
+    # app: modo de lectura (pausas) + camino por defecto del barrido
+    _read_cfg["mode"] = prof["read_mode"]
+    _sweep_cfg["mode"] = prof["sweep"]
+    _profile_cfg["current"] = pid
+    out["app"] = {"read_mode": prof["read_mode"], "sweep": prof["sweep"],
+                  "pause_ms": _READ_MODES[prof["read_mode"]]["pause"] * 1000,
+                  "retries": _READ_MODES[prof["read_mode"]]["retries"]}
+    _log("info", "perfil '%s' aplicado: WorkMode=%s, modo de lectura=%s, barrido=%s" % (
+        pid, prof["workmode"], prof["read_mode"], prof["sweep"]))
+    return jsonify(ok=True, **out)
 
 
 @app.route("/api/read_mode", methods=["POST"])
@@ -1463,8 +1557,9 @@ def start():
         return jsonify(ok=False, error="tope de tags invalido"), 400
     if target < 0:
         target = 0
-    # el stream de tags solo existe en ActiveMode; AnswerMode es para comandos dirigidos
-    mode = (cfg.get("mode") or "active").lower()
+    # el stream de tags solo existe en ActiveMode; AnswerMode es para comandos dirigidos.
+    # Sin "mode" explicito manda el perfil activo (perfiles de Parámetros).
+    mode = (cfg.get("mode") or _sweep_cfg.get("mode") or "active").lower()
     with _lock:
         if _state["running"]:
             return jsonify(ok=False, error="ya corriendo"), 409

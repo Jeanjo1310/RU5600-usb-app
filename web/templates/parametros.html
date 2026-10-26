@@ -2,6 +2,18 @@
 {% block title %}Parámetros{% endblock %}
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <h2 class="text-lg font-semibold mb-3">Perfiles de lectura</h2>
+  <p class="text-xs text-base-content/60 mb-2">Un perfil cambia junto las tres cosas que definen cómo lee: el WorkMode del lector, la pausa entre lecturas dirigidas y el camino del barrido (stream o dirigido). Así lector e interfaz quedan coincidentes.</p>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+    <select id="perfil" size="5" class="select select-bordered w-full h-auto py-1"></select>
+    <div>
+      <p id="perfilDesc" class="text-sm"></p>
+      <p id="perfilSets" class="text-xs font-mono text-base-content/60 mt-2"></p>
+    </div>
+  </div>
+  <p id="perfilMsg" class="mt-2 text-sm"></p>
+</div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Parámetros del lector</h2>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
     <div><label class="block text-sm mb-1" for="rf">RF Power</label><select id="rf" class="select select-bordered w-full"></select></div>
@@ -108,5 +120,43 @@ document.getElementById('reboot').onclick = async () => {
   document.getElementById('rmsg').textContent = r.ok ? 'Reinicio enviado. Reabrí la conexión en ~30s.' : 'Error: ' + r.error;
 };
 pread();
+
+/* ---- perfiles de lectura (lista + aplicacion) ---- */
+const WM_LBL = {0: 'AnswerMode', 1: 'ActiveMode'};
+const PACE_LBL = {burst: 'Ráfaga (30 ms)', balanced: 'Balanceado (120 ms)', reliable: 'Confiable (250 ms + 2 reintentos)'};
+async function profLoad() {
+  const d = await fetch('/api/profiles').then(r => r.json()).catch(() => null);
+  if (!d || !d.ok) return;
+  const sel = document.getElementById('perfil'); sel.innerHTML = '';
+  (d.profiles || []).forEach(p => {
+    const o = document.createElement('option'); o.value = p.id;
+    o.textContent = t(p.label); sel.appendChild(o);
+  });
+  profShow(d.current, d);
+}
+function profShow(id, d) {
+  const list = (d && d.profiles) || [];
+  const p = list.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('perfilDesc').textContent = t(p.desc);
+  const wm = (id === 'rafaga' || id === 'continuo') ? 1 : 0;
+  document.getElementById('perfilSets').textContent =
+    'WorkMode=' + WM_LBL[wm] + ' · ' + t('lectura') + '=' + t(PACE_LBL[d.read_mode] || PACE_LBL.balanced) +
+    ' · ' + t('barrido') + '=' + (d.sweep === 'active' ? t('stream') : t('dirigido'));
+}
+document.getElementById('perfil').onchange = async (ev) => {
+  const id = ev.target.value;
+  const r = await fetch('/api/profiles/apply', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})}).then(x => x.json()).catch(e => ({ok: false, error: String(e)}));
+  const msg = document.getElementById('perfilMsg');
+  if (!r.ok) { msg.textContent = 'Error: ' + r.error; return; }
+  try { localStorage.setItem('ru5600_read_mode', r.app.read_mode); } catch (e) {}
+  const d = await fetch('/api/profiles').then(x => x.json());
+  profShow(id, d);
+  msg.textContent = t('Perfil aplicado: ') + t((d.profiles.find(x => x.id === id) || {}).label || id)
+    + ((r.reader && r.reader.ok) ? '' : ' · ' + t('el WorkMode del lector no se pudo cambiar'));
+  if (window.pread) pread();
+};
+profLoad();
 </script>
 {% endblock %}
