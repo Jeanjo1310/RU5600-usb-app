@@ -1373,6 +1373,16 @@ def _run(seconds, target=0, mode="answer"):
             reason = "usuario" if _stop.is_set() else "tiempo"
         _state["reason"] = reason
         _state["running"] = False
+        # persistir el barrido: la app es la dueña de los datos, no el lector
+        try:
+            for t in _state["tags"]:
+                if t.get("epc"):
+                    store.upsert_tag(t["epc"], t.get("chip"), t.get("rssi"),
+                                     t.get("n", 1))
+            if _state["tags"]:
+                store.add_log("ok", "barrido: %d tags (%s)" % (len(_state["tags"]), reason))
+        except Exception as exc:  # noqa: BLE001
+            _log("warn", "no pude guardar el barrido: %s" % exc)
 
 
 @app.route("/api/recover", methods=["POST"])

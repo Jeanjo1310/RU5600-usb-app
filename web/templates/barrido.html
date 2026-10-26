@@ -28,7 +28,7 @@
   <div class="flex justify-end px-2 pt-2"><button class="btn btn-outline btn-sm" onclick="exportTable('#rows', 'barrido')">Exportar</button></div>
   <table class="table table-zebra w-full text-sm" id="sweepTable">
     <thead class="text-xs uppercase opacity-70">
-      <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Code W34</th><th class="px-4 py-2">Excel</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">Estado</th></tr>
+      <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Code W34</th><th class="px-4 py-2">Excel</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">RSSI</th><th class="px-4 py-2">Estado</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -115,7 +115,7 @@ async function poll() {
       const tr = document.createElement('tr');
       tr.className = 'border-b border-base-300';
       const conf = badge(x.conf === 'patron' ? 'patrón' : (x.conf || '?'), x.conf);
-      tr.innerHTML = `<td class="px-4 py-2">${seen + i + 1}</td><td class="px-4 py-2 font-mono" title="${x.raw}">${x.epc}</td><td class="px-4 py-2 font-mono">${x.chip}</td><td class="px-4 py-2 font-mono">${x.code || '-'}</td><td class="px-4 py-2">${x.xl}</td><td class="px-4 py-2">${x.n || 1}</td><td class="px-4 py-2">${conf}</td>`;
+      tr.innerHTML = `<td class="px-4 py-2">${seen + i + 1}</td><td class="px-4 py-2 font-mono" title="${x.raw}">${x.epc}</td><td class="px-4 py-2 font-mono">${x.chip}</td><td class="px-4 py-2 font-mono">${x.code || '-'}</td><td class="px-4 py-2">${x.xl}</td><td class="px-4 py-2">${x.n || 1}</td><td class="px-4 py-2">${x.rssi ?? '-'}</td><td class="px-4 py-2">${conf}</td>`;
       tb.appendChild(tr);
     });
     seen = r.tags.length;
@@ -123,6 +123,7 @@ async function poll() {
   (r.tags || []).forEach((x, i) => {
     const tr = $('rows').children[i];
     if (tr && tr.children[5]) tr.children[5].textContent = x.n || 1;
+    if (tr && tr.children[6]) tr.children[6].textContent = (x.rssi ?? '-');
   });
   if (!r.running && timer) { clearInterval(timer); timer = null; }
 }
