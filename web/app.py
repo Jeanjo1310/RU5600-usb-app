@@ -1470,7 +1470,7 @@ def _run(seconds, target=0, mode="answer"):
         _state["stabilized"] = 0
         t_start = time.monotonic()
         last_new = time.monotonic()
-        stall_after = float(_state.get("stall_after") or 20.0)
+        stall_after = float(_state.get("stall_after") or 30.0)
         direct_mode = False
         # con ventanas cortas, esperar 6 s deja casi sin tiempo al modo dirigido
         fallback_after = float(_state.get("fallback_after") or
@@ -1495,6 +1495,9 @@ def _run(seconds, target=0, mode="answer"):
                         and (time.monotonic() - t_start) > fallback_after):
                     direct_mode = True
                     _state["mode_used"] = "dirigido"
+                    # ventana nueva para el modo dirigido: no heredar el tiempo
+                    # que ya se gastó esperando al stream
+                    last_new = time.monotonic()
                     _log("warn", "el stream no ve tags: paso a barrido dirigido")
                     try:
                         r.stop_read()
