@@ -235,24 +235,24 @@ label:has(> .checkbox:disabled) {
 
 /* --- Boton "Leer": verde suave con texto que se lee --- */
 .btn-soft.btn-success {
-  background-color: oklch(0.945 0.045 155);
-  border: 1px solid oklch(0.860 0.060 155);
-  color: oklch(0.440 0.100 155);
+  background-color: oklch(0.935 0.055 155);
+  border: 1px solid oklch(0.845 0.070 155);
+  color: oklch(0.430 0.100 155);
   box-shadow: none;
 }
 
 .btn-soft.btn-success:hover {
-  background-color: oklch(0.915 0.060 155);
-  border-color: oklch(0.820 0.075 155);
+  background-color: oklch(0.905 0.075 155);
+  border-color: oklch(0.800 0.085 155);
 }
 
 [data-theme="dark"] .btn-soft.btn-success {
-  background-color: oklch(0.300 0.045 155);
-  border: 1px solid oklch(0.410 0.060 155);
-  color: oklch(0.850 0.110 155);
+  background-color: oklch(0.430 0.090 155);
+  border: 1px solid oklch(0.540 0.100 155);
+  color: oklch(0.960 0.020 155);
 }
 
 [data-theme="dark"] .btn-soft.btn-success:hover {
-  background-color: oklch(0.350 0.055 155);
-  border-color: oklch(0.470 0.075 155);
+  background-color: oklch(0.470 0.100 155);
+  border-color: oklch(0.590 0.110 155);
 }

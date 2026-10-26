@@ -8,6 +8,7 @@
       "Segoe UI Symbol", "Noto Color Emoji";
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
       "Courier New", monospace;
+    --color-gray-500: oklch(55.1% 0.027 264.364);
     --color-black: #000;
     --spacing: 0.25rem;
     --breakpoint-xl: 80rem;
@@ -1122,6 +1123,9 @@
       border-width: 0;
     }
   }
+  .invisible {
+    visibility: hidden;
+  }
   .visible {
     visibility: visible;
   }
@@ -1194,6 +1198,25 @@
     }
   }
   @layer daisyui.l1.l2.l3 {
+    .toast {
+      position: fixed;
+      inset-inline-start: auto;
+      inset-inline-end: calc(0.25rem * 4);
+      top: auto;
+      bottom: calc(0.25rem * 4);
+      display: flex;
+      flex-direction: column;
+      gap: calc(0.25rem * 2);
+      background-color: transparent;
+      translate: var(--toast-x, 0) var(--toast-y, 0);
+      width: max-content;
+      max-width: calc(100vw - 2rem);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .toast > * {
+        animation: toast 0.25s ease-out;
+      }
+    }
     .toggle {
       border: var(--border) solid currentColor;
       color: var(--input-color);
@@ -2384,6 +2407,136 @@
     position: static;
   }
   @layer daisyui.l1.l2.l3 {
+    .textarea {
+      min-height: calc(0.25rem * 20);
+      flex-shrink: 1;
+      appearance: none;
+      border-radius: var(--radius-field);
+      background-color: var(--color-base-100);
+      padding-inline: calc(0.25rem * 3);
+      padding-block: calc(0.25rem * 2);
+      vertical-align: middle;
+      --input-color: var(--color-base-content);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea {
+        --input-color: color-mix(in oklab, var(--color-base-content) 20%, #0000);
+      }
+    }
+    .textarea {
+      width: clamp(3rem, 20rem, 100%);
+      font-size: max(var(--font-size, 0rem), var(--font-size-min, 0.875rem));
+      touch-action: manipulation;
+      border: var(--border) solid var(--input-color, #0000);
+      box-shadow: 0 1px var(--input-color) inset, 0 -1px oklch(100% 0 0 / calc(var(--depth) * 0.1)) inset;
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea {
+        box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000) inset, 0 -1px oklch(100% 0 0 / calc(var(--depth) * 0.1)) inset;
+      }
+    }
+    .textarea textarea {
+      appearance: none;
+      background-color: transparent;
+      border: none;
+    }
+    .textarea textarea::placeholder {
+      color: var(--color-base-content);
+      opacity: 50%;
+    }
+    .textarea textarea:focus, .textarea textarea:focus-within {
+      --tw-outline-style: none;
+      outline-style: none;
+      @media (forced-colors: active) {
+        outline: 2px solid transparent;
+        outline-offset: 2px;
+      }
+    }
+    .textarea:focus {
+      --input-color: var(--color-base-content);
+      box-shadow: 0 1px var(--input-color);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea:focus {
+        box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000);
+      }
+    }
+    .textarea:focus {
+      outline: 2px solid var(--input-color);
+      outline-offset: 2px;
+      isolation: isolate;
+    }
+    @media (pointer: coarse) {
+      @supports (-webkit-touch-callout: none) {
+        .textarea:focus {
+          --font-size: 1rem;
+        }
+      }
+    }
+    .textarea:focus-within {
+      --input-color: var(--color-base-content);
+      box-shadow: 0 1px var(--input-color);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea:focus-within {
+        box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000);
+      }
+    }
+    .textarea:focus-within {
+      outline: 2px solid var(--input-color);
+      outline-offset: 2px;
+      isolation: isolate;
+    }
+    @media (pointer: coarse) {
+      @supports (-webkit-touch-callout: none) {
+        .textarea:focus-within {
+          --font-size: 1rem;
+        }
+      }
+    }
+  }
+  @layer daisyui.l1.l2 {
+    .textarea:has( > textarea[disabled]) {
+      cursor: not-allowed;
+      border-color: var(--color-base-200);
+      background-color: var(--color-base-200);
+      color: var(--color-base-content);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea:has( > textarea[disabled]) {
+        color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+      }
+    }
+    .textarea:has( > textarea[disabled]) {
+      box-shadow: none;
+    }
+    .textarea:has( > textarea[disabled])::placeholder, .textarea:has( > textarea[disabled])  ::placeholder {
+      color: var(--color-base-content);
+      opacity: 20%;
+    }
+    .textarea:is(:disabled, [disabled]) {
+      cursor: not-allowed;
+      border-color: var(--color-base-200);
+      background-color: var(--color-base-200);
+      color: var(--color-base-content);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea:is(:disabled, [disabled]) {
+        color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+      }
+    }
+    .textarea:is(:disabled, [disabled]) {
+      box-shadow: none;
+    }
+    .textarea:is(:disabled, [disabled])::placeholder, .textarea:is(:disabled, [disabled])  ::placeholder {
+      color: var(--color-base-content);
+      opacity: 20%;
+    }
+    .textarea:has( > textarea[disabled]) > textarea[disabled] {
+      cursor: not-allowed;
+    }
+  }
+  @layer daisyui.l1.l2.l3 {
     .modal-backdrop {
       grid-column-start: 1;
       grid-row-start: 1;
@@ -2501,6 +2654,45 @@
     margin-inline: auto;
   }
   @layer daisyui.l1.l2.l3 {
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: calc(0.25rem * 1.5);
+      white-space: nowrap;
+      color: currentcolor;
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .label {
+        color: color-mix(in oklab, currentcolor 60%, transparent);
+      }
+    }
+    .label:has(input) {
+      cursor: pointer;
+    }
+    .label:is(.input > *, .select > *) {
+      display: flex;
+      height: calc(100% - 0.5rem);
+      align-items: center;
+      padding-inline: calc(0.25rem * 3);
+      white-space: nowrap;
+      font-size: inherit;
+    }
+    .label:is(.input > *, .select > *):first-child {
+      margin-inline-start: calc(0.25rem * -3);
+      margin-inline-end: calc(0.25rem * 3);
+      border-inline-end: var(--border) solid currentColor;
+      @supports (color: color-mix(in lab, red, red)) {
+        border-inline-end: var(--border) solid color-mix(in oklab, currentColor 10%, #0000);
+      }
+    }
+    .label:is(.input > *, .select > *):last-child {
+      margin-inline-start: calc(0.25rem * 3);
+      margin-inline-end: calc(0.25rem * -3);
+      border-inline-start: var(--border) solid currentColor;
+      @supports (color: color-mix(in lab, red, red)) {
+        border-inline-start: var(--border) solid color-mix(in oklab, currentColor 10%, #0000);
+      }
+    }
     .label:is(.input > *, .select > *) {
       display: flex;
       height: calc(100% - 0.5rem);
@@ -2786,6 +2978,10 @@
   .overflow-x-auto {
     overflow-x: auto;
   }
+  .border {
+    border-style: var(--tw-border-style);
+    border-width: 1px;
+  }
   .border-b {
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 1px;
@@ -2964,6 +3160,12 @@
     @supports (color: color-mix(in lab, red, red)) {
       color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
     }
+  }
+  .text-error {
+    color: var(--color-error);
+  }
+  .text-gray-500 {
+    color: var(--color-gray-500);
   }
   .uppercase {
     text-transform: uppercase;
@@ -3335,23 +3537,23 @@ label:has(> .radio:disabled), label:has(> .checkbox:disabled) {
   cursor: not-allowed;
 }
 .btn-soft.btn-success {
-  background-color: oklch(0.945 0.045 155);
-  border: 1px solid oklch(0.860 0.060 155);
-  color: oklch(0.440 0.100 155);
+  background-color: oklch(0.935 0.055 155);
+  border: 1px solid oklch(0.845 0.070 155);
+  color: oklch(0.430 0.100 155);
   box-shadow: none;
 }
 .btn-soft.btn-success:hover {
-  background-color: oklch(0.915 0.060 155);
-  border-color: oklch(0.820 0.075 155);
+  background-color: oklch(0.905 0.075 155);
+  border-color: oklch(0.800 0.085 155);
 }
 [data-theme="dark"] .btn-soft.btn-success {
-  background-color: oklch(0.300 0.045 155);
-  border: 1px solid oklch(0.410 0.060 155);
-  color: oklch(0.850 0.110 155);
+  background-color: oklch(0.430 0.090 155);
+  border: 1px solid oklch(0.540 0.100 155);
+  color: oklch(0.960 0.020 155);
 }
 [data-theme="dark"] .btn-soft.btn-success:hover {
-  background-color: oklch(0.350 0.055 155);
-  border-color: oklch(0.470 0.075 155);
+  background-color: oklch(0.470 0.100 155);
+  border-color: oklch(0.590 0.110 155);
 }
 @layer base {
   :where(:root),:root:has(input.theme-controller[value=light]:checked),[data-theme=light] {
