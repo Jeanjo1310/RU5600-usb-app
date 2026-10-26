@@ -1469,6 +1469,8 @@ def _run(seconds, target=0, mode="answer"):
         stabilized = 0
         _state["stabilized"] = 0
         t_start = time.monotonic()
+        last_new = time.monotonic()
+        stall_after = float(_state.get("stall_after") or 20.0)
         direct_mode = False
         # con ventanas cortas, esperar 6 s deja casi sin tiempo al modo dirigido
         fallback_after = float(_state.get("fallback_after") or
@@ -1480,6 +1482,10 @@ def _run(seconds, target=0, mode="answer"):
                     and not _stop.is_set()):
                 if target and len(_state["tags"]) >= target:
                     reason = "tope"
+                    break
+                if (target and len(_state["tags"]) < target
+                        and (time.monotonic() - last_new) > stall_after):
+                    reason = "estancado"
                     break
                 # poll adaptativo: rapido cuando entrega, mas lento cuando no
                 time.sleep(poll)
@@ -1531,6 +1537,7 @@ def _run(seconds, target=0, mode="answer"):
                         continue
                     info.update(raw=hex_d[:48], ant=0, rssi=None, n=1)
                     _state["seen"][key] = info
+                    last_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True
@@ -1568,6 +1575,7 @@ def _run(seconds, target=0, mode="answer"):
                     info.update(raw=blob_key.hex().upper()[:48], ant=tag.ant,
                                 rssi=tag.rssi, n=1)
                     _state["seen"][key] = info
+                    last_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True

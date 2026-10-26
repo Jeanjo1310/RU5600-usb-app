@@ -80,6 +80,7 @@ function reasonText(r) {
   if (r === 'tope') return 'se llegó al tope de tags';
   if (r === 'usuario') return 'lo detuviste vos';
   if (r === 'tiempo') return 'se cumplió el tiempo';
+  if (r === 'estancado') return 'dejó de aparecer gente nueva (se estancó)';
   return '';
 }
 async function poll() {
