@@ -6,9 +6,9 @@
   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-3 items-start">
     <div><label class="block text-sm mb-1" for="rf">RF Power</label><select id="rf" class="select select-bordered w-full"></select></div>
     <div><label class="block text-sm mb-1" for="wm">WorkMode</label><select id="wm" class="select select-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></div>
-    <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
-    <div><label class="block text-sm mb-1" for="filt">FilterTime(s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
     <div><label class="block text-sm mb-1" for="perfil" title="Un perfil cambia junto las tres cosas que definen cómo lee: el WorkMode, la pausa entre lecturas dirigidas y el camino del barrido. La explicación está en Ayuda (?).">Perfiles de lectura</label><select id="perfil" class="select select-bordered w-full"></select></div>
+    <div><label class="block text-sm mb-1" for="filt">FilterTime(s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
+    <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
   </div>
   <p id="perfilMsg" class="mt-1 text-sm"></p>
   <div class="flex flex-wrap gap-2">
