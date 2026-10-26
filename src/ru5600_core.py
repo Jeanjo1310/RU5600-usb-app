@@ -1633,18 +1633,21 @@ class Ru5600Reader:
                 self._pace(settle=True)
                 if not verify:
                     return True
-                # the EPC is read back from the tag and compared
-                try:
-                    # the EPC bank answers with the CRC and the PC
-                    # before the EPC
-                    words = max(4, (len(epc) + 4 + 1) // 2)
-                    back = self.read_card(MEM_EPC, 0, words, password,
-                                          retries=4)
-                except ReaderError:
-                    time.sleep(0.1)
-                    continue
-                if back[4:4 + len(epc)] == epc:
-                    return True
+                # verificacion tolerante a frames viejos: el tag tarda en
+                # quedar grabado y el lector puede devolver la lectura previa.
+                # Se reintenta LEER (sin reescribir) antes de declarar fallo.
+                words = max(4, (len(epc) + 4 + 1) // 2)
+                time.sleep(0.15)
+                for _v in range(4):
+                    try:
+                        back = self.read_card(MEM_EPC, 0, words, password,
+                                              retries=2)
+                    except ReaderError:
+                        time.sleep(0.12)
+                        continue
+                    if back[4:4 + len(epc)] == epc:
+                        return True
+                    time.sleep(0.12)
                 time.sleep(0.1)
                 continue
             time.sleep(0.05)
