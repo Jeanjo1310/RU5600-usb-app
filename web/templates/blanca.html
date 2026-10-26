@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Lista blanca{% endblock %}
 {% block content %}
-<div class="card bg-base-100 shadow-sm p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Cómo funciona la lista blanca</h2>
   <p class="text-sm text-base-content/60 mb-2">La lista vive en el lector: guarda los EPC que el lector tiene autorizados. Esta pantalla lee y escribe esa tabla directamente, no una copia local.</p>
   <ol class="list-decimal ml-5 text-sm space-y-1">
@@ -12,7 +12,7 @@
     <li>Los cambios quedan grabados en el lector y sobreviven a cerrar la aplicación.</li>
   </ol>
 </div>
-<div class="card bg-base-100 shadow-sm p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Lista blanca <span id="wlcount" class="text-sm text-base-content/60"></span></h2>
   <div class="flex flex-wrap gap-2 mb-2">
     <button id="wlref" class="btn btn-outline">Actualizar</button>
@@ -20,7 +20,7 @@
   </div>
   <div class="overflow-x-auto"><table class="table table-zebra w-full text-sm"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">Entrada</th><th class="px-4 py-2"></th></tr></thead><tbody id="wlrows"></tbody></table></div>
 </div>
-<div class="card bg-base-100 shadow-sm p-4">
+<div class="card bg-base-100 shadow-sm p-6">
   <h2 class="text-lg font-semibold mb-3">Agregar (32 bytes hex)</h2>
   <div class="flex flex-wrap gap-2">
     <input id="wldata" placeholder="32 bytes hex" class="input input-bordered font-mono flex-1">

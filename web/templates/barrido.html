@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Barrido{% endblock %}
 {% block content %}
-<main>  <div class="card bg-base-100 shadow-sm p-4 mb-4">
+<main>  <div class="card bg-base-100 shadow-sm p-6 mb-4">
     <div class="flex flex-wrap items-end gap-4">
       <div>
         <label class="block mb-1 text-sm font-medium">Segundos (0 = hasta parar)</label>
@@ -13,7 +13,7 @@
     </div>
     <p class="text-xs mt-2 text-base-content/60">Lee durante el tiempo indicado y suma tags distintos: la relectura del mismo tag no crea fila nueva. Apoyá el cursor en el EPC para ver la trama cruda.</p>
   </div>
-  <div class="card bg-base-100 shadow-sm overflow-x-auto">
+  <div class="card bg-base-100 shadow-sm overflow-x-auto p-2">
     <table class="table table-zebra w-full text-sm">
       <thead class="text-xs uppercase opacity-70">
         <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Code W34</th><th class="px-4 py-2">Excel</th><th class="px-4 py-2">Estado</th></tr>

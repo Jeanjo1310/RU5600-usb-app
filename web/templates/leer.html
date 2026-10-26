@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Leer/Escribir{% endblock %}
 {% block content %}
-<div class="card bg-base-100 shadow-sm p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Leer memoria del tag</h2>
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-2">
     <div><label class="block text-sm mb-1" for="rmem">Banco</label><select id="rmem" class="select select-bordered w-full"><option value="1">EPC</option><option value="2">TID</option><option value="3">USER</option><option value="0">RESERVED</option></select></div>
@@ -12,7 +12,7 @@
   </div>
   <pre id="rout" class="font-mono text-sm whitespace-pre-wrap">-</pre>
 </div>
-<div class="card bg-base-100 shadow-sm p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir memoria (verificada)</h2>
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-2">
     <div><label class="block text-sm mb-1" for="wmem">Banco</label><select id="wmem" class="select select-bordered w-full"><option value="3">USER</option><option value="1">EPC</option><option value="0">RESERVED</option></select></div>
@@ -24,7 +24,7 @@
   <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="wfp"> Verificar huella antes de escribir</label>
   <p id="wout" class="mt-1 text-sm"></p>
 </div>
-<div class="card bg-base-100 shadow-sm p-4 mb-4">
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-3">Escribir EPC</h2>
   <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
     <div class="md:col-span-2"><label class="block text-sm mb-1" for="wepc">EPC (hex)</label><input id="wepc" value="3034333234353536373839303132" class="input input-bordered font-mono w-full"></div>
@@ -36,7 +36,7 @@
   </div>
   <p id="wepout" class="mt-2 text-sm"></p>
 </div>
-<div class="card bg-base-100 shadow-sm p-4">
+<div class="card bg-base-100 shadow-sm p-6">
   <h2 class="text-lg font-semibold mb-3">Huella (anti-clonado)</h2>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
     <button id="fplearn" class="btn btn-outline">Aprender huella del tag actual</button>
