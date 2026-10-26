@@ -11,7 +11,7 @@
     <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
   </div>
   <div class="flex flex-wrap gap-2">
-    <button id="pread" class="btn btn-soft btn-success">Leer</button>
+    <button id="pread" class="btn btn-soft btn-success">Obtener</button>
     <button id="papply" class="btn btn-primary">Aplicar</button>
     <button id="pdef" class="btn btn-outline">Defecto</button>
     <button id="psil" class="btn btn-outline">Silenciar ya</button>
@@ -69,6 +69,8 @@ document.getElementById('papply').onclick = async () => {
 };
 for (const k of ['dmem','dptr','dlen','drt','dout']) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(k).value = v; }
 if (localStorage.getItem('ru5600_denter') === '0') document.getElementById('denter').checked = false;
+// al abrir la pantalla, traer los valores reales del lector
+setTimeout(() => { document.getElementById('pread').click(); }, 300);
 document.getElementById('psil').onclick = async () => {
   const r = await post('/api/silence', {});
   document.getElementById('pmsg').textContent = r.ok ? 'Silenciado.' : 'Error: ' + r.error;
