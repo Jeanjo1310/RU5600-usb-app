@@ -1805,6 +1805,8 @@ def api_probe():
                     time.sleep(0.08)
                 return {"when": tag, "drains": out}
             steps = []
+            # primero: que habia ANTES de tocar nada (restos del tag anterior)
+            steps.append(drain("antes de limpiar (restos)"))
             r._lib.CFHid_ClearTagBuf(); time.sleep(0.1)
             steps.append(drain("tras ClearTagBuf"))
             res, epc, hx, det = _direct_read(r)
@@ -1819,6 +1821,40 @@ def api_probe():
             steps.append(drain("final"))
             _log("info", "buffer_dump: %s" % (epc or "sin tag"))
             return jsonify(ok=True, steps=steps)
+        if what == "first_tag":
+            # latencia hasta el primer tag, N rondas, con poll de 50 ms
+            import ctypes as _ct
+            from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
+                                     WORKMODE_ACTIVE as _WA,
+                                     WORKMODE_ANSWER as _WS)
+            rounds = int(cfg.get("rounds", 5) or 5)
+            samples = []
+            r._pace()
+            r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
+            r._pace(settle=True)
+            for i in range(rounds):
+                r._lib.CFHid_ClearTagBuf()
+                t0 = time.monotonic()
+                r.start_read()
+                first = None
+                while time.monotonic() - t0 < 6.0:
+                    buf = (_ct.c_ubyte * 131072)()
+                    total = _ct.c_uint32(0); count = _ct.c_uint32(0)
+                    r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
+                    if count.value:
+                        first = round((time.monotonic() - t0) * 1000)
+                        break
+                    time.sleep(0.05)
+                r.stop_read()
+                samples.append(first)
+                time.sleep(0.3)
+            try:
+                r._pace(); r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WS)
+            except Exception:  # noqa: BLE001
+                pass
+            good = [x for x in samples if x]
+            _log("info", "first_tag: %s ms" % samples)
+            return jsonify(ok=True, samples_ms=samples, mediana=(sorted(good)[len(good)//2] if good else None))
         if what == "checkant":
             try:
                 code = r._lib.CFHid_CheckAnt()
