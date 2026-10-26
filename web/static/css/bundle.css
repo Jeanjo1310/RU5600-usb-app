@@ -2851,6 +2851,37 @@
       --btn-inset: 0 0 0 0 oklch(0% 0 0/0);
       --btn-shadow: 0 0 0 0 oklch(0% 0 0/0);
     }
+    .btn-soft {
+      --btn-bg: var(--btn-color, var(--color-base-content));
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .btn-soft {
+        --btn-bg: color-mix(
+      in oklab,
+      var(--btn-color, var(--color-base-content)) 8%,
+      var(--btn-soft-bg, var(--color-base-100))
+    );
+      }
+    }
+    .btn-soft {
+      color: var(--btn-rest-fg, var(--btn-color, var(--color-base-content)));
+      --btn-border: var(--btn-color, var(--color-base-content));
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .btn-soft {
+        --btn-border: color-mix(
+      in oklab,
+      var(--btn-color, var(--color-base-content)) 10%,
+      var(--btn-soft-bg, var(--color-base-100))
+    );
+      }
+    }
+    .btn-soft {
+      --btn-border-style: solid;
+      background-image: none;
+      --btn-inset: 0 0 0 0 oklch(0% 0 0/0);
+      --btn-shadow: 0 0 0 0 oklch(0% 0 0/0);
+    }
   }
   @layer daisyui.l1.l2 {
     .checkbox-sm {
@@ -2969,6 +3000,11 @@
       --fontsize: 0.75rem;
       --btn-p: 0.75rem;
       --size: calc(var(--size-field, 0.25rem) * 8);
+    }
+    .btn-success {
+      --btn-color: var(--color-success);
+      --btn-fg: var(--color-success-content);
+      --btn-soft-bg: initial;
     }
     .btn-warning {
       --btn-color: var(--color-warning);
@@ -3291,6 +3327,25 @@ label:has(> .radio:disabled), label:has(> .checkbox:disabled) {
     color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
   }
   cursor: not-allowed;
+}
+.btn-soft.btn-success {
+  background-color: oklch(0.945 0.045 155);
+  border: 1px solid oklch(0.860 0.060 155);
+  color: oklch(0.440 0.100 155);
+  box-shadow: none;
+}
+.btn-soft.btn-success:hover {
+  background-color: oklch(0.915 0.060 155);
+  border-color: oklch(0.820 0.075 155);
+}
+[data-theme="dark"] .btn-soft.btn-success {
+  background-color: oklch(0.300 0.045 155);
+  border: 1px solid oklch(0.410 0.060 155);
+  color: oklch(0.850 0.110 155);
+}
+[data-theme="dark"] .btn-soft.btn-success:hover {
+  background-color: oklch(0.350 0.055 155);
+  border-color: oklch(0.470 0.075 155);
 }
 @layer base {
   :where(:root),:root:has(input.theme-controller[value=light]:checked),[data-theme=light] {

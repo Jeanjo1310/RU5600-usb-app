@@ -21,9 +21,9 @@
   <div class="grid grid-cols-2 gap-2">
     <button id="openBtn" class="btn btn-primary">Abrir</button>
     <button id="closeBtn" class="btn btn-outline" disabled>Cerrar</button>
-    <button id="scanBtn" class="btn btn-outline">Escanear puerto</button>
+    <button id="tcpBtn" class="btn btn-outline">Servidor TCP</button>
     <button id="netBtn" class="btn btn-outline">Escanear red</button>
-    <button id="tcpBtn" class="btn btn-outline">TCPServer</button>
+    <button id="scanBtn" class="btn btn-outline">Escanear puerto</button>
     <button id="helpBtn" class="btn btn-outline">Ayuda</button>
     <button id="udevBtn" class="btn btn-outline col-span-2">Instalar regla de acceso USB</button>
   </div>
@@ -40,8 +40,8 @@
   <div class="grid grid-cols-2 gap-2 mt-3">
     <button id="expBtn" class="btn btn-outline">Exportar config</button>
     <label class="btn btn-outline text-center cursor-pointer">Importar config<input id="impFile" type="file" accept=".ini" class="hidden"></label>
-    <button id="relayOff" class="btn btn-outline">Cerrar relé</button>
-    <button id="relayOn" class="btn btn-outline">Liberar relé</button>
+    <button id="relayOff" class="btn btn-outline" disabled>Cerrar relé</button>
+    <button id="relayOn" class="btn btn-outline" disabled>Liberar relé</button>
   </div>
   <p class="mt-2 text-xs text-base-content/60">Exportar/Importar config guardan y restauran los parámetros del lector en un archivo. Cerrar relé y Liberar relé conmutan el contacto del relé del lector.</p>
   <p id="devMsg" class="mt-1 text-sm"></p>
@@ -73,6 +73,9 @@ async function refreshState() {
   const s = await fetch('/api/conn_state').then(r => r.json());
   document.getElementById('openBtn').disabled = s.open;
   document.getElementById('closeBtn').disabled = !s.open;
+  /* el rele solo tiene sentido con el lector abierto: no hay forma de consultar si la placa lo tiene */
+  document.getElementById('relayOff').disabled = !s.open;
+  document.getElementById('relayOn').disabled = !s.open;
   if (s.info) {
     document.getElementById('sn').textContent = s.info.sn || '-';
     document.getElementById('fw').textContent = s.info.fw || '-';
