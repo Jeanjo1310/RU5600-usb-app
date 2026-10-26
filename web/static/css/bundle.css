@@ -1894,9 +1894,6 @@
   .ml-1 {
     margin-left: var(--spacing);
   }
-  .ml-2 {
-    margin-left: calc(var(--spacing) * 2);
-  }
   @layer daisyui.l1.l2.l3 {
     .status {
       display: inline-block;
@@ -2169,6 +2166,9 @@
   }
   .pt-1 {
     padding-top: var(--spacing);
+  }
+  .pt-1\.5 {
+    padding-top: calc(var(--spacing) * 1.5);
   }
   .pb-6 {
     padding-bottom: calc(var(--spacing) * 6);

@@ -3,12 +3,12 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-4 mb-4">
   <h2 class="text-lg font-semibold mb-3">Parámetros del lector</h2>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-    <div><label class="block text-sm mb-1">RF Power <select id="rf" class="input input-bordered w-full"></select></label></div>
-    <div><label class="block text-sm mb-1">Banda <select id="band" class="input input-bordered w-full"></select></label></div>
-    <div><label class="block text-sm mb-1">WorkMode <select id="wm" class="input input-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></label></div>
-    <div><label class="block text-sm mb-1">FilterTime(s) <input id="filt" value="0" class="input input-bordered w-full"></label></div>
-    <div><label class="block text-sm mb-1">Buzzer <input id="beep" type="checkbox" class="ml-2"></label></div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 items-start">
+    <div><label class="block text-sm mb-1" for="rf">RF Power</label><select id="rf" class="select select-bordered w-full"></select></div>
+    <div><label class="block text-sm mb-1" for="band">Banda</label><select id="band" class="select select-bordered w-full"></select></div>
+    <div><label class="block text-sm mb-1" for="wm">WorkMode</label><select id="wm" class="select select-bordered w-full"><option value="0">AnswerMode</option><option value="1">ActiveMode</option></select></div>
+    <div><label class="block text-sm mb-1" for="filt">FilterTime(s)</label><input id="filt" value="0" class="input input-bordered w-full"></div>
+    <div><div class="text-sm mb-1">Buzzer</div><label class="flex items-center gap-2 text-sm pt-1.5"><input id="beep" type="checkbox" class="checkbox checkbox-sm"> Activo</label></div>
   </div>
   <div class="flex flex-wrap gap-2">
     <button id="pread" class="btn btn-outline">Leer</button>
@@ -18,15 +18,15 @@
   </div>
   <h3 class="text-md font-semibold mt-4 mb-2">Lectura por defecto (para Leer/Escribir)</h3>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-    <label class="text-sm">Área <select id="dmem" class="input input-bordered w-full"><option>EPC</option><option>TID</option><option>USER</option></select></label>
-    <label class="text-sm">Inicio (hex) <input id="dptr" value="00" class="input input-bordered w-full"></label>
-    <label class="text-sm">Longitud (hex) <input id="dlen" value="06" class="input input-bordered w-full"></label>
-    <label class="text-sm">ReadTime <input id="drt" value="2" class="input input-bordered w-full"></label>
+    <div><label class="block text-sm mb-1" for="dmem">Área</label><select id="dmem" class="select select-bordered w-full"><option>EPC</option><option>TID</option><option>USER</option></select></div>
+    <div><label class="block text-sm mb-1" for="dptr">Inicio (hex)</label><input id="dptr" value="00" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="dlen">Longitud (hex)</label><input id="dlen" value="06" class="input input-bordered w-full"></div>
+    <div><label class="block text-sm mb-1" for="drt">ReadTime</label><input id="drt" value="2" class="input input-bordered w-full"></div>
   </div>
   <h3 class="text-md font-semibold mt-4 mb-2">Salida teclado (cuña: solo app de escritorio)</h3>
   <div class="grid grid-cols-2 gap-2">
-    <label class="text-sm">Formato <select id="dout" class="input input-bordered w-full"><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></label>
-    <label class="text-sm"><input type="checkbox" class="checkbox checkbox-sm" id="denter" checked> OutWithEnterKey</label>
+    <div><label class="block text-sm mb-1" for="dout">Formato</label><select id="dout" class="select select-bordered w-full"><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></div>
+    <div><div class="text-sm mb-1">Fin de lectura</div><label class="flex items-center gap-2 text-sm pt-1.5"><input type="checkbox" class="checkbox checkbox-sm" id="denter" checked> OutWithEnterKey</label></div>
   </div>
   <p id="pmsg" class="mt-2 text-sm"></p>
 </div>
