@@ -567,12 +567,13 @@ def api_read_mode():
     _read_cfg["mode"] = rm
     pace = _READ_MODES[rm]
     # si el modo elegido no es el del perfil base, la mezcla pasa a Personalizado
+    # (y si ya era personalizado, el cambio se anota a lo que ya tenia)
     base_prof = PROFILES.get(_profile_cfg.get("base") or "")
-    if _profile_cfg.get("current") != "custom" and base_prof and base_prof["read_mode"] != rm:
+    if base_prof and base_prof["read_mode"] != rm:
         _profile_cfg["current"] = "custom"
-        _profile_cfg["changed"] = dict(_profile_cfg.get("changed") or {},
-                                       **{_PARAM_LBL["mode"]: base_prof["read_mode"],
-                                          "lectura": rm})
+        _profile_cfg["changed"] = dict(_profile_cfg.get("changed") or {}, **{
+            "lectura": {"de": _READ_MODES[base_prof["read_mode"]]["label"],
+                        "a": _READ_MODES[rm]["label"]}})
     _log("info", "modo de lectura: %s (pausa %.0f ms, reintentos %d)" % (
         pace["label"], pace["pause"] * 1000, pace["retries"]))
     return jsonify(ok=True, read_mode=rm, label=pace["label"],
