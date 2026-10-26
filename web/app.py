@@ -1910,8 +1910,17 @@ def api_read_until():
     # --- tarea 10: chip por TID (4 bytes de prefijo) ---
     if found:
         try:
-            tid = r.read_card(2, 0, 2, b"\x00" * 4, retries=2)
-            prefix = tid.hex().upper()[:8]
+            # TID completo: 12 bytes (modelo + serial unico)
+            tid = r.read_card(2, 0, 6, b"\x00" * 4, retries=2)
+            tid_hex = tid.hex().upper()
+            out["tid"] = tid_hex
+            # coherencia: en este lote el EPC termina con el serial del TID
+            if len(tid_hex) >= 8 and last_epc and len(last_epc) >= 8:
+                out["epc_tid_ok"] = (tid_hex[-8:] == last_epc[-8:])
+                if not out["epc_tid_ok"]:
+                    _log("warn", "EPC y TID no coinciden: epc=%s tid=%s (tag mal grabado o frame viejo)"
+                         % (last_epc, tid_hex))
+            prefix = tid_hex[:8]
             entry = TID_PREFIX_DB.get(prefix)
             if isinstance(entry, tuple) and len(entry) >= 2:
                 chip = ("%s %s" % (entry[0], entry[1])).strip()
