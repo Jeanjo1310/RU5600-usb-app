@@ -1,28 +1,63 @@
 {% extends "base.html" %}
 {% block title %}Barrido{% endblock %}
 {% block content %}
-<main>  <div class="card bg-base-100 shadow-sm p-6 mb-4">
-    <div class="flex flex-wrap items-end gap-4">
-      <div>
-        <label class="block mb-1 text-sm font-medium">Segundos (0 = hasta parar)</label>
-        <input id="seconds" type="number" value="60" min="0" class="input input-bordered w-28">
-      </div>
-      <button id="startBtn" class="btn btn-primary">Iniciar lectura</button>
-      <button id="stopBtn" class="btn btn-error" disabled>Parar</button>
-      <span id="status" class="text-sm opacity-80 pb-2">Listo.</span>
+<div class="card bg-base-100 shadow-sm p-6 mb-4">
+  <div class="flex flex-wrap items-end gap-4 mb-2">
+    <div>
+      <label class="block mb-1 text-sm font-medium" for="seconds">Segundos (0 = hasta parar)</label>
+      <input id="seconds" type="number" value="60" min="0" class="input input-bordered w-32">
     </div>
-    <p class="text-xs mt-2 text-base-content/60">Lee durante el tiempo indicado y suma tags distintos: la relectura del mismo tag no crea fila nueva. Apoyá el cursor en el EPC para ver la trama cruda.</p>
+    <div>
+      <label class="block mb-1 text-sm font-medium" for="target">Detener al llegar a N tags</label>
+      <input id="target" type="number" value="0" min="0" class="input input-bordered w-32">
+    </div>
+    <button id="startBtn" class="btn btn-primary">Iniciar lectura</button>
+    <button id="stopBtn" class="btn btn-error" disabled>Parar</button>
+    <span id="status" class="text-sm text-base-content/60 pb-2">Listo.</span>
   </div>
-  <div class="card bg-base-100 shadow-sm overflow-x-auto p-2">
+  <p class="text-xs text-base-content/60">Lee durante el tiempo indicado y suma tags distintos. Con "0" en el tope, la única forma de cortar es Parar o que se cumpla el tiempo. La relectura del mismo tag no crea fila: suma en Veces.</p>
+</div>
+<div class="card bg-base-100 shadow-sm overflow-x-auto p-2 mb-4">
+  <table class="table table-zebra w-full text-sm">
+    <thead class="text-xs uppercase opacity-70">
+      <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Code W34</th><th class="px-4 py-2">Excel</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">Estado</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<div class="card bg-base-100 shadow-sm p-6">
+  <h2 class="text-lg font-semibold mb-1">Comparar el barrido con una planilla</h2>
+  <p class="text-sm text-base-content/60 mb-3">Subí la planilla y elegí qué columna comparar. Devuelve <b>solo los tags que aparecen en la planilla</b> (duplicados), no la lista completa.</p>
+  <div class="flex flex-wrap items-end gap-3 mb-3">
+    <div>
+      <label class="block text-sm mb-1" for="cmpfile">Planilla (.xlsx o .csv)</label>
+      <input id="cmpfile" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered w-72">
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="cmpcol">Columna a comparar</label>
+      <select id="cmpcol" class="select select-bordered w-28">
+        <option value="0">A</option><option value="1">B</option><option value="2">C</option>
+        <option value="3">D</option><option value="4">E</option><option value="5">F</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="cmpmode">Qué comparo</label>
+      <select id="cmpmode" class="select select-bordered w-52">
+        <option value="auto" selected>EPC completo o W34</option>
+        <option value="epc">Solo EPC completo</option>
+        <option value="w34">Solo código W34</option>
+      </select>
+    </div>
+    <button id="cmpBtn" class="btn btn-outline">Comparar</button>
+  </div>
+  <p id="cmpmsg" class="text-sm mb-2"></p>
+  <div class="overflow-x-auto">
     <table class="table table-zebra w-full text-sm">
-      <thead class="text-xs uppercase opacity-70">
-        <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Code W34</th><th class="px-4 py-2">Excel</th><th class="px-4 py-2">Estado</th></tr>
-      </thead>
-      <tbody id="rows"></tbody>
+      <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">Fila en planilla</th><th class="px-4 py-2">Valor en planilla</th></tr></thead>
+      <tbody id="cmprows"></tbody>
     </table>
   </div>
-  <p class="mt-2 text-sm opacity-70">Crudo íntegro por tag (tooltip en EPC). Deduplicado por blob: la relectura no crea fila nueva.</p>
-</main>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -32,29 +67,62 @@ const BADGE = {confirmado:'badge badge-success', patron:'badge badge-warning', e
 function badge(txt, conf) {
   return `<span class="${BADGE[conf] || 'badge badge-neutral'}">${txt}</span>`;
 }
+function reasonText(r) {
+  if (r === 'tope') return 'se llegó al tope de tags';
+  if (r === 'usuario') return 'lo detuviste vos';
+  if (r === 'tiempo') return 'se cumplió el tiempo';
+  return '';
+}
 async function poll() {
   const r = await fetch('/api/status').then(r => r.json());
-  $('status').textContent = r.running ? `Leyendo… ${r.count} tags (${r.elapsed}s)` : (r.error ? 'Error: ' + r.error : `Detenido. ${r.count} tags.`);
+  const extra = r.target ? ` / ${r.target}` : '';
+  $('status').textContent = r.running
+    ? `${t('Leyendo…')} ${r.count}${extra} tags`
+    : `${t('Detenido.')} ${r.count} tags.` + (r.reason ? ' ' + t('Se detuvo porque') + ' ' + t(reasonText(r.reason)) + '.' : '');
   $('startBtn').disabled = r.running;
   $('stopBtn').disabled = !r.running;
   if (r.tags.length > seen) {
     const tb = $('rows');
-    r.tags.slice(seen).forEach((t, i) => {
+    r.tags.slice(seen).forEach((x, i) => {
       const tr = document.createElement('tr');
       tr.className = 'border-b border-base-300';
-      const conf = badge(t.conf === 'patron' ? 'patrón' : (t.conf || '?'), t.conf);
-      tr.innerHTML = `<td class="px-4 py-2">${seen + i + 1}</td><td class="px-4 py-2 font-mono" title="${t.raw}">${t.epc}</td><td class="px-4 py-2 font-mono">${t.chip}</td><td class="px-4 py-2 font-mono">${t.epc && t.epc.length >= 14 ? t.epc.slice(6,14) : '-'}</td><td class="px-4 py-2">${t.xl}</td><td class="px-4 py-2">${conf}</td>`;
+      const conf = badge(x.conf === 'patron' ? 'patrón' : (x.conf || '?'), x.conf);
+      tr.innerHTML = `<td class="px-4 py-2">${seen + i + 1}</td><td class="px-4 py-2 font-mono" title="${x.raw}">${x.epc}</td><td class="px-4 py-2 font-mono">${x.chip}</td><td class="px-4 py-2 font-mono">${x.code || '-'}</td><td class="px-4 py-2">${x.xl}</td><td class="px-4 py-2">${x.n || 1}</td><td class="px-4 py-2">${conf}</td>`;
       tb.appendChild(tr);
     });
     seen = r.tags.length;
   }
+  (r.tags || []).forEach((x, i) => {
+    const tr = $('rows').children[i];
+    if (tr && tr.children[5]) tr.children[5].textContent = x.n || 1;
+  });
   if (!r.running && timer) { clearInterval(timer); timer = null; }
 }
 $('startBtn').onclick = async () => {
+  const r = await post('/api/start', {seconds: parseFloat($('seconds').value) || 0,
+                                      target: parseInt($('target').value) || 0});
+  if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
   $('rows').innerHTML = ''; seen = 0;
-  await fetch('/api/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seconds: parseFloat($('seconds').value) || 60})});
-  timer = setInterval(poll, 500); poll();
+  timer = setInterval(poll, 400); poll();
 };
-$('stopBtn').onclick = async () => { await fetch('/api/stop', {method:'POST'}); };
+$('stopBtn').onclick = async () => { await post('/api/stop', {}); };
+$('cmpBtn').onclick = async () => {
+  const f = $('cmpfile').files[0];
+  if (!f) { $('cmpmsg').textContent = 'Elegí la planilla primero.'; return; }
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('column', $('cmpcol').value);
+  fd.append('mode', $('cmpmode').value);
+  const r = await fetch('/api/compare', {method: 'POST', body: fd}).then(x => x.json());
+  const tb = $('cmprows'); tb.innerHTML = '';
+  if (!r.ok) { $('cmpmsg').textContent = 'Error: ' + r.error; return; }
+  $('cmpmsg').textContent = `${r.found} de ${r.total} tags del barrido están en la planilla (${r.sheet_rows} filas leídas).`;
+  (r.matches || []).forEach((x, i) => {
+    const tr = document.createElement('tr'); tr.className = 'border-b border-base-300';
+    tr.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono">${x.epc}</td><td class="px-4 py-2 font-mono">${x.chip}</td><td class="px-4 py-2">${x.veces}</td><td class="px-4 py-2">${x.fila}</td><td class="px-4 py-2 font-mono">${x.valor}</td>`;
+    tb.appendChild(tr);
+  });
+};
+poll();
 </script>
 {% endblock %}

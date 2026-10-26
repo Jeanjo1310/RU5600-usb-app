@@ -125,20 +125,39 @@ def api_params_read():
 
 @app.route("/api/params_apply", methods=["POST"])
 def api_params_apply():
+    """Escribe los parametros y los relee: devuelve que quedo grabado y que no."""
     cfg = request.get_json(silent=True) or {}
     try:
         r = _need_usb()
-        if "rf" in cfg:
-            r.set_rf_power(int(cfg["rf"]))
-        if "mode" in cfg:
-            r.set_work_mode(int(cfg["mode"]))
-        if "beep" in cfg:
-            r.set_beep(bool(cfg["beep"]))
-        if "filter" in cfg:
-            r.set_filter_time(int(cfg["filter"]))
-        return jsonify(ok=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
+    applied, failed = {}, []
+    plan = [
+        ("rf", lambda v: r.set_rf_power(int(v)), lambda: r.rf_power()),
+        ("mode", lambda v: r.set_work_mode(int(v)), lambda: r.work_mode()),
+        ("beep", lambda v: r.set_beep(bool(v)), lambda: r.beep()),
+        ("filter", lambda v: r.set_filter_time(int(v)), lambda: r.filter_time()),
+    ]
+    try:
+        for key, setter, getter in plan:
+            if key not in cfg:
+                continue
+            want = cfg[key]
+            try:
+                setter(want)
+                got = getter()
+            except Exception as exc:  # noqa: BLE001
+                failed.append({"field": key, "want": want, "got": None,
+                               "error": str(exc)})
+                continue
+            norm_want = (1 if want else 0) if key == "beep" else int(want)
+            norm_got = (1 if got else 0) if key == "beep" else int(got)
+            applied[key] = {"want": norm_want, "got": norm_got}
+            if norm_got != norm_want:
+                failed.append({"field": key, "want": norm_want, "got": norm_got})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    return jsonify(ok=not failed, applied=applied, failed=failed)
 
 
 def _hex(b, n=4, default=b"\x00" * 4):
@@ -719,8 +738,9 @@ def api_raw():
         payload = bytes.fromhex(str(cfg.get("payload", "") or "").replace(" ", ""))
         timeout = int(cfg.get("timeout", 400) or 400)
         r = _need_usb()
-        return jsonify(ok=True,
-                       answered=bool(r.raw_command(cmd, payload, timeout)))
+        ok, body = r.raw_command(cmd, payload, timeout, want_payload=True)
+        return jsonify(ok=True, answered=bool(ok),
+                       hex=(bytes(body or b"").hex().upper()))
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
 
@@ -1106,22 +1126,34 @@ def barrido():
 def status():
     return jsonify(running=_state["running"], error=_state["error"],
                    count=len(_state["tags"]), tags=_state["tags"],
+                   target=_state.get("target", 0),
+                   reason=_state.get("reason", ""),
                    elapsed=round(time.monotonic() - _state["started"], 1)
                    if _state["running"] else 0)
 
 
 @app.route("/api/start", methods=["POST"])
 def start():
-    seconds = float((request.get_json(silent=True) or {}).get("seconds", 60))
+    cfg = request.get_json(silent=True) or {}
+    try:
+        seconds = float(cfg.get("seconds", 60))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="segundos invalidos"), 400
+    try:
+        target = int(cfg.get("target", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="tope de tags invalido"), 400
+    if target < 0:
+        target = 0
     with _lock:
         if _state["running"]:
             return jsonify(ok=False, error="ya corriendo"), 409
-        _state.update(running=True, tags=[], error="",
-                      started=time.monotonic())
-        _state["seen"] = set()
+        _state.update(running=True, tags=[], error="", target=target,
+                      reason="", started=time.monotonic())
+        _state["seen"] = {}
     _stop.clear()
-    threading.Thread(target=_run, args=(seconds,), daemon=True).start()
-    return jsonify(ok=True)
+    threading.Thread(target=_run, args=(seconds, target), daemon=True).start()
+    return jsonify(ok=True, target=target)
 
 
 @app.route("/api/stop", methods=["POST"])
@@ -1130,7 +1162,8 @@ def stop():
     return jsonify(ok=True)
 
 
-def _run(seconds):
+def _run(seconds, target=0):
+    reason = ""
     try:
         idx, codes = _excel()
     except Exception:  # noqa: BLE001 - excel es bonus
@@ -1150,17 +1183,23 @@ def _run(seconds):
         try:
             while ((deadline is None or time.monotonic() < deadline)
                     and not _stop.is_set()):
+                if target and len(_state["tags"]) >= target:
+                    reason = "tope"
+                    break
                 time.sleep(0.1)
                 for tag in r.poll_tags():
                     blob = (bytes(tag.raw_id) if tag.raw_id
                             else bytes(tag.epc))
-                    key = blob.hex().upper()
-                    if key in _state["seen"]:
-                        continue
-                    _state["seen"].add(key)
                     info = _resolve(blob, idx, codes)
-                    info.update(raw=key[:48],
-                                ant=tag.ant, rssi=tag.rssi)
+                    epc = (info.get("epc") or "").upper()
+                    key = epc or blob.hex().upper()
+                    prev = _state["seen"].get(key)
+                    if prev is not None:
+                        prev["n"] = prev.get("n", 1) + 1
+                        continue
+                    info.update(raw=key[:48], ant=tag.ant,
+                                rssi=tag.rssi, n=1)
+                    _state["seen"][key] = info
                     _state["tags"].append(info)
         finally:
             try:
@@ -1168,10 +1207,85 @@ def _run(seconds):
             except Exception:  # noqa: BLE001
                 pass
             r._pace(settle=True)
+            # el barrido deja el lector en ActiveMode: volver a AnswerMode,
+            # que es donde el lector contesta de forma confiable
+            try:
+                r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                               WORKMODE_ANSWER)
+                r._pace(settle=True)
+            except Exception:  # noqa: BLE001
+                pass
     except Exception as exc:  # noqa: BLE001
         _state["error"] = str(exc)
     finally:
+        if not reason:
+            reason = "usuario" if _stop.is_set() else "tiempo"
+        _state["reason"] = reason
         _state["running"] = False
+
+
+@app.route("/api/compare", methods=["POST"])
+def api_compare():
+    """Compara los tags del ultimo barrido contra una planilla y devuelve solo los que estan."""
+    up = request.files.get("file")
+    if up is None:
+        return jsonify(ok=False, error="falta la planilla")
+    try:
+        col = int(request.form.get("column", "0") or 0)
+    except (TypeError, ValueError):
+        col = 0
+    mode = (request.form.get("mode") or "auto").lower()
+    tags = list(_state["tags"])
+    if not tags:
+        return jsonify(ok=False, error="primero hacé un barrido")
+
+    name = (up.filename or "").lower()
+    raw_rows = []
+    try:
+        if name.endswith((".xlsx", ".xlsm")):
+            from openpyxl import load_workbook
+            wb = load_workbook(up, data_only=True, read_only=True)
+            for row in wb.active.iter_rows(values_only=True):
+                if row and any(v not in (None, "") for v in row):
+                    raw_rows.append(row)
+        else:
+            import csv as _csv
+            for row in _csv.reader(io.StringIO(up.read().decode("utf-8-sig", "replace"))):
+                if row and any(str(v).strip() for v in row):
+                    raw_rows.append(row)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="no pude leer la planilla: " + str(exc))
+
+    values = []
+    for i, row in enumerate(raw_rows, start=1):
+        if col < len(row):
+            val = _norm_epc(row[col])
+            if val:
+                values.append((i, val))
+
+    def hit(epc, val):
+        w34 = epc[6:14] if len(epc) >= 14 else ""
+        if mode in ("epc", "auto") and val == epc:
+            return True
+        if mode in ("w34", "auto") and w34 and (val == w34 or val.endswith(w34)):
+            return True
+        return False
+
+    matches, seen = [], set()
+    for t in tags:
+        epc = (t.get("epc") or "").upper()
+        if not epc or epc in seen:
+            continue
+        for row_n, val in values:
+            if hit(epc, val):
+                seen.add(epc)
+                matches.append({"epc": epc, "chip": t.get("chip"),
+                                "veces": t.get("n", 1),
+                                "fila": row_n, "valor": val})
+                break
+
+    return jsonify(ok=True, total=len(tags), sheet_rows=len(values),
+                   matches=matches, found=len(matches))
 
 
 if __name__ == "__main__":

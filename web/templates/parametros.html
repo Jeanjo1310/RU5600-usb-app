@@ -28,6 +28,7 @@
     <div><label class="block text-sm mb-1" for="dout">Formato</label><select id="dout" class="select select-bordered w-full"><option>All(Hex)</option><option>EPC(HEX)</option><option>EPC(ASCII)</option></select></div>
     <div><div class="text-sm mb-1">Fin de lectura</div><label class="flex items-center gap-2 text-sm pt-1.5"><input type="checkbox" class="checkbox checkbox-sm" id="denter" checked> OutWithEnterKey</label></div>
   </div>
+  <p class="mt-2 text-xs text-base-content/60">Aplicar escribe y después relee cada valor: si el lector no acepta uno, se avisa acá con el valor que quedó.</p>
   <p id="pmsg" class="mt-2 text-sm"></p>
 </div>
 {% endblock %}
@@ -53,7 +54,18 @@ document.getElementById('papply').onclick = async () => {
   for (const k of ['dmem','dptr','dlen','drt','dout']) localStorage.setItem('ru5600_'+k, document.getElementById(k).value);
   localStorage.setItem('ru5600_denter', document.getElementById('denter').checked ? '1' : '0');
   const r = await post('/api/params_apply', {rf: document.getElementById('rf').selectedIndex, mode: parseInt(document.getElementById('wm').value), beep: document.getElementById('beep').checked, filter: document.getElementById('filt').value});
-  document.getElementById('pmsg').textContent = r.ok ? 'Aplicado.' : 'Error: ' + r.error;
+  const msg = document.getElementById('pmsg');
+  if (r.error) { msg.textContent = 'Error: ' + r.error; }
+  else if (r.failed && r.failed.length) {
+    const nombres = {rf: 'RF Power', mode: 'WorkMode', beep: 'Buzzer', filter: 'FilterTime'};
+    msg.textContent = 'No se aplicó todo: ' + r.failed.map(f => {
+      const que = (nombres[f.field] || f.field);
+      if (f.got === null || f.got === undefined) return que + ' (sin respuesta del lector)';
+      return que + ' pediste ' + f.want + ' y quedó ' + f.got;
+    }).join(' · ');
+  } else {
+    msg.textContent = 'Aplicado y verificado releyendo el lector.';
+  }
 };
 for (const k of ['dmem','dptr','dlen','drt','dout']) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(k).value = v; }
 if (localStorage.getItem('ru5600_denter') === '0') document.getElementById('denter').checked = false;
