@@ -3,28 +3,28 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <div class="flex flex-wrap items-end gap-4 mb-2">
-    <div>
+    <div class="w-28">
       <label class="block mb-1 text-sm font-medium" for="seconds">Segundos (0 = hasta parar)</label>
-      <input id="seconds" type="number" value="0" min="0" class="input input-bordered w-32">
+      <input id="seconds" type="number" value="0" min="0" class="input input-bordered w-full">
     </div>
-    <div>
+    <div class="w-28">
       <label class="block mb-1 text-sm font-medium" for="target">Detener al llegar a N tags</label>
-      <input id="target" type="number" value="0" min="0" class="input input-bordered w-32">
+      <input id="target" type="number" value="0" min="0" class="input input-bordered w-full">
     </div>
-    <div>
+    <div class="w-28">
       <label class="block mb-1 text-sm font-medium" for="stall" title="Si pasa este tiempo sin tags nuevos, la corrida corta sola">Sin tags nuevos en (s)</label>
-      <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-32">
+      <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-full">
     </div>
     <div class="pb-1">
-      <div id="tagFaltan" class="font-bold whitespace-nowrap" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.875rem; line-height: 2.5rem;">—</div>
+      <div id="tagFaltan" class="font-bold whitespace-nowrap" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.5rem; line-height: 2.5rem;">—</div>
       <div class="text-xs text-base-content/60 mt-1 whitespace-nowrap"><span id="tagCount">0</span><span id="tagTarget"></span></div>
     </div>
-    <div class="pb-2">
-      <div class="flex items-center gap-2">
+    <div class="pb-2 flex-1 min-w-0">
+      <div class="flex items-center gap-2 min-w-0">
         <span id="healthDot" class="inline-block w-2.5 h-2.5 rounded-full bg-base-300"></span>
-        <span id="status" class="text-sm font-medium">Listo.</span>
+        <span id="status" class="text-sm font-medium truncate">Listo.</span>
       </div>
-      <div id="rate" class="text-xs text-base-content/60 mt-0.5"></div>
+      <div id="rate" class="text-xs text-base-content/60 mt-0.5 truncate"></div>
     </div>
     <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
     <button id="clearBtn" class="btn btn-outline">Limpiar listado</button>
