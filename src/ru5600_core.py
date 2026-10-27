@@ -460,6 +460,11 @@ def _declare_signatures(lib) -> None:
         "CFHid_SetDeviceTime": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_ReadDeviceParam": ([u8, u8p], ctypes.c_ubyte),
         "CFHid_SetDeviceParam": ([u8, u8p], ctypes.c_ubyte),
+        # sondas de estado del vendor (firmas inferidas del .so 2026-10-26):
+        # ambas envian un comando y esperan la respuesta 100 ms; 1 = contesto,
+        # 0 = no contesto (leer el desensamblado: SendCommand + GetSpecificPocket).
+        "CFHid_ReadTransState": ([u8, u8p], ctypes.c_ubyte),   # cmd 0x2D
+        "CFHid_CheckModule": ([u8, u8p], ctypes.c_ubyte),      # cmd 0xE0
     }
     for name, (argtypes, restype) in sig.items():
         fn = getattr(lib, name, None)
@@ -795,6 +800,61 @@ class Ru5600Reader:
             self._lib.CFHid_SetCallback(ctypes.cast(None, _CB))
         except Exception:  # noqa: BLE001
             pass
+
+    # -- salud del enlace (senales del propio vendor) ------------------------
+    # Offset del puntero al dispositivo hid dentro del .so (medido en
+    # libCFHidApi.so x86-64: CFHid_SendCommand hace "cmpq $0x0, <handle>" antes
+    # de cada comando, y el hilo de recepcion lo pone en NULL cuando hid_read
+    # falla). Es el "LED apagado" del lector, leido del byte que el vendor usa.
+    HID_HANDLE_OFF = 0x20AFF8
+
+    def hid_handle_ptr(self):
+        """Puntero interno al dispositivo hid, o None si el vendor ya detecto
+        la desconexion (handle NULL) o si no se puede determinar."""
+        base = getattr(self, "_lib_base", 0)
+        if not base:
+            return None
+        addr = base + self.HID_HANDLE_OFF
+        # validar que la direccion cae en una zona rw del .so (el offset es
+        # del binario que tenemos; con otro build, no adivinar)
+        try:
+            for line in open("/proc/self/maps"):
+                rng, perms = line.split()[0], line.split()[1]
+                if "libCFHidApi.so" not in line or "w" not in perms:
+                    continue
+                lo, hi = (int(x, 16) for x in rng.split("-"))
+                if lo <= addr < hi:
+                    return ctypes.cast(
+                        addr, ctypes.POINTER(ctypes.c_void_p)).contents.value
+            return None
+        except Exception:  # noqa: BLE001
+            return None
+
+    def trans_state(self):
+        """Estado de transmision del lector (CFHid_ReadTransState, cmd 0x2D).
+
+        Devuelve el BYTE de estado del firmware, o None si el equipo no
+        contesto el comando. Ojo (bug medido 2026-10-26): la funcion C
+        devuelve 1/0 como FLAG DE EXITO y escribe el estado en el out-param —
+        un 0 es estado legal del firmware, NO significa "sin lector". Por eso
+        None (no contesto) y un entero (contesto) no se pueden confundir."""
+        with self._lock:
+            self._pace()
+            out = ctypes.c_ubyte(0)
+            if self._lib.CFHid_ReadTransState(DEV_ADDR,
+                                              ctypes.byref(out)) != 1:
+                return None
+            return out.value
+
+    def check_module(self):
+        """Chequeo del modulo RFID (CFHid_CheckModule, cmd 0xE0). None =
+        no contesto; entero = contesto (el byte es el resultado del chequeo)."""
+        with self._lock:
+            self._pace()
+            out = ctypes.c_ubyte(0)
+            if self._lib.CFHid_CheckModule(DEV_ADDR, ctypes.byref(out)) != 1:
+                return None
+            return out.value
 
     # -- device information ------------------------------------------------
     def system_info(self) -> SystemInfo:

@@ -148,6 +148,59 @@ _state = {"running": False, "tags": [], "seen": {}, "started": 0.0,
 _reconn = {"active": False, "since": 0.0, "left": 0.0, "tries": 0,
            "last_ok": 0.0, "since_h": ""}
 
+# avisos que el SDK del vendor imprime con puts() a STDOUT (medidos en
+# libCFHidApi.so 2026-10-26): "open device success" / "unable to open device" /
+# "Hid Disconnect". Son la voz del lector — el watcher las capta en el momento
+# y las registra en el log de la app (antes caian al logfile y nadie las leia).
+_VENDOR_MSGS = {
+    "Hid Disconnect": ("error", "el vendor avisa: Hid Disconnect "
+                                "(el hilo de recepcion detectó que el USB se fue)"),
+    "unable to open device": ("warn", "el vendor avisa: unable to open device"),
+    "open device success": ("ok", "el vendor avisa: open device success"),
+}
+_hid_events = []    # ultimos avisos del vendor con timestamp (para el JSON)
+
+
+def _install_vendor_stdout_watcher():
+    """Captura los puts() del SDK del vendor sin perder el log: fd 1 -> pipe,
+    un hilo lee, reenvia al fd original y registra los avisos conocidos."""
+    try:
+        r_fd, w_fd = os.pipe()
+        orig_fd = os.dup(1)
+        os.dup2(w_fd, 1)
+        os.close(w_fd)
+
+        def _loop():
+            buf = b""
+            try:
+                while True:
+                    chunk = os.read(r_fd, 4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        try:
+                            os.write(orig_fd, line + b"\n")
+                        except OSError:
+                            pass
+                        text = line.decode("utf-8", "replace").strip()
+                        for key, (lvl, msg) in _VENDOR_MSGS.items():
+                            if key in text:
+                                _log(lvl, msg)
+                                _hid_events.append(
+                                    {"ts": time.time(), "msg": key})
+                                del _hid_events[:-20]
+                                break
+            except OSError:
+                pass
+
+        threading.Thread(target=_loop, daemon=True).start()
+        _log("info", "watcher del SDK activo: los avisos del vendor "
+                     "(Hid Disconnect, etc.) se registran en este log")
+    except Exception as exc:  # noqa: BLE001
+        _log("warn", "no pude instalar el watcher del SDK: %s" % exc)
+
 
 def _reconn_window():
     """Ventana de espera = la misma 'Sin tags nuevos' del Barrido (120 default)."""
@@ -159,8 +212,16 @@ def _reconn_window():
 
 def _link_dead(r):
     """True cuando el lector dejó de contestar. NO confundir con "no hay tags":
-    un campo vacío sigue contestando parámetros; un USB muerto no. Doble sonda
-    (300 ms) para no cortar un stream sano por un transitorio del firmware."""
+    un campo vacío sigue contestando; un USB muerto no.
+
+    Tres senales del PROPIO vendor (ingenieria inversa del libCFHidApi.so,
+    2026-10-26), de mas barata a mas cara:
+      1. handle interno NULL: el hilo de recepcion del .so lo pone en NULL
+         cuando hid_read() falla (el "LED apagado" leido del byte que
+         SendCommand chequea antes de cada comando). Cero costo, sin USB.
+      2. trans_state() (cmd 0x2D): comando de estado — 0 si no contesta.
+      3. read_param(0x00): el test classico, con doble intento (300 ms) para
+         no cortar un stream sano por un transitorio del firmware."""
     if r is None:
         return True
     try:
@@ -168,6 +229,21 @@ def _link_dead(r):
             return True
     except Exception:  # noqa: BLE001
         return True
+    # 1. handle interno del vendor (instantaneo, sin trafico USB)
+    try:
+        if r.hid_handle_ptr() == 0:
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    # 2. comando de estado del firmware: solo cuenta como muerte si NO
+    #    contesta (None). Un byte 0 es estado legal del firmware — confundirlos
+    #    declararia muerto a un lector sano (bug corregido el 2026-10-26).
+    try:
+        if r.trans_state() is None:
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    # 3. sonda de parametro con reintento
     for _i in range(2):
         try:
             r.read_param(0x00)          # ReadDeviceOneParam: sonda barata
@@ -273,6 +349,9 @@ def _usb_nodes():
     except OSError:
         pass
     return found
+
+
+_install_vendor_stdout_watcher()
 
 
 @app.route("/conexion")
@@ -2261,6 +2340,24 @@ def api_probe_state():
             out["beep"] = _reader.beep()
         except Exception as exc:  # noqa: BLE001
             out["params_error"] = str(exc)
+        # senales de salud del vendor (ver _link_dead): el LED apagado, en JSON
+        try:
+            hp = _reader.hid_handle_ptr()
+            out["hid_handle"] = "ok" if hp else ("NULL (vendor detectó la "
+                                                 "desconexión)" if hp == 0
+                                                 else "no determinable")
+        except Exception:  # noqa: BLE001
+            out["hid_handle"] = "error"
+        # null = el equipo no contesto el comando; entero = contesto
+        try:
+            out["trans_state"] = _reader.trans_state()
+        except Exception:  # noqa: BLE001
+            out["trans_state"] = None
+        try:
+            out["check_module"] = _reader.check_module()
+        except Exception:  # noqa: BLE001
+            out["check_module"] = None
+        out["vendor_events"] = list(_hid_events[-5:])
         try:
             fr = _reader.read_freq()
             out["freq"] = fr.hex().upper() if isinstance(fr, (bytes, bytearray)) else fr
