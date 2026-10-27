@@ -39,6 +39,35 @@ body { min-height: 100vh; }
    vistas (base.html es padre de todas). */
 html[data-theme="light"] { color-scheme: light; }
 html[data-theme="dark"] { color-scheme: dark; }
+/* Dropdowns propios: reemplazan el popup NATIVO del <select> (lo dibuja
+   WebKit/GTK como menu del sistema: con grab y con el tema GTK, fuera de
+   nuestro alcance). Todo pintado con variables del tema -> respeta
+   claro/oscuro en todas las vistas. El select original se esconde pero
+   CONSERVA id/value/disabled: el codigo que lee .value no cambia. */
+.cselect { position: relative; display: inline-block; vertical-align: middle; }
+.cselect > select { display: none !important; }
+.cselect-btn { cursor: pointer; text-align: left; }
+.cselect-btn .cselect-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cselect-btn:disabled { cursor: not-allowed; opacity: .55; }
+.cselect-menu {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 60;
+  background-color: var(--color-base-100, Canvas);
+  border: 1px solid var(--color-base-300, GrayText);
+  border-radius: var(--radius-box, 0.5rem);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .18);
+  padding: 4px; margin: 0;
+  max-height: 240px; overflow-y: auto;
+}
+.cselect-menu[hidden] { display: none; }
+.cselect-item {
+  display: block; width: 100%; text-align: left;
+  padding: 6px 10px; border-radius: 6px; font-size: inherit; color: inherit;
+  background: transparent; border: 0; cursor: pointer; white-space: nowrap;
+}
+.cselect-item:hover { background-color: var(--color-base-200, ButtonFace); }
+.cselect-item[aria-selected="true"] {
+  background-color: var(--color-base-200, ButtonFace); font-weight: 600;
+}
 .tabs-card { background-color: var(--color-base-100, Canvas); }
 .tabs-card .tab-active {
   background-color: var(--color-base-200, Canvas);
@@ -297,6 +326,138 @@ try{ var _l=localStorage.getItem('ru5600_lang')||'es'; var _r=document.querySele
 document.querySelectorAll('input[type=number]').forEach(function (el) {
   el.addEventListener('focus', function () { el.select(); });
 });
+
+/*CSELECT-START*/
+/* Dropdowns propios: reemplazan el popup NATIVO del <select>.
+   - El select original se esconde pero CONSERVA id/value/disabled: todo el
+     codigo que lee .value sigue igual; elegir dispara 'change' (para los
+     que tienen onchange, como #perfil).
+   - Un MutationObserver reconstruye el menu si JS agrega/quita opciones
+     (caso #dev, que se llena al escanear) o cambia disabled.
+   - El menu es contenido de la pagina: NO captura el escritorio (se cierra
+     con clic afuera o Esc). Teclado: Enter/Espacio abre, Esc cierra. */
+(function () {
+  var OPEN_MENU = null, OPEN_WRAP = null;
+  function closeCustom() {
+    if (OPEN_MENU) { OPEN_MENU.setAttribute('hidden', ''); OPEN_MENU = null; OPEN_WRAP = null; }
+  }
+  document.addEventListener('click', function (ev) {
+    if (OPEN_WRAP && !OPEN_WRAP.contains(ev.target)) closeCustom();
+  }, true);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' || ev.key === '27') closeCustom();
+  });
+
+  function selectedText(sel) {
+    var o = (sel.options && sel.selectedIndex >= 0) ? sel.options[sel.selectedIndex] : null;
+    return o ? o.textContent : '';
+  }
+
+  function refreshBtn(wrap, sel, btn) {
+    var lab = btn.querySelector('.cselect-label');
+    if (lab) lab.textContent = selectedText(sel);
+    btn.disabled = !!sel.disabled;
+    var items = wrap.querySelectorAll('.cselect-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].setAttribute('aria-selected',
+        items[i].getAttribute('data-value') === sel.value ? 'true' : 'false');
+    }
+  }
+
+  function fireChange(sel) {
+    var ev;
+    try { ev = new Event('change', { bubbles: true }); }
+    catch (e) {
+      ev = document.createEvent('Event');
+      ev.initEvent('change', true, true);
+    }
+    sel.dispatchEvent(ev);
+  }
+
+  function rebuildMenu(wrap, sel, menu, btn) {
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+    for (var i = 0; i < sel.options.length; i++) {
+      (function (opt) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'cselect-item';
+        b.setAttribute('data-value', opt.value);
+        b.setAttribute('role', 'option');
+        b.textContent = opt.textContent;
+        b.setAttribute('aria-selected', opt.value === sel.value ? 'true' : 'false');
+        b.addEventListener('click', function () {
+          if (sel.disabled) return;
+          sel.value = opt.value;
+          refreshBtn(wrap, sel, btn);
+          closeCustom();
+          fireChange(sel);
+        });
+        menu.appendChild(b);
+      })(sel.options[i]);
+    }
+    refreshBtn(wrap, sel, btn);
+  }
+
+  function enhance(sel) {
+    if (!sel || sel.__cselect) return;
+    if (!sel.classList || !sel.classList.contains('select')) return;
+    sel.__cselect = true;
+    var wrap = document.createElement('span');
+    var btnCls = [], wrapCls = ['cselect'];
+    var parts = (sel.className || '').split(/\s+/);
+    for (var i = 0; i < parts.length; i++) {
+      if (!parts[i]) continue;
+      if (/^select/.test(parts[i])) btnCls.push(parts[i]);
+      else wrapCls.push(parts[i]);
+    }
+    wrap.className = wrapCls.join(' ');
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = (btnCls.join(' ') + ' cselect-btn w-full').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+    btn.setAttribute('aria-haspopup', 'listbox');
+    var label = document.createElement('span');
+    label.className = 'cselect-label';
+    btn.appendChild(label);
+    var menu = document.createElement('div');
+    menu.className = 'cselect-menu';
+    menu.setAttribute('hidden', '');
+    menu.setAttribute('role', 'listbox');
+    btn.addEventListener('click', function () {
+      if (sel.disabled) return;
+      if (OPEN_MENU === menu) { closeCustom(); return; }
+      closeCustom();
+      menu.removeAttribute('hidden');
+      OPEN_MENU = menu; OPEN_WRAP = wrap;
+    });
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    wrap.appendChild(btn);
+    wrap.appendChild(menu);
+    sel.style.display = 'none';
+    rebuildMenu(wrap, sel, menu, btn);
+    if (window.MutationObserver) {
+      var obs = new MutationObserver(function () { rebuildMenu(wrap, sel, menu, btn); });
+      obs.observe(sel, { childList: true, attributes: true, attributeFilter: ['disabled'] });
+    }
+  }
+
+  function enhanceAll() {
+    var list = document.querySelectorAll('select.select');
+    for (var i = 0; i < list.length; i++) {
+      try { enhance(list[i]); } catch (e) { /* un select roto no rompe la pagina */ }
+    }
+  }
+  window.__refreshSelects = function () {
+    var wraps = document.querySelectorAll('.cselect');
+    for (var i = 0; i < wraps.length; i++) {
+      var s = wraps[i].querySelector('select'), b = wraps[i].querySelector('.cselect-btn');
+      if (s && b) refreshBtn(wraps[i], s, b);
+    }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', enhanceAll);
+  else enhanceAll();
+})();
+/*CSELECT-END*/
 </script>
 {% block scripts %}{% endblock %}
 </body>
