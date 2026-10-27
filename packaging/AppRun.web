@@ -1,7 +1,7 @@
 #!/bin/sh
 # AppRun de la AppImage web del RU5600 Reader.
-# Ventana nativa con pywebview (WebKit2 del sistema). Si no está disponible,
-# cae a navegador. --browser fuerza el modo navegador, --no-browser solo servidor.
+# Aplicacion 100% NATIVA (ventana GTK+WebKit2 via pywebview). NO abre ningun
+# navegador en ningun caso: si falta el stack nativo, falla en voz alta.
 HERE="$(dirname "$(readlink -f "$0")")"
 APP_DIR="$HERE/usr/opt/ru5600-web"
 
@@ -26,19 +26,21 @@ if [ -z "$RU5600_DATA_DIR" ]; then
 fi
 mkdir -p "$RU5600_EXPORT_DIR" "$RU5600_DATA_DIR" 2>/dev/null
 
-# pywebview usa WebKit2 del sistema (gir1.2-webkit2-4.1). Si está, ventana
-# nativa; si no, navegador.
+# pywebview usa WebKit2 del sistema (gir1.2-webkit2-4.1). Es requisito duro:
+# sin ventana nativa no hay modo navegador al que caer (esta app no abre
+# navegadores). --no-browser = solo servidor (sin ventana, para mediciones).
 MODE="--native"
 for arg in "$@"; do
     case "$arg" in
-        --browser) MODE="" ;;
+        --browser) echo "RU5600: --browser ya no existe (app 100% nativa); abriendo ventana." >&2; MODE="--native" ;;
         --no-browser) MODE="--no-browser" ;;
     esac
 done
 
-if [ -n "$MODE" ] && ! $PYTHON -c 'import webview, gi; gi.require_version("WebKit2","4.1")' >/dev/null 2>&1; then
-    echo "RU5600 web: pywebview/WebKit2 no disponible, modo navegador." >&2
-    MODE=""
+if [ "$MODE" = "--native" ] && ! $PYTHON -c 'import webview, gi; gi.require_version("WebKit2","4.1")' >/dev/null 2>&1; then
+    echo "RU5600 Reader: falta el stack de ventana nativa." >&2
+    echo "Instalalo con:  sudo apt install gir1.2-webkit2-4.1" >&2
+    exit 1
 fi
 
 echo "RU5600 web corriendo en http://127.0.0.1:${RU5600_PORT:-8000}  (Ctrl+C para cortar)"

@@ -3222,12 +3222,20 @@ def _start_native(host="127.0.0.1", port=8000):
 
     try:
         import webview
+    except ImportError:
+        import sys as _sys
+        print("RU5600 Reader: falta pywebview (ventana nativa). "
+              "Esta app no abre navegadores.", file=_sys.stderr)
+        _sys.exit(2)
+    try:
         # Identidad de la ventana para el dock/barra: sin esto, GTK toma el
         # nombre del script (argv[0] = "app.py") como WM_CLASS y el dock
         # muestra "app.py" en vez del programa. Debe ir antes de start().
         # El icono de la ventana (barra de tareas sin integrar) sale del PNG
         # embebido en la AppImage.
         try:
+            import gi
+            gi.require_version('Gtk', '3.0')
             from gi.repository import GLib, Gtk
             GLib.set_prgname("RU5600 Reader")
             GLib.set_application_name("RU5600 Reader")
@@ -3247,17 +3255,13 @@ def _start_native(host="127.0.0.1", port=8000):
         webview.create_window("RU5600 Reader", f"http://{host}:{port}",
                              width=1280, height=880, min_size=(800, 600))
         webview.start()
-    except ImportError:
-        # fallback: abrir navegador
-        import webbrowser
-        webbrowser.open(f"http://{host}:{port}")
-        t.join()
     except Exception as exc:
+        # Sin ventana nativa no hay plan B (esta app no abre navegadores).
         import sys
-        print(f"pywebview fallo ({exc}); abriendo navegador...", file=sys.stderr)
-        import webbrowser
-        webbrowser.open(f"http://{host}:{port}")
-        t.join()
+        print(f"RU5600 Reader: no pude abrir la ventana nativa ({exc}). "
+              f"Si falta WebKit2: sudo apt install gir1.2-webkit2-4.1",
+              file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
