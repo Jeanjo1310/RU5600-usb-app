@@ -33,6 +33,12 @@ thead.sticky {
    (vale en claro y oscuro) y el body ocupa como minimo toda la altura. */
 html { background-color: var(--color-base-200, Canvas); }
 body { min-height: 100vh; }
+/* Los popups NATIVOS (opciones del <select>, scrollbars) los dibuja WebKit/GTK,
+   no nuestra CSS: sin color-scheme salen con el estilo del sistema (oscuro)
+   aunque la pagina este en claro. Se declara por tema y vale en todas las
+   vistas (base.html es padre de todas). */
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
 .tabs-card { background-color: var(--color-base-100, Canvas); }
 .tabs-card .tab-active {
   background-color: var(--color-base-200, Canvas);

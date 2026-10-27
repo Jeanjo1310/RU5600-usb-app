@@ -3232,7 +3232,7 @@ def _start_native(host="127.0.0.1", port=8000):
         except Exception:
             pass
         webview.create_window("RU5600 Reader", f"http://{host}:{port}",
-                             width=1280, height=800, min_size=(800, 600))
+                             width=1280, height=880, min_size=(800, 600))
         webview.start()
     except ImportError:
         # fallback: abrir navegador
