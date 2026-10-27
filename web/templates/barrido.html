@@ -16,8 +16,8 @@
       <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-32">
     </div>
     <div class="pb-1">
-      <div class="text-3xl font-bold leading-none whitespace-nowrap"><span id="tagCount">0</span><span id="tagTarget" class="text-base font-medium opacity-60"></span></div>
-      <div id="tagFaltan" class="text-xs text-base-content/60 mt-1">—</div>
+      <div id="tagFaltan" class="text-3xl font-bold leading-none whitespace-nowrap">—</div>
+      <div class="text-xs text-base-content/60 mt-1 whitespace-nowrap"><span id="tagCount">0</span><span id="tagTarget"></span></div>
     </div>
     <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
     <button id="clearBtn" class="btn btn-outline btn-sm">Limpiar listado</button>
@@ -97,12 +97,17 @@ async function poll() {
   const r = await fetch('/api/status').then(r => r.json());
   const extra = r.target ? ` / ${r.target}` : '';
   const modo = (r.mode_used === 'dirigido') ? ' · modo dirigido (el stream no ve este tag)' : '';
-  // contador visible + cuantos faltan para el objetivo
-  $('tagCount').textContent = r.count;
-  $('tagTarget').textContent = r.target ? extra : '';
-  $('tagFaltan').textContent = r.target
-    ? `${t('faltan')} ${Math.max(0, r.target - r.count)}`
-    : t('sin objetivo');
+  // lo principal son LOS FALTANTES (total del campo N menos lo leído);
+  // el total y lo leído van en la línea chica de abajo
+  if (r.target) {
+    $('tagFaltan').textContent = `${t('faltan')} ${Math.max(0, r.target - r.count)}`;
+    $('tagCount').textContent = `${r.count}${extra}`;
+    $('tagTarget').textContent = ` ${t('leídos')}`;
+  } else {
+    $('tagFaltan').textContent = r.count;
+    $('tagCount').textContent = '';
+    $('tagTarget').textContent = ' ' + t('sin objetivo');
+  }
   const pausado = !r.running && r.reason === 'usuario';
   $('status').textContent = r.running
     ? `${t('Leyendo…')} ${r.count}${extra} tags` + modo
