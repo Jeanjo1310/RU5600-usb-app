@@ -140,9 +140,11 @@ async function poll() {
   } else if (r.stalled) {
     dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-error animate-pulse';
     $('rate').textContent = r.last_seen === null
-      ? t('Todavía no entregó ningún tag')
+      ? (r.count ? t('Sin tags nuevos hace más de 10 s') : t('Todavía no entregó ningún tag'))
       : `${r.dps}/s · ` + t('último tag hace') + ' ' + r.last_seen + ' s';
-    warn.textContent = t('El lector está en marcha pero no entrega tags: probá «Destrabar lector».');
+    warn.textContent = r.mode_used === 'dirigido'
+      ? t('Modo dirigido: lee de a un tag y puede pasar un rato sin novedad. Solo destrabá si no aparece nada nuevo en mucho tiempo.')
+      : t('El lector está en marcha pero no entrega tags: probá «Destrabar lector».');
     warn.classList.remove('hidden');
   } else {
     dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-success';

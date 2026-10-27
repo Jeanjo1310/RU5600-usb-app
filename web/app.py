@@ -1930,7 +1930,17 @@ def status():
     ts = [x for x in _state.get("hits", []) if now - x <= 10.0]
     _state["hits"] = ts
     last = (now - ts[-1]) if ts else None
+    if ts:
+        _state["last_seen_ts"] = ts[-1]
     running = _state["running"]
+    # El umbral de "trabado" depende del modo: el dirigido lee de a un tag
+    # (~1/s en el mejor caso, mas lento con varios tags y relecturas de TID),
+    # asi que 5 s de silencio ahi es normal y no amerita sugerir Destrabar.
+    # Antes el aviso saltaba igual en ambos modos y parecia que habia que
+    # destrabar a cada rato aunque el barrido avanzara (falsa alarma medida
+    # con 5 H10: 10 lecturas en modo dirigido con cartel de destrabe).
+    _silence = now - _state.get("last_seen_ts", now)
+    _stall_limit = 20.0 if _state.get("mode_used") == "dirigido" else 5.0
     return jsonify(running=running, error=_state["error"],
                    count=len(_state["tags"]), tags=_state["tags"],
                    target=_state.get("target", 0),
@@ -1943,7 +1953,7 @@ def status():
                    flags=_flags_safe(),
                    dps=round(len(ts) / 10.0, 1),
                    last_seen=None if last is None else round(last, 1),
-                   stalled=bool(running and (last is None or last > 5)),
+                   stalled=bool(running and _silence > _stall_limit),
                    reconnect=dict(_reconn),
                    elapsed=round(now - _state["started"], 1) if running else 0)
 
@@ -2002,7 +2012,8 @@ def start():
         _state.update(running=True, tags=prev_tags, error="", target=target,
                       reason="", started=time.monotonic(), hits=[],
                       stall_after=stall, fallback_after=fallback,
-                      last_rssi=None, last_rssi_t=0.0)
+                      last_rssi=None, last_rssi_t=0.0,
+                      last_seen_ts=time.monotonic())
         # el modo mostrado era el de la corrida anterior hasta que el hilo arrancaba
         _state["mode_used"] = "stream"
         _state["seen"] = prev_seen
@@ -2145,7 +2156,13 @@ def _run(seconds, target=0, mode="answer"):
                             prefix = tid.hex().upper()[:8]
                             ent = TID_PREFIX_DB.get(prefix)
                             info["chip"] = ("%s %s" % (ent[0], ent[1])).strip() if isinstance(ent, tuple) and len(ent) >= 2 else prefix
-                            if target > 1:
+                            # Candidato salvo barrido de UN solo tag (target == 1):
+                            # el TID dirigido se lee SIN Select y con varios tags
+                            # en campo puede responder OTRO tag. Con N=0 (sin tope)
+                            # y varios tags presentes, el "confirmado" mentia
+                            # (medido: 5 H10 con N=0, dos "confirmados" con el
+                            # mismo riesgo de cruce que los "candidatos").
+                            if target != 1:
                                 info["chip"] = (info["chip"] or prefix) + " (candidato)"
                                 info["conf"] = "candidato (TID sin Select)"
                             elif isinstance(ent, tuple):
