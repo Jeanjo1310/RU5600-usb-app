@@ -8,6 +8,23 @@
 try { var _tt = localStorage.getItem('ru5600_theme'); if (_tt === 'dark' || _tt === 'light') { document.documentElement.dataset.theme = _tt; } } catch (e) {}
 </script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bundle.css') }}">
+<style>
+/* Tablas: encabezados firmes y opacos dentro de contenedores con scroll vertical.
+   Sin esto las filas pasan por encima de los títulos (Pruebas: Tags guardados y log).
+   El fondo sale de la variable del tema, así sigue funcionando en claro/oscuro. */
+.overflow-y-auto thead th,
+thead.sticky th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--color-base-100, Canvas);
+  box-shadow: inset 0 -1px 0 0 color-mix(in oklab, currentColor 22%, transparent);
+}
+.overflow-y-auto thead,
+thead.sticky {
+  opacity: 1; /* anula opacity-70: el texto del título queda sólido */
+}
+</style>
 </head>
 <body class="bg-base-200 text-base-content">
 <div class="navbar bg-base-100 shadow">
