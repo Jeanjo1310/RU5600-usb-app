@@ -15,6 +15,10 @@
       <label class="block mb-1 text-sm font-medium text-center" for="stall" title="Si pasa este tiempo sin tags nuevos, la corrida corta sola">Sin tags nuevos en (s)</label>
       <input id="stall" type="number" value="120" min="5" max="600" class="input input-bordered w-full">
     </div>
+    <div class="w-28">
+      <label class="block mb-1 text-sm font-medium text-center" for="sweepMode" title="Stream: inventario rapido (H9, H3, Monza). Dirigido: de a un tag (H10, UCODE). Se puede cambiar en caliente durante la corrida.">Modo</label>
+      <select id="sweepMode" class="select select-bordered w-full"><option value="active">Stream</option><option value="answer">Dirigido</option></select>
+    </div>
     <div class="ml-3">
       <div class="text-xs text-base-content/60 whitespace-nowrap leading-none mb-1 text-center"><span id="tagCount">0</span><span id="tagTarget"></span></div>
       <div id="tagFaltan" class="font-bold whitespace-nowrap" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.5rem; line-height: 2.5rem;">—</div>
@@ -154,6 +158,7 @@ async function poll() {
   }
   const tb2 = $('sweepToggle');
   tb2.textContent = t(r.running ? 'Pausar' : 'Iniciar lectura');
+  if ($('sweepMode')) $('sweepMode').value = (r.mode_used === 'dirigido') ? 'answer' : 'active';
   tb2.className = 'btn ' + (r.running ? 'btn-warning' : 'btn-primary');
   if (r.tags.length > seen) {
     const tb = $('rows');
@@ -180,10 +185,30 @@ $('sweepToggle').onclick = async () => {
   const r = await post('/api/start', {seconds: parseFloat($('seconds').value) || 0,
                                       target: parseInt($('target').value) || 0,
                                       stall: parseFloat($('stall').value) || 120,
+                                      mode: $('sweepMode').value || 'active',
                                       keep: true});
   if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
   timer = setInterval(poll, 400); poll();
 };
+async function syncSweepMode() {
+  try {
+    const c = await fetch('/api/conn_state').then(r => r.json());
+    $('sweepMode').value = (c.sweep === 'answer') ? 'answer' : 'active';
+  } catch (e) { /* queda Stream por defecto */ }
+}
+$('sweepMode').onchange = async () => {
+  const m = $('sweepMode').value;
+  try {
+    const st = await fetch('/api/status').then(r => r.json());
+    if (st && st.running) {
+      const r = await post('/api/sweep_mode', {mode: m});
+      if (!r.ok) $('status').textContent = 'Error: ' + (r.error || '?');
+      else poll();
+    }
+    // si no esta corriendo, queda como modo del proximo inicio
+  } catch (e) { /* sin conexion: queda para el proximo inicio */ }
+};
+syncSweepMode();
 $('clearBtn').onclick = async () => {
   const r = await post('/api/sweep_clear', {});
   if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }

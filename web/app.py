@@ -91,11 +91,11 @@ PROFILES = {
     },
     "general": {
         "label": "Uso general",
-        "desc": "AnswerMode con stream y fallback automático a dirigido (120 ms). El equilibrio de todos los días.",
+        "desc": "AnswerMode con stream (120 ms). El equilibrio de todos los días: el modo lo elegís vos (perfil o Barrido, en caliente).",
         "workmode": 0,           # AnswerMode
         "read_mode": "balanced",  # 120 ms (el ritmo medido)
-        "sweep": "active",       # stream con fallback automatico a dirigido
-        "evidence": "fallback a dirigido si el stream no entrega en 6 s",
+        "sweep": "active",       # stream; el cambio a dirigido es manual
+        "evidence": "modo stream por defecto; cambio en caliente desde Barrido",
     },
     "dedicado": {
         "label": "Lectura dedicada",
@@ -1962,6 +1962,28 @@ def api_sweep_clear():
     return jsonify(ok=True)
 
 
+_sweep_mode_req = None  # cambio de modo pedido en caliente (active|answer)
+
+
+@app.route("/api/sweep_mode", methods=["POST"])
+def api_sweep_mode():
+    """Cambia el modo del barrido en caliente (stream <-> dirigido).
+    Con barrido corriendo: se aplica en la proxima iteracion del bucle
+    (re-armea el hardware al modo pedido). Sin barrido corriendo: fija el
+    modo por defecto del proximo (_sweep_cfg)."""
+    global _sweep_mode_req
+    cfg = request.get_json(silent=True) or {}
+    m = str(cfg.get("mode") or "").lower()
+    if m in ("stream", "dirigido"):
+        m = {"stream": "active", "dirigido": "answer"}[m]
+    if m not in ("active", "answer"):
+        return jsonify(ok=False, error="modo invalido (active|answer)"), 400
+    _sweep_cfg["mode"] = m
+    if _state.get("running"):
+        _sweep_mode_req = m
+    return jsonify(ok=True, mode=m, aplicado=bool(_state.get("running")))
+
+
 @app.route("/api/start", methods=["POST"])
 def start():
     cfg = request.get_json(silent=True) or {}
@@ -1981,14 +2003,6 @@ def start():
     except (TypeError, ValueError):
         return jsonify(ok=False, error="estancamiento invalido"), 400
     stall = max(5.0, min(stall, 600.0))
-    # espera del fallback a modo dirigido (antes siempre 6 s o 35% de la ventana)
-    try:
-        fb = cfg.get("fallback")
-        fallback = float(fb) if fb not in (None, "") else None
-    except (TypeError, ValueError):
-        return jsonify(ok=False, error="fallback invalido"), 400
-    if fallback is not None:
-        fallback = max(2.0, min(fallback, 120.0))
     # el stream de tags solo existe en ActiveMode; AnswerMode es para comandos dirigidos.
     # Sin "mode" explicito manda el perfil activo (perfiles de Parámetros).
     mode = (cfg.get("mode") or _sweep_cfg.get("mode") or "active").lower()
@@ -2002,7 +2016,7 @@ def start():
         prev_seen = dict(_state.get("seen") or {}) if keep else {}
         _state.update(running=True, tags=prev_tags, error="", target=target,
                       reason="", started=time.monotonic(), hits=[],
-                      stall_after=stall, fallback_after=fallback,
+                      stall_after=stall,
                       last_rssi=None, last_rssi_t=0.0,
                       last_seen_ts=time.monotonic())
         # el modo mostrado era el de la corrida anterior hasta que el hilo arrancaba
@@ -2049,19 +2063,13 @@ def _run(seconds, target=0, mode="answer"):
         _state["stabilized"] = 0
         t_start = time.monotonic()
         last_new = time.monotonic()
-        phase_new = time.monotonic()
         stall_after = float(_state.get("stall_after") or 30.0)
-        direct_mode = False
+        # MODO MANUAL: lo elige el usuario (perfil o UI del Barrido, en
+        # caliente con /api/sweep_mode). Sin transiciones automaticas.
+        direct_mode = (mode != "active")
         # con ventanas cortas, esperar 6 s deja casi sin tiempo al modo dirigido
-        fallback_after = float(_state.get("fallback_after") or
-                               (min(6.0, max(2.0, seconds * 0.35)) if seconds > 0 else 6.0))
-        # cuanto maximo del modo dirigido antes de volver al stream: con
-        # stall largo el dirigido trabaja de a ratos, no para siempre
-        stream_back_after = min(max(stall_after / 4.0, 15.0), 45.0)
-        stream_saw = False
-        last_stream = None
         last_link_chk = 0.0
-        _state["mode_used"] = "stream"
+        _state["mode_used"] = "dirigido" if direct_mode else "stream"
         try:
             while ((deadline is None or time.monotonic() < deadline)
                     and not _stop.is_set()):
@@ -2072,71 +2080,48 @@ def _run(seconds, target=0, mode="answer"):
                         and (time.monotonic() - last_new) > stall_after):
                     reason = "estancado"
                     break
+                # cambio de modo en caliente (lo pidio el usuario en la UI):
+                # re-armea el hardware al modo pedido sin cortar el listado
+                global _sweep_mode_req
+                if _sweep_mode_req in ("active", "answer"):
+                    _want_dir = (_sweep_mode_req == "answer")
+                    _sweep_mode_req = None
+                    if _want_dir != direct_mode:
+                        direct_mode = _want_dir
+                        _state["mode_used"] = "dirigido" if direct_mode else "stream"
+                        try:
+                            if direct_mode:
+                                try:
+                                    r.stop_read()
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                r._pace()
+                                with r._lock:
+                                    r._lib.CFHid_SetDeviceOneParam(
+                                        DEV_ADDR, PARAM_WORKMODE, WORKMODE_ANSWER)
+                                r._pace(settle=True)
+                            else:
+                                r._pace()
+                                with r._lock:
+                                    r._lib.CFHid_SetDeviceOneParam(
+                                        DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE)
+                                r._pace(settle=True)
+                                with r._lock:
+                                    r._lib.CFHid_ClearTagBuf()
+                                r._pace()
+                                with r._lock:
+                                    r._lib.CFHid_StartRead()
+                                r._pace(settle=True)
+                        except Exception as exc:  # noqa: BLE001
+                            _log("warn", "cambio de modo en caliente fallo: %s" % exc)
+                        else:
+                            _log("ok", "modo en caliente: %s" % _state["mode_used"])
                 # poll adaptativo: rapido cuando entrega, mas lento cuando no
                 time.sleep(poll)
                 got = False
-                # --- fallback a dirigido: dos casos ---
-                # (a) el stream nunca entrego nada (H10, UCODE 8/9, o no hay tags);
-                # (b) el entrego pero se calla con el objetivo sin cumplir: en grupos
-                #     mixtos los tags no-stream quedarian inalcanzables y la corrida se
-                #     estancaba sin siquiera intentar el camino dirigido.
-                # Fallback cuando hace rato que NO HAY TAGS NUEVOS y falta el
-                # objetivo (o si nunca llego nada). La version anterior exigia
-                # "silencio del stream", pero en un grupo MIXTO los tags que
-                # streamean repiten sin parar (last_stream siempre fresco): el
-                # fallback nunca se disparaba y los no-stream quedaban
-                # inalcanzables (Test B: 3/6 con 6 tags, 2026-10-26).
-                _fb_falta = bool(target) and len(_state["tags"]) < target
-                _fb_vacio = not _state["tags"]
-                _fb_sin_nuevos = (time.monotonic() - phase_new) > fallback_after
-                if (not direct_mode and _fb_sin_nuevos
-                        and (_fb_vacio or _fb_falta)):
-                    direct_mode = True
-                    _state["mode_used"] = "dirigido"
-                    # fase nueva: el dirigido tiene su propio cuanto. El reloj
-                    # de ESTANCAMIENTO (last_new) no se toca: es global y es
-                    # lo que termina la corrida por stall.
-                    phase_new = time.monotonic()
-                    _log("warn", "el stream no ve tags: paso a barrido dirigido")
-                    try:
-                        r.stop_read()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    try:
-                        from ru5600_core import WORKMODE_ANSWER as _WS
-                        with r._lock:
-                            r._pace(); r._lib.CFHid_SetDeviceOneParam(
-                                DEV_ADDR, PARAM_WORKMODE, _WS); r._pace(settle=True)
-                    except Exception:  # noqa: BLE001
-                        pass
+                # MODO MANUAL: sin fallback automatico. Si el usuario quiere
+                # el otro camino lo pide en caliente (/api/sweep_mode).
                 if direct_mode:
-                    # vuelta al stream: el dirigido no encontro tags NUEVOS
-                    # en todo su cuanto -> se re-armea el stream y se sigue
-                    # ciclando hasta tope/tiempo/estancado. Asi un lote puro
-                    # de tags que streamean no queda clavado en dirigido
-                    # lento para siempre (medido: H9 caian a 0,8/s y ahi
-                    # quedaban); y un lote mixto alterna ambos caminos.
-                    if (time.monotonic() - phase_new) > stream_back_after:
-                        direct_mode = False
-                        _state["mode_used"] = "stream"
-                        phase_new = time.monotonic()
-                        _log("info", "vuelta al stream tras %.0f s de dirigido "
-                             "sin tags nuevos" % stream_back_after)
-                        try:
-                            r._pace()
-                            with r._lock:
-                                r._lib.CFHid_SetDeviceOneParam(
-                                    DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE)
-                            r._pace(settle=True)
-                            with r._lock:
-                                r._lib.CFHid_ClearTagBuf()
-                            r._pace()
-                            with r._lock:
-                                r._lib.CFHid_StartRead()
-                            r._pace(settle=True)
-                        except Exception:  # noqa: BLE001
-                            pass
-                        continue
                     res, epc_d, hex_d, det = _direct_read(r)
                     if res != "ok" or not epc_d:
                         # "error" aca casi siempre es tag ausente (campo vacio):
@@ -2152,7 +2137,7 @@ def _run(seconds, target=0, mode="answer"):
                                               else "desconectado")
                                     break
                                 r = rr
-                                last_new = last_hit = phase_new = time.monotonic()
+                                last_new = last_hit = time.monotonic()
                         time.sleep(poll)
                         continue
                     key = epc_d.upper()
@@ -2199,7 +2184,7 @@ def _run(seconds, target=0, mode="answer"):
                             info["xl"] = "%s #%s" % (hit[0], hit[1])
                     info.update(raw=hex_d[:48], ant=0, rssi=None, n=1)
                     _state["seen"][key] = info
-                    last_new = phase_new = time.monotonic()
+                    last_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True
@@ -2210,8 +2195,6 @@ def _run(seconds, target=0, mode="answer"):
                     continue
                 stream_tags = r.poll_tags()
                 if stream_tags:
-                    stream_saw = True
-                    last_stream = time.monotonic()
                     # CUALQUIER entrega cuenta como salud: antes solo los tags
                     # NUEVOS refrescaban last_hit, entonces con un solo tag en la
                     # lectora (todo repetido) el rearme se disparaba cada ~8 s y
@@ -2252,7 +2235,7 @@ def _run(seconds, target=0, mode="answer"):
                     info.update(raw=blob_key.hex().upper()[:48], ant=tag.ant,
                                 rssi=tag.rssi, n=1)
                     _state["seen"][key] = info
-                    last_new = phase_new = time.monotonic()
+                    last_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True
@@ -2294,7 +2277,7 @@ def _run(seconds, target=0, mode="answer"):
                             r = rr
                             # relojes REINICIADOS: el tiempo desconectado
                             # no cuenta como "dejo de haber gente"
-                            last_new = last_hit = phase_new = time.monotonic()
+                            last_new = last_hit = time.monotonic()
                             continue
         finally:
             try:
