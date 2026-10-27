@@ -16,11 +16,9 @@
       <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-32">
     </div>
     <div class="pb-1">
-      <div id="tagFaltan" class="text-3xl font-bold leading-none whitespace-nowrap">—</div>
+      <div id="tagFaltan" class="font-bold whitespace-nowrap" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.875rem; line-height: 2.5rem;">—</div>
       <div class="text-xs text-base-content/60 mt-1 whitespace-nowrap"><span id="tagCount">0</span><span id="tagTarget"></span></div>
     </div>
-    <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
-    <button id="clearBtn" class="btn btn-outline btn-sm">Limpiar listado</button>
     <div class="pb-2">
       <div class="flex items-center gap-2">
         <span id="healthDot" class="inline-block w-2.5 h-2.5 rounded-full bg-base-300"></span>
@@ -28,7 +26,9 @@
       </div>
       <div id="rate" class="text-xs text-base-content/60 mt-0.5"></div>
     </div>
-    <button id="recoverBtn" class="btn btn-outline btn-sm">Destrabar lector</button>
+    <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
+    <button id="clearBtn" class="btn btn-outline">Limpiar listado</button>
+    <button id="recoverBtn" class="btn btn-outline">Destrabar lector</button>
   </div>
   <p id="perfilBox" class="text-xs text-base-content/60 mt-1"></p>
   <p id="warnBox" class="hidden text-sm alert alert-warning items-center mt-2"></p>
