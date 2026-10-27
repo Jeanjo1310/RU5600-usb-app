@@ -74,7 +74,7 @@ fi
 # --- bundled python deps (flask + openpyxl + tree), no network at run time ---
 echo "== bundling python deps =="
 python3 - "$STAGE/usr/opt/$APP_NAME/pylibs" <<'PY'
-import importlib, shutil, sys
+import importlib, shutil, sys, zipfile
 from pathlib import Path
 target = Path(sys.argv[1]); target.mkdir(parents=True, exist_ok=True)
 # paquetes de third party que la app importa (el stdlib lo pone el python del host)
@@ -97,11 +97,35 @@ for name in roots:
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
 print("bundled:", ", ".join(sorted(p.name for p in target.iterdir())))
 PY
+echo "== bundling pywebview (native window) =="
+python3 - "$STAGE/usr/opt/$APP_NAME/pylibs" "$HERE/vendor/python/pywebview-6.2.1-py3-none-any.whl" "$HERE/vendor/python/proxy_tools-0.1.0.tar.gz" "$HERE/vendor/python/bottle-0.13.4-py2.py3-none-any.whl" <<'PYINNER'
+import sys, zipfile, tarfile, shutil
+from pathlib import Path
+target = Path(sys.argv[1])
+whl = Path(sys.argv[2])
+tar = Path(sys.argv[3])
+bottle = Path(sys.argv[4])
+with zipfile.ZipFile(whl) as z:
+    z.extractall(target)
+with tarfile.open(tar) as t:
+    for m in t.getmembers():
+        if m.name.startswith("proxy_tools-0.1.0/proxy_tools/"):
+            rel = m.name[len("proxy_tools-0.1.0/"):]
+            if m.isdir():
+                (target / rel).mkdir(parents=True, exist_ok=True)
+            else:
+                (target / rel).parent.mkdir(parents=True, exist_ok=True)
+                with t.extractfile(m) as src, open(target / rel, "wb") as dst:
+                    dst.write(src.read())
+with zipfile.ZipFile(bottle) as z:
+    z.extractall(target)
+for p in list(target.rglob("__pycache__")):
+    shutil.rmtree(p, ignore_errors=True)
+print("pywebview + proxy_tools + bottle extraidos")
+PYINNER
 
 mkdir -p "$OUT"
 OUT="$(realpath "$OUT")"
-
-# --- build + manifest --------------------------------------------------------
 ARCH=x86_64 "$APPIMAGETOOL" "$STAGE" "$OUT/$APPIMAGE"
 chmod +x "$OUT/$APPIMAGE"
 

@@ -1,20 +1,13 @@
 #!/bin/sh
 # AppRun de la AppImage web del RU5600 Reader.
-# Arranca el servidor Flask (puerto 8000) y abre el navegador.
-#
-#   ./ru5600-web-x.y.z-x86_64.AppImage            abre en http://127.0.0.1:8000
-#   ./ru5600-web-...AppImage --no-browser         solo el servidor
-#   ./ru5600-web-...AppImage --port 9000          otro puerto
+# Ventana nativa con pywebview (WebKit2 del sistema). Si no está disponible,
+# cae a navegador. --browser fuerza el modo navegador, --no-browser solo servidor.
 HERE="$(dirname "$(readlink -f "$0")")"
 APP_DIR="$HERE/usr/opt/ru5600-web"
 
-# La libreria del vendor resuelve simbolos de libusb desde el namespace global.
 export LD_LIBRARY_PATH="$APP_DIR/vendor:${LD_LIBRARY_PATH:-}"
-# Dependencias pip embebidas (flask, openpyxl + arbol): del host solo se
-# necesita python3.
 export PYTHONPATH="$APP_DIR/pylibs:${PYTHONPATH:-}"
-# La AppImage corre de un mount temporal read-only: los exports y la DB van
-# AL LADO del AppImage (el USB lleva app, exportes y datos juntos).
+
 if [ -z "$RU5600_EXPORT_DIR" ]; then
     export RU5600_EXPORT_DIR="$(dirname "$(readlink -f "${APPIMAGE:-$0}")")/EXPORTES"
 fi
@@ -23,24 +16,20 @@ if [ -z "$RU5600_DATA_DIR" ]; then
 fi
 mkdir -p "$RU5600_EXPORT_DIR" "$RU5600_DATA_DIR" 2>/dev/null
 
-OPEN_BROWSER=1
-ARGS=""
+# pywebview usa WebKit2 del sistema (gir1.2-webkit2-4.1). Si está, ventana
+# nativa; si no, navegador.
+MODE="--native"
 for arg in "$@"; do
     case "$arg" in
-        --no-browser) OPEN_BROWSER=0 ;;
-        *) ARGS="$ARGS $arg" ;;
+        --browser) MODE="" ;;
+        --no-browser) MODE="--no-browser" ;;
     esac
 done
 
-if ! python3 -c 'import flask' >/dev/null 2>&1; then
-    echo "RU5600 web: no encuentro python3 o flask embebido." >&2
-    echo "Instalá python3 (sudo apt install python3) y volvé a intentar." >&2
-    exit 1
-fi
-
-if [ "$OPEN_BROWSER" = "1" ]; then
-    ( sleep 1.5; xdg-open "http://127.0.0.1:${RU5600_PORT:-8000}" >/dev/null 2>&1 ) &
+if [ -n "$MODE" ] && ! python3 -c 'import webview, gi; gi.require_version("WebKit2","4.1")' >/dev/null 2>&1; then
+    echo "RU5600 web: pywebview no disponible en el sistema, modo navegador." >&2
+    MODE=""
 fi
 
 echo "RU5600 web corriendo en http://127.0.0.1:${RU5600_PORT:-8000}  (Ctrl+C para cortar)"
-exec python3 "$APP_DIR/app.py" $ARGS
+exec python3 "$APP_DIR/app.py" $MODE $@

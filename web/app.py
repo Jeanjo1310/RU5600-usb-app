@@ -3198,5 +3198,61 @@ def api_version():
     return jsonify(out)
 
 
+def _start_native(host="127.0.0.1", port=8000):
+    """Ventana nativa con pywebview (usa WebKit2 del sistema).
+    Flask corre en un hilo daemon; pywebview ocupa el hilo principal.
+    Si pywebview no está disponible, cae al modo navegador."""
+    import threading
+    import time
+    import urllib.request
+
+    def _serve():
+        app.run(host=host, port=port, threaded=True, use_reloader=False)
+
+    t = threading.Thread(target=_serve, daemon=True)
+    t.start()
+
+    # esperar a que Flask esté listo
+    for _ in range(50):
+        try:
+            urllib.request.urlopen(f"http://{host}:{port}/", timeout=0.5)
+            break
+        except Exception:
+            time.sleep(0.2)
+
+    try:
+        import webview
+        webview.create_window("RU5600 Reader", f"http://{host}:{port}",
+                             width=1280, height=800, min_size=(800, 600))
+        webview.start()
+    except ImportError:
+        # fallback: abrir navegador
+        import webbrowser
+        webbrowser.open(f"http://{host}:{port}")
+        t.join()
+    except Exception as exc:
+        import sys
+        print(f"pywebview fallo ({exc}); abriendo navegador...", file=sys.stderr)
+        import webbrowser
+        webbrowser.open(f"http://{host}:{port}")
+        t.join()
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, threaded=True)
+    import argparse
+    _p = argparse.ArgumentParser()
+    _p.add_argument("--native", action="store_true",
+                    help="abre una ventana nativa (pywebview) en vez de navegador")
+    _p.add_argument("--no-browser", action="store_true",
+                    help="no abre navegador (solo el servidor)")
+    _p.add_argument("--port", type=int, default=8000)
+    _args = _p.parse_args()
+    _port = _args.port
+    if _args.native:
+        _start_native(port=_port)
+    elif _args.no_browser:
+        app.run(host="127.0.0.1", port=_port, threaded=True)
+    else:
+        app.run(host="127.0.0.1", port=_port, threaded=True)
+        import webbrowser
+        webbrowser.open(f"http://127.0.0.1:{_port}")
