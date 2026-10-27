@@ -3225,10 +3225,23 @@ def _start_native(host="127.0.0.1", port=8000):
         # Identidad de la ventana para el dock/barra: sin esto, GTK toma el
         # nombre del script (argv[0] = "app.py") como WM_CLASS y el dock
         # muestra "app.py" en vez del programa. Debe ir antes de start().
+        # El icono de la ventana (barra de tareas sin integrar) sale del PNG
+        # embebido en la AppImage.
         try:
-            from gi.repository import GLib
+            from gi.repository import GLib, Gtk
             GLib.set_prgname("RU5600 Reader")
             GLib.set_application_name("RU5600 Reader")
+            _here = os.path.dirname(os.path.abspath(__file__))
+            # app.py vive en $MOUNT/usr/opt/ru5600-web/ ; el icono esta en la
+            # raiz del AppDir ($MOUNT/ru5600-reader.png)
+            _root = _here
+            for _ in range(3):
+                _root = os.path.dirname(_root)
+            for _cand in (os.path.join(_root, "ru5600-reader.png"),
+                          os.path.join(_here, "ru5600-reader.png")):
+                if os.path.isfile(_cand):
+                    Gtk.Window.set_default_icon_from_file(_cand)
+                    break
         except Exception:
             pass
         webview.create_window("RU5600 Reader", f"http://{host}:{port}",
