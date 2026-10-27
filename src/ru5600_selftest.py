@@ -138,9 +138,13 @@ def test_safety() -> None:
     """The commands that must never reach the reader."""
     print("safety")
     from ru5600_core import FORBIDDEN_COMMANDS, RESERVED_COMMANDS
-    check("firmware update blocked", 0x2B in FORBIDDEN_COMMANDS, True)
-    check("upgrade data in blocked", 0x2C in FORBIDDEN_COMMANDS, True)
-    check("upgrade end blocked", 0x2D in FORBIDDEN_COMMANDS, True)
+    # upgrade opcodes MEASURED from libCFHidApi.so (2026-10-27):
+    # UpgradeDevData=0x33, UpgradeDevEnd=0x34, DataIn=0x36, EndIn=0x37
+    check("upgrade data blocked (0x33)", 0x33 in FORBIDDEN_COMMANDS, True)
+    check("upgrade end blocked (0x34)", 0x34 in FORBIDDEN_COMMANDS, True)
+    check("upgrade data in blocked (0x36)", 0x36 in FORBIDDEN_COMMANDS, True)
+    check("upgrade end in blocked (0x37)", 0x37 in FORBIDDEN_COMMANDS, True)
+    check("legacy 0x2D still blocked in raw path", 0x2D in FORBIDDEN_COMMANDS, True)
     check("kill blocked", 0x65 in FORBIDDEN_COMMANDS, True)
     check("start read reserved", 0x41 in RESERVED_COMMANDS, True)
     check("stop read reserved", 0x40 in RESERVED_COMMANDS, True)

@@ -155,14 +155,24 @@ FREQ_BANDS = {
 # Commands that must never be sent by mistake.
 #
 # FORBIDDEN: they damage the hardware or the tag.
-#   0x2B/0x2C/0x2D  firmware update of the reader (data, data in, end):
-#                    a wrong one leaves the reader unusable
+#   0x33/0x34/0x36/0x37  firmware upgrade of the reader (data, data in,
+#                    end, end in) — MEASURED from libCFHidApi.so
+#                    (CFHid_UpgradeDevData=0x33, UpgradeDevEnd=0x34,
+#                    UpgradeDevDataIn=0x36, UpgradeDevEndIn=0x37,
+#                    disassembly 2026-10-27).  A wrong payload leaves the
+#                    reader unusable; only the vendor tool + a real .bin
+#                    from Inveton may send these.
 #   0x65            Kill6C: kills the tag for good
+#
+# 0x2B/0x2C/0x2D stay blocked in the RAW path as an undocumented
+# precaution, but the old comment was WRONG: 0x2D is CFHid_ReadTransState
+# (a read — measured, the vendor itself sends it and the reader survives;
+# our trans_state() uses it via the vendor function, not the raw path).
 #
 # RESERVED: they change the streaming state of the reader.  The GUI has
 # proper controls for them, and a reader left streaming keeps beeping and
 # flooding the tag buffer, so the raw path refuses them.
-FORBIDDEN_COMMANDS = {0x2B, 0x2C, 0x2D, 0x65}
+FORBIDDEN_COMMANDS = {0x33, 0x34, 0x36, 0x37, 0x65, 0x2B, 0x2C, 0x2D}
 RESERVED_COMMANDS = {0x40, 0x41}
 
 
