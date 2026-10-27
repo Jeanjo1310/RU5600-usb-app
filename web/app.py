@@ -139,6 +139,124 @@ _stop = threading.Event()
 _state = {"running": False, "tags": [], "seen": {}, "started": 0.0,
           "error": ""}   # "seen" es dict epc->info: el bucle hace .get() y [key]=
 
+# --- reconexión automática en procesos largos --------------------------------
+# Si el lector se cae EN MEDIO de un barrido / lote / dist / lectura continua,
+# el proceso NO se corta: espera la reconexión dentro de la ventana "Sin tags
+# nuevos" y sigue. Al detectar la caída marcamos _open=False enseguida: el
+# estado del lector nunca miente (Pruebas > Estado del lector muestra
+# open:false + reconnect mientras espera).
+_reconn = {"active": False, "since": 0.0, "left": 0.0, "tries": 0,
+           "last_ok": 0.0, "since_h": ""}
+
+
+def _reconn_window():
+    """Ventana de espera = la misma 'Sin tags nuevos' del Barrido (120 default)."""
+    try:
+        return max(5.0, min(600.0, float(_state.get("stall_after") or 120.0)))
+    except (TypeError, ValueError):
+        return 120.0
+
+
+def _link_dead(r):
+    """True cuando el lector dejó de contestar. NO confundir con "no hay tags":
+    un campo vacío sigue contestando parámetros; un USB muerto no. Doble sonda
+    (300 ms) para no cortar un stream sano por un transitorio del firmware."""
+    if r is None:
+        return True
+    try:
+        if not r.is_open:
+            return True
+    except Exception:  # noqa: BLE001
+        return True
+    for _i in range(2):
+        try:
+            r.read_param(0x00)          # ReadDeviceOneParam: sonda barata
+            return False
+        except Exception:               # noqa: BLE001
+            time.sleep(0.3)
+    return True
+
+
+def _await_reconnect(stop_ev=None):
+    """Espera de reconexión: reintentá cada ~1.5 s hasta agotar la ventana
+    'Sin tags nuevos'. Tras un reinicio el lector vuelve con OTRO número USB,
+    y open() ya lo reubica por VID:PID. Devuelve True si volvió."""
+    global _reader
+    window = _reconn_window()
+    deadline = time.monotonic() + window
+    import datetime as _dt
+    _reconn.update(active=True, since=time.time(), left=window, tries=0,
+                   since_h=_dt.datetime.now().strftime("%H:%M:%S"))
+    _log("warn", "lector desconectado: esperando reconexión (ventana %.0f s)"
+         % window)
+    # el estado no mienta mientras espera: cae open y se suelta el dispositivo
+    if _reader is not None:
+        try:
+            _reader._open = False
+            with _reader._lock:
+                try:
+                    _reader._lib.CFHid_CloseDevice()
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
+    ok = False
+    try:
+        while time.monotonic() < deadline:
+            if stop_ev is not None and stop_ev.is_set():
+                return False
+            _reconn["left"] = max(0.0, deadline - time.monotonic())
+            _reconn["tries"] += 1
+            try:
+                if _reader is None:
+                    _reader = Ru5600Reader()
+                _reader.open(attempts=1, retry_delay=0)
+                ok = True
+                break
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(1.5)
+    finally:
+        _reconn.update(active=False, left=0.0, last_ok=time.time())
+    if ok:
+        _log("ok", "lector reconectado tras %d intentos" % _reconn["tries"])
+    return ok
+
+
+def _rearm_after_reconnect(r, active):
+    """Tras volver, repone el modo del proceso interrumpido: stream
+    (ActiveMode + Start) o AnswerMode para el camino dirigido."""
+    from ru5600_core import (DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE,
+                             WORKMODE_ANSWER)
+    r._pace()
+    with r._lock:
+        r._lib.CFHid_SetDeviceOneParam(
+            DEV_ADDR, PARAM_WORKMODE,
+            WORKMODE_ACTIVE if active else WORKMODE_ANSWER)
+    r._pace(settle=True)
+    with r._lock:
+        r._lib.CFHid_ClearTagBuf()
+    r._pace()
+    if active:
+        with r._lock:
+            r._lib.CFHid_StartRead()
+        r._pace(settle=True)
+
+
+def _reconn_or_die(r, direct, stop_ev=None):
+    """Rutina del barrido al detectar la caída: espera la reconexión y repone
+    el modo. Devuelve el reader vivo, o None si no volvió (o si el usuario
+    cortó) — el caller debe adoptar la referencia devuelta."""
+    if not _await_reconnect(stop_ev):
+        return None
+    rr = _reader
+    try:
+        _rearm_after_reconnect(rr, not direct)
+    except Exception as exc:  # noqa: BLE001
+        _log("warn", "no pude re-armear tras reconectar: %s" % exc)
+        return None
+    return rr
+
 
 def _usb_nodes():
     found = []
@@ -192,12 +310,14 @@ def conn_state():
         return jsonify(open=True, mode="usb", info=info,
                        read_mode=_read_cfg.get("mode", "balanced"),
                        profile=_profile_cfg.get("current", "general"),
+                       reconnect=dict(_reconn),
                        sweep=_sweep_cfg.get("mode", "active"))
     if _net_reader is not None and _net_reader.is_open():
         return jsonify(open=True, mode="net", info={})
     return jsonify(open=False, mode=_net_info.get("mode", "usb"), info={},
                    read_mode=_read_cfg.get("mode", "balanced"),
                    profile=_profile_cfg.get("current", "general"),
+                   reconnect=dict(_reconn),
                    sweep=_sweep_cfg.get("mode", "active"))
 
 
@@ -862,10 +982,28 @@ def _active_run():
             r._lib.CFHid_StartRead()
         r._pace(settle=True)
         try:
+            last_hit_a = time.monotonic()
+            last_chk_a = 0.0
             while not _active_stop.is_set():
                 import time as _t
                 _t.sleep(0.1)
-                for tag in r.poll_tags():
+                tags_a = r.poll_tags()
+                if tags_a:
+                    last_hit_a = time.monotonic()
+                # lector caido en medio de la lectura continua: esperar la
+                # reconexion (mismo window del Barrido) y seguir, sin cortar
+                elif (time.monotonic() - last_hit_a > 6
+                      and time.monotonic() - last_chk_a > 3.0):
+                    last_chk_a = time.monotonic()
+                    if _link_dead(r):
+                        if not _await_reconnect(_active_stop):
+                            raise RuntimeError(
+                                "lector desconectado: no volvió en la ventana "
+                                "de reconexión")
+                        r = _reader
+                        _rearm_after_reconnect(r, True)
+                        last_hit_a = time.monotonic()
+                for tag in tags_a:
                     raw = (bytes(tag.raw_id) if tag.raw_id
                            else bytes(tag.epc))
                     key = raw.hex().upper()
@@ -1151,7 +1289,22 @@ def _batch_run(base, step, check, lock_note=False):
             try:
                 tags = r.scan()
             except Exception:  # noqa: BLE001
-                break
+                # el lector se cayo en medio del lote: esperar reconexion y
+                # seguir (no se pierde ni se repite lo ya escrito)
+                if not _link_dead(r):
+                    break
+                if not _await_reconnect(_batch_stop):
+                    _batch["rows"].append(
+                        {"epc": "", "result": "ERROR: lector desconectado "
+                                              "(no volvió en la ventana)",
+                         "rssi": ""})
+                    break
+                r = _reader
+                try:
+                    _rearm_after_reconnect(r, False)
+                except Exception:  # noqa: BLE001
+                    pass
+                continue
             progressed = False
             for tag in tags:
                 key = (tag.epc_hex, tag.ant)
@@ -1427,7 +1580,21 @@ def _map_run(plan):
             try:
                 tags = r.scan()
             except Exception:  # noqa: BLE001
-                break
+                # mismo tratamiento del lote: reconectar y seguir
+                if not _link_dead(r):
+                    break
+                if not _await_reconnect(_map_stop):
+                    _map["rows"].append(
+                        {"tag": "", "new": "",
+                         "result": "ERROR: lector desconectado "
+                                   "(no volvió en la ventana)"})
+                    break
+                r = _reader
+                try:
+                    _rearm_after_reconnect(r, False)
+                except Exception:  # noqa: BLE001
+                    pass
+                continue
             progressed = False
             for tag in tags:
                 key = (tag.epc_hex, tag.ant)
@@ -1664,6 +1831,7 @@ def status():
                    dps=round(len(ts) / 10.0, 1),
                    last_seen=None if last is None else round(last, 1),
                    stalled=bool(running and (last is None or last > 5)),
+                   reconnect=dict(_reconn),
                    elapsed=round(now - _state["started"], 1) if running else 0)
 
 
@@ -1773,6 +1941,7 @@ def _run(seconds, target=0, mode="answer"):
                                (min(6.0, max(2.0, seconds * 0.35)) if seconds > 0 else 6.0))
         stream_saw = False
         last_stream = None
+        last_link_chk = 0.0
         _state["mode_used"] = "stream"
         try:
             while ((deadline is None or time.monotonic() < deadline)
@@ -1823,6 +1992,20 @@ def _run(seconds, target=0, mode="answer"):
                 if direct_mode:
                     res, epc_d, hex_d, det = _direct_read(r)
                     if res != "ok" or not epc_d:
+                        # "error" aca casi siempre es tag ausente (campo vacio):
+                        # solo una sonda decide si el LECTOR se fue. Cooldown
+                        # 3 s para no martillar con comandos de sondeo.
+                        if (res == "error"
+                                and time.monotonic() - last_link_chk > 3.0):
+                            last_link_chk = time.monotonic()
+                            if _link_dead(r):
+                                rr = _reconn_or_die(r, True, _stop)
+                                if rr is None:
+                                    reason = ("usuario" if _stop.is_set()
+                                              else "desconectado")
+                                    break
+                                r = rr
+                                last_new = last_hit = time.monotonic()
                         time.sleep(poll)
                         continue
                     key = epc_d.upper()
@@ -1946,7 +2129,20 @@ def _run(seconds, target=0, mode="answer"):
                                  "(interrupcion propia, #%d)" % stabilized)
                             last_hit = time.monotonic()
                         except Exception:  # noqa: BLE001
-                            pass
+                            # el rearme fallo: o el firmware esta ocupado, o el
+                            # lector se cayo. Sonda barata para distinguirlo.
+                            if not _link_dead(r):
+                                continue   # vivo: era una pausa, se reintenta
+                            rr = _reconn_or_die(r, direct_mode, _stop)
+                            if rr is None:
+                                reason = ("usuario" if _stop.is_set()
+                                          else "desconectado")
+                                break
+                            r = rr
+                            # ventana de estancamiento REINICIADA: el tiempo
+                            # desconectado no cuenta como "dejo de haber gente"
+                            last_new = last_hit = time.monotonic()
+                            continue
         finally:
             try:
                 with r._lock:
@@ -2046,7 +2242,7 @@ def api_log_clear():
 @app.route("/api/probe/state")
 def api_probe_state():
     """Estado crudo para la pestaña Pruebas."""
-    out = {"open": False}
+    out = {"open": False, "reconnect": dict(_reconn)}
     if _reader is not None and _reader.is_open:
         out["open"] = True
         # si hay un comando en vuelo, informar "busy" en vez de bloquear la

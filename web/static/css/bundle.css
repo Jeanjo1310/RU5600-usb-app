@@ -3500,6 +3500,9 @@
   .bg-success {
     background-color: var(--color-success);
   }
+  .bg-warning {
+    background-color: var(--color-warning);
+  }
   @layer daisyui.l1.l2.l3 {
     .btn-outline {
       --btn-bg: #0000;

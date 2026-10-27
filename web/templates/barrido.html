@@ -91,6 +91,7 @@ function reasonText(r) {
   if (r === 'usuario') return 'lo detuviste vos';
   if (r === 'tiempo') return 'se cumplió el tiempo';
   if (r === 'estancado') return 'dejó de aparecer gente nueva (se estancó)';
+  if (r === 'desconectado') return 'el lector se desconectó y no volvió en la ventana';
   return '';
 }
 async function poll() {
@@ -111,6 +112,20 @@ async function poll() {
     $('tagTarget').textContent = '';
   }
   const pausado = !r.running && r.reason === 'usuario';
+  const rc = r.reconnect || {};
+  const recon = !!rc.active;
+  $('sweepToggle').disabled = recon;
+  if (recon) {
+    // el lector se cayo EN MEDIO de la corrida: el proceso sigue, esperando.
+    // Los contadores quedan quietos (no se pierde nada de lo leido).
+    $('status').textContent =
+      `${t('Lector desconectado — esperando reconexión (queda')} ` +
+      `${Math.round(rc.left)} ${t('s)')} · ${t('intento')} ${rc.tries}`;
+    $('healthDot').className = 'inline-block w-2.5 h-2.5 rounded-full bg-warning animate-pulse';
+    $('rate').textContent = rc.since_h
+      ? `${t('desde las')} ${rc.since_h} · ${t('el proceso sigue vivo, no se corta')}` : '';
+    $('warnBox').classList.add('hidden');   // warn aun no existe aca (const despues)
+  } else {
   $('status').textContent = r.running
     ? `${t('Leyendo…')} ${r.count}${extra} tags` + modo
     : pausado
@@ -133,6 +148,7 @@ async function poll() {
     dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-success';
     $('rate').textContent = `${r.dps}/s · ` + t('último tag hace') + ' ' + (r.last_seen === null ? '-' : r.last_seen + ' s');
     warn.classList.add('hidden');
+  }
   }
   const tb2 = $('sweepToggle');
   tb2.textContent = t(r.running ? 'Pausar' : 'Iniciar lectura');
