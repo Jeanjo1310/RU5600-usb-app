@@ -5,6 +5,7 @@ Comment=INVETON RU5600 UHF RFID reader - web interface
 Exec=ru5600-web
 Icon=ru5600-reader
 StartupWMClass=RU5600 Reader
+X-AppImage-UpdateInformation=gh-releases-zsync://Jeanjo1310/RU5600-usb-app/latest/ru5600-*-x86_64.AppImage.zsync
 Terminal=false
 Categories=Utility;System;
 Keywords=RFID;UHF;EPC;reader;web;
