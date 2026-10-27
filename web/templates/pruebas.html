@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Pruebas{% endblock %}
 {% block content %}
+
+<div role="tablist" class="tabs tabs-boxed mb-4 w-fit">
+  <button role="tab" class="tab tab-active ptab-btn" data-tab="pruebas">Pruebas</button>
+  <button role="tab" class="tab ptab-btn" data-tab="bench">Benchmark de antena</button>
+  <button role="tab" class="tab ptab-btn" data-tab="tags">Tags guardados</button>
+  <button role="tab" class="tab ptab-btn" data-tab="log">Log de eventos</button>
+</div>
+
+<div data-ptab="pruebas">
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Pruebas del lector</h2>
   <p class="text-sm text-base-content/60 mb-3">Todo lo que se dispara acá es <b>solo lectura</b>: no escribe en tags. Cada acción queda en el log de abajo con su resultado.</p>
@@ -84,6 +93,8 @@
     </div>
   </div>
 </div>
+</div>
+<div data-ptab="bench">
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Benchmark de antena</h2>
   <p class="text-sm text-base-content/60 mb-3">Cada intento es una lectura dirigida (<b>ReadCardG2</b>, una sola tirada). Misma etiqueta = misma configuración medida.</p>
@@ -114,6 +125,8 @@
     </table>
   </div>
 </div>
+</div>
+<div data-ptab="tags">
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
     <div>
@@ -132,6 +145,8 @@
     </table>
   </div>
 </div>
+</div>
+<div data-ptab="log">
 <div class="card bg-base-100 shadow-sm p-6">
   <div class="flex items-center justify-between mb-2">
     <h2 class="text-lg font-semibold">Log de eventos</h2>
@@ -147,6 +162,7 @@
       <tbody id="logRows"></tbody>
     </table>
   </div>
+</div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -289,5 +305,13 @@ setInterval(pullLog, 1000);
 setInterval(pullState, 2000);
 setInterval(pullTags, 5000);
 setInterval(pullTagStats, 5000);
+
+/* pestañas internas de Pruebas */
+function ptabShow(id) {
+  document.querySelectorAll('.ptab-btn').forEach(b => b.classList.toggle('tab-active', b.dataset.tab === id));
+  document.querySelectorAll('[data-ptab]').forEach(p => p.classList.toggle('hidden', p.dataset.ptab !== id));
+}
+document.querySelectorAll('.ptab-btn').forEach(b => { b.onclick = () => ptabShow(b.dataset.tab); });
+ptabShow('pruebas');
 </script>
 {% endblock %}
