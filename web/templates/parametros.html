@@ -83,8 +83,8 @@ async function pread() {
   }
 }
 document.getElementById('papply').onclick = async () => {
-  for (const k of ['dmem','dptr','dlen','drt','dout']) localStorage.setItem('ru5600_'+k, document.getElementById(k).value);
-  localStorage.setItem('ru5600_denter', document.getElementById('denter').checked ? '1' : '0');
+  for (const k of ['dmem','dptr','dlen','drt','dout']) storeSet('ru5600_'+k, document.getElementById(k).value);
+  storeSet('ru5600_denter', document.getElementById('denter').checked ? '1' : '0');
   const r = await post('/api/params_apply', {rf: document.getElementById('rf').selectedIndex, mode: parseInt(document.getElementById('wm').value), beep: document.getElementById('beep').checked, filter: document.getElementById('filt').value});
   const msg = document.getElementById('pmsg');
   if (r.error) { msg.textContent = 'Error: ' + r.error; }
@@ -104,8 +104,8 @@ document.getElementById('pdef').onclick = () => {
   document.getElementById('wm').value = '0';
   document.getElementById('filt').value = 0;
 };
-for (const k of ['dmem','dptr','dlen','drt','dout']) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(k).value = v; }
-if (localStorage.getItem('ru5600_denter') === '0') document.getElementById('denter').checked = false;
+for (const k of ['dmem','dptr','dlen','drt','dout']) { const v = storeGet('ru5600_'+k); if (v !== null) document.getElementById(k).value = v; }
+if (storeGet('ru5600_denter') === '0') document.getElementById('denter').checked = false;
 document.getElementById('fread').onclick = async () => {
   const r = await post('/api/freq_read', {});
   document.getElementById('fmsg').textContent = r.ok ? 'OK' : 'Error: ' + r.error;
@@ -157,7 +157,7 @@ document.getElementById('perfil').onchange = async (ev) => {
   const r = await fetch('/api/profiles/apply', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({id: id})}).then(x => x.json()).catch(e => ({ok: false, error: String(e)}));
   if (!r.ok) { msg.textContent = 'Error: ' + r.error; return; }
-  try { localStorage.setItem('ru5600_read_mode', r.app.read_mode); } catch (e) {}
+  storeSet('ru5600_read_mode', r.app.read_mode);
   const d2 = await profData();
   profShow(id, d2);
   msg.textContent = t('Perfil aplicado: ') + t(p.label || id)

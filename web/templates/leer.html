@@ -65,8 +65,8 @@ document.getElementById('wgo').onclick = async () => {
   const r = await post('/api/mem_write', {mem: parseInt(document.getElementById('wmem').value), ptr: document.getElementById('wptr').value, data: document.getElementById('wdata').value, pwd: document.getElementById('wpwd').value, fp: document.getElementById('wfp').checked});
   document.getElementById('wout').textContent = r.ok ? 'Escrito y verificado.' : 'Error: ' + r.error;
 };
-if (localStorage.getItem('ru5600_dmem')) document.querySelector('#rmem').selectedIndex = ['EPC','TID','USER','RESERVED'].indexOf(localStorage.getItem('ru5600_dmem'));
-for (const [id, k] of [['rptr','dptr'],['rlen','dlen']]) { const v = localStorage.getItem('ru5600_'+k); if (v !== null) document.getElementById(id).value = v; }
+if (storeGet('ru5600_dmem')) document.querySelector('#rmem').selectedIndex = ['EPC','TID','USER','RESERVED'].indexOf(storeGet('ru5600_dmem'));
+for (const [id, k] of [['rptr','dptr'],['rlen','dlen']]) { const v = storeGet('ru5600_'+k); if (v !== null) document.getElementById(id).value = v; }
 document.getElementById('wepcgo').onclick = async () => {
   if (!confirm('Escribir EPC (verificado). ¿Confirmás?')) return;
   const r = await post('/api/epc_write', {epc: document.getElementById('wepc').value, pwd: document.getElementById('wepcpwd').value, fp: document.getElementById('wep_fp').checked});

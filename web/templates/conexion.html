@@ -113,9 +113,9 @@ async function refreshState() {
 document.querySelectorAll('input[name=t]').forEach(el => el.onchange = syncTransport);
 /* modo de lectura: se guarda, se manda al abrir y se puede cambiar con el lector abierto */
 const rmSel = document.getElementById('mode');
-try { const saved = localStorage.getItem('ru5600_read_mode'); if (saved) rmSel.value = saved; } catch (e) {}
+var saved = storeGet('ru5600_read_mode'); if (saved) rmSel.value = saved;
 rmSel.onchange = async () => {
-  try { localStorage.setItem('ru5600_read_mode', rmSel.value); } catch (e) {}
+  storeSet('ru5600_read_mode', rmSel.value);
   const r = await post('/api/read_mode', {mode: rmSel.value});
   document.getElementById('connMsg').textContent = r.ok
     ? (t('Modo de lectura: ') + rmSel.selectedOptions[0].textContent)

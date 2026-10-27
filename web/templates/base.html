@@ -5,7 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RU5600 · {% block title %}{% endblock %}</title>
 <script>
-try { var _tt = localStorage.getItem('ru5600_theme'); if (_tt === 'dark' || _tt === 'light') { document.documentElement.dataset.theme = _tt; } } catch (e) {}
+/* Almacenamiento con respaldo: pywebview/GTK trae HTML5 local storage
+   DESACTIVADO (enable_html5_local_storage=False en su backend) -> la
+   variable localStorage ni existe y cada acceso revienta el script que
+   sigue (asi murieron pread() en Parametros y los defaults de Leer).
+   storeGet/storeSet usan localStorage si hay, si no cookies del mismo
+   origen, y si no memoria de la pagina. Nunca tiran. */
+var __memStore = {};
+function storeGet(k) {
+  try {
+    if (window.localStorage) {
+      var v = window.localStorage.getItem(k);
+      if (v !== null && v !== undefined) return v;
+    }
+  } catch (e) {}
+  try {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + k + '=([^;]*)'));
+    if (m) return decodeURIComponent(m[1]);
+  } catch (e) {}
+  return (k in __memStore) ? __memStore[k] : null;
+}
+function storeSet(k, v) {
+  v = String(v);
+  try { if (window.localStorage) { window.localStorage.setItem(k, v); return; } } catch (e) {}
+  try { document.cookie = k + '=' + encodeURIComponent(v) + ';path=/;max-age=31536000'; return; } catch (e) {}
+  __memStore[k] = v;
+}
+try { var _tt = storeGet('ru5600_theme'); if (_tt === 'dark' || _tt === 'light') { document.documentElement.dataset.theme = _tt; } } catch (e) {}
 </script>
 <script>
 // Reporte de errores JS hacia el log de la app: la ventana nativa (pywebview)
@@ -246,7 +272,7 @@ let LANG = 'es';
 function t(s){ return (LANG==='en' && STR[s] !== undefined) ? STR[s] : s; }
 function applyLang(l){
   LANG = l;
-  try{localStorage.setItem('ru5600_lang',l);}catch(e){}
+  storeSet('ru5600_lang', l);
   var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   var nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
   nodes.forEach(function(n){
@@ -341,7 +367,7 @@ async function post(url, body) {
 function setTheme(t) {
   try { if (window.__trace) window.__trace('setTheme:' + t); } catch (e) {}
   document.documentElement.dataset.theme = t;
-  try { localStorage.setItem('ru5600_theme', t); } catch (e) {}
+  storeSet('ru5600_theme', t);
   document.querySelectorAll('input[name=theme]').forEach(function(el){ el.checked = (el.value === t); });
   var sw = document.getElementById('themeSwitch');
   if (sw) sw.checked = (t === 'dark');
@@ -356,8 +382,8 @@ document.getElementById('themeSwitch').onchange = function () {
 };
 document.querySelectorAll('input[name=lang]').forEach(function(el){ el.onchange = function(){ if(el.checked) applyLang(el.value); }; });
 document.getElementById('langSwitch').onchange = function () { applyLang(this.checked ? 'en' : 'es'); };
-try{ var _th=localStorage.getItem('ru5600_theme')||'light'; setTheme(_th); }catch(e){}
-try{ var _l=localStorage.getItem('ru5600_lang')||'es'; var _r=document.querySelector('input[name=lang][value="'+_l+'"]'); if(_r)_r.checked=true; applyLang(_l);}catch(e){applyLang('es');}
+setTheme(storeGet('ru5600_theme') || 'light');
+var _l=storeGet('ru5600_lang')||'es'; var _r=document.querySelector('input[name=lang][value="'+_l+'"]'); if(_r)_r.checked=true; applyLang(_l);
 // Inputs numéricos: seleccionar todo al enfocar. Sin esto, el valor por defecto
 // (ej. el 0 del Barrido) queda al teclear y se convierte en 0400 en vez de 400.
 document.querySelectorAll('input[type=number]').forEach(function (el) {
