@@ -166,12 +166,18 @@ def conexion():
 def conn_state():
     global _reader, _net_reader
     if _reader is not None and _reader.is_open:
-        try:
-            si = _reader.system_info()
-            info = {"sn": si.device_sn, "fw": si.soft_ver,
-                    "hw": si.hard_ver}
-        except Exception:  # noqa: BLE001
-            info = {}
+        info = {}
+        if _reader._lock.acquire(blocking=False):
+            try:
+                si = _reader.system_info()
+                info = {"sn": si.device_sn, "fw": si.soft_ver,
+                        "hw": si.hard_ver}
+            except Exception:  # noqa: BLE001
+                info = {}
+            finally:
+                _reader._lock.release()
+        else:
+            info = {"busy": True}
         return jsonify(open=True, mode="usb", info=info,
                        read_mode=_read_cfg.get("mode", "balanced"),
                        profile=_profile_cfg.get("current", "general"),
@@ -478,7 +484,8 @@ def api_silence():
 def api_reboot():
     try:
         r = _need_usb()
-        r._lib.CFHid_RebootDevice(0xFF)
+        with r._lock:
+            r._lib.CFHid_RebootDevice(0xFF)
         return jsonify(ok=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
@@ -833,12 +840,15 @@ def _active_run():
         r = _get_reader()
         from ru5600_core import DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE
         r._pace()
-        r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                      WORKMODE_ACTIVE)
+        with r._lock:
+            r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                          WORKMODE_ACTIVE)
         r._pace(settle=True)
-        r._lib.CFHid_ClearTagBuf()
+        with r._lock:
+            r._lib.CFHid_ClearTagBuf()
         r._pace()
-        r._lib.CFHid_StartRead()
+        with r._lock:
+            r._lib.CFHid_StartRead()
         r._pace(settle=True)
         try:
             while not _active_stop.is_set():
@@ -861,7 +871,8 @@ def _active_run():
                         "ant": tag.ant, "rssi": tag.rssi, "n": 1})
         finally:
             try:
-                r._lib.CFHid_StopRead()
+                with r._lock:
+                    r._lib.CFHid_StopRead()
             except Exception:  # noqa: BLE001
                 pass
             r._pace(settle=True)
@@ -1449,11 +1460,14 @@ def _stream_sweep(r, seconds):
     from ru5600_core import (DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE,
                              WORKMODE_ANSWER)
     r._pace()
-    r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE)
+    with r._lock:
+        r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE)
     r._pace(settle=True)
-    r._lib.CFHid_ClearTagBuf()
+    with r._lock:
+        r._lib.CFHid_ClearTagBuf()
     r._pace()
-    r._lib.CFHid_StartRead()
+    with r._lock:
+        r._lib.CFHid_StartRead()
     r._pace(settle=True)
     t0 = time.monotonic()
     stats: dict = {}
@@ -1485,15 +1499,18 @@ def _stream_sweep(r, seconds):
         # AnswerMode son saneamiento, no cuentan para las lecturas por segundo
         elapsed = max(time.monotonic() - t0, 0.001)
         try:
-            r._lib.CFHid_StopRead()
+            with r._lock:
+                r._lib.CFHid_StopRead()
         except Exception:  # noqa: BLE001
             pass
         r._pace(settle=True)
         try:
-            r._lib.CFHid_ClearTagBuf()
+            with r._lock:
+                r._lib.CFHid_ClearTagBuf()
             r._pace()
-            r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                           WORKMODE_ANSWER)
+            with r._lock:
+                r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                               WORKMODE_ANSWER)
             r._pace(settle=True)
         except Exception:  # noqa: BLE001
             pass
@@ -1660,13 +1677,16 @@ def _run(seconds, target=0, mode="answer"):
         from ru5600_core import (DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE,
                                  WORKMODE_ANSWER)
         r._pace()
-        r._lib.CFHid_SetDeviceOneParam(
-            DEV_ADDR, PARAM_WORKMODE,
-            WORKMODE_ACTIVE if mode == "active" else WORKMODE_ANSWER)
+        with r._lock:
+            r._lib.CFHid_SetDeviceOneParam(
+                DEV_ADDR, PARAM_WORKMODE,
+                WORKMODE_ACTIVE if mode == "active" else WORKMODE_ANSWER)
         r._pace(settle=True)
-        r._lib.CFHid_ClearTagBuf()
+        with r._lock:
+            r._lib.CFHid_ClearTagBuf()
         r._pace()
-        r._lib.CFHid_StartRead()
+        with r._lock:
+            r._lib.CFHid_StartRead()
         r._pace(settle=True)
         deadline = None if seconds <= 0 else time.monotonic() + seconds
         poll = 0.1
@@ -1721,8 +1741,9 @@ def _run(seconds, target=0, mode="answer"):
                         pass
                     try:
                         from ru5600_core import WORKMODE_ANSWER as _WS
-                        r._pace(); r._lib.CFHid_SetDeviceOneParam(
-                            DEV_ADDR, PARAM_WORKMODE, _WS); r._pace(settle=True)
+                        with r._lock:
+                            r._pace(); r._lib.CFHid_SetDeviceOneParam(
+                                DEV_ADDR, PARAM_WORKMODE, _WS); r._pace(settle=True)
                     except Exception:  # noqa: BLE001
                         pass
                 if direct_mode:
@@ -1817,9 +1838,11 @@ def _run(seconds, target=0, mode="answer"):
                     if now2 - last_hit > 6 and stabilized < 40:
                         try:
                             r.stop_read()
-                            r._lib.CFHid_ClearTagBuf()
+                            with r._lock:
+                                r._lib.CFHid_ClearTagBuf()
                             r._pace(settle=True)
-                            r._lib.CFHid_StartRead()
+                            with r._lock:
+                                r._lib.CFHid_StartRead()
                             r._pace(settle=True)
                             stabilized += 1
                             _state["stabilized"] = stabilized
@@ -1828,14 +1851,16 @@ def _run(seconds, target=0, mode="answer"):
                             pass
         finally:
             try:
-                r._lib.CFHid_StopRead()
+                with r._lock:
+                    r._lib.CFHid_StopRead()
             except Exception:  # noqa: BLE001
                 pass
             r._pace(settle=True)
             # volver a AnswerMode (el stream deja el lector en Active)
             try:
-                r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                               WORKMODE_ANSWER)
+                with r._lock:
+                    r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                                   WORKMODE_ANSWER)
                 r._pace(settle=True)
             except Exception:  # noqa: BLE001
                 pass
@@ -1878,14 +1903,16 @@ def api_recover():
         except Exception as exc:  # noqa: BLE001
             steps.append("stop_read: " + str(exc)[:40])
         try:
-            r._lib.CFHid_ClearTagBuf()
+            with r._lock:
+                r._lib.CFHid_ClearTagBuf()
             steps.append("buffer borrado")
         except Exception as exc:  # noqa: BLE001
             steps.append("clear: " + str(exc)[:40])
         try:
             r._pace()
-            r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                           WORKMODE_ANSWER)
+            with r._lock:
+                r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                               WORKMODE_ANSWER)
             r._pace(settle=True)
             steps.append("AnswerMode")
         except Exception as exc:  # noqa: BLE001
@@ -1924,6 +1951,11 @@ def api_probe_state():
     out = {"open": False}
     if _reader is not None and _reader.is_open:
         out["open"] = True
+        # si hay un comando en vuelo, informar "busy" en vez de bloquear la
+        # respuesta (o devolver un error falso: el lector NO esta desconectado)
+        if not _reader._lock.acquire(blocking=False):
+            out["busy"] = True
+            return jsonify(out)
         try:
             out["callback"] = _reader.callback_stats()
         except Exception as exc:  # noqa: BLE001
@@ -1940,6 +1972,8 @@ def api_probe_state():
             out["freq"] = fr.hex().upper() if isinstance(fr, (bytes, bytearray)) else fr
         except Exception:  # noqa: BLE001
             pass
+        finally:
+            _reader._lock.release()
     return jsonify(out)
 
 
@@ -1953,178 +1987,179 @@ def api_probe():
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
     try:
-        if what == "read_epc":
-            t0 = time.monotonic()
-            data = r.read_card(1, 0, 6, b"\x00" * 4, retries=3)
-            ms = round((time.monotonic() - t0) * 1000)
-            _log("ok", "lectura dirigida EPC OK (%d ms): %s" % (ms, data.hex().upper()))
-            return jsonify(ok=True, ms=ms, hex=data.hex().upper())
-        if what == "scan":
-            t0 = time.monotonic()
-            tags = r.scan()
-            ms = round((time.monotonic() - t0) * 1000)
-            _log("ok" if tags else "warn",
-                 "scan(): %d tags en %d ms%s" % (len(tags), ms,
-                                                 "" if tags else " (sin tags)"))
-            return jsonify(ok=True, ms=ms, count=len(tags),
-                           tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
-        if what == "inventory":
-            t0 = time.monotonic()
-            tags = r.inventory(rounds=8, delay=0.03)
-            ms = round((time.monotonic() - t0) * 1000)
-            _log("ok" if tags else "warn",
-                 "InventoryG2: %d tags en %d ms%s" % (len(tags), ms,
-                                                      "" if tags else " (sin respuesta)"))
-            return jsonify(ok=True, ms=ms, count=len(tags),
-                           tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
-        if what == "startread":
-            r.start_read()
-            _log("tx", "StartRead enviado")
-            time.sleep(float(cfg.get("wait", 3) or 3))
-            tags = r.poll_tags()
-            r.stop_read()
-            _log("ok" if tags else "warn",
-                 "StartRead %ss + poll: %d tags" % (cfg.get("wait", 3), len(tags)))
-            return jsonify(ok=True, count=len(tags),
-                           callback=r.callback_stats(),
-                           tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
-        if what == "stream_raw":
-            # diagnostico crudo del stream: StartRead + N polls de GetTagBuf
-            import ctypes as _ct
-            from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
-                                     WORKMODE_ACTIVE as _WA, WORKMODE_ANSWER as _WS)
-            n = int(cfg.get("polls", 20) or 20)
-            r._pace()
-            r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
-            r._pace(settle=True)
-            r._lib.CFHid_ClearTagBuf()
-            r.start_read()
-            samples = []
-            got_tags = []
-            for i in range(n):
-                time.sleep(0.1)
-                buf = (_ct.c_ubyte * 131072)()
-                total = _ct.c_uint32(0)
-                count = _ct.c_uint32(0)
-                ret = r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
-                smp = {"i": i, "ret": int(ret), "total": int(total.value), "count": int(count.value)}
-                if count.value and "hex0" not in smp and len(samples) < 40:
-                    smp["hex0"] = bytes(buf[:total.value]).hex().upper()
-                samples.append(smp)
-                if count.value:
-                    from ru5600_core import parse_tag_buffer as _ptb
-                    for t in _ptb(bytes(buf[:total.value]), count.value):
-                        got_tags.append(t.epc_hex)
-            r.stop_read()
-            try:
-                r._pace(); r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WS)
-            except Exception:  # noqa: BLE001
-                pass
-            with_data = [s2 for s2 in samples if s2["count"]]
-            _log("ok" if with_data else "warn",
-                 "stream_raw: %d polls, %d con datos, %d tags" % (n, len(with_data), len(got_tags)))
-            return jsonify(ok=True, start_ok=getattr(r, "last_start_ok", None),
-                           polls=n, con_datos=len(with_data),
-                           tags=got_tags[:20], samples=samples[:n])
-        if what == "buffer_dump":
-            # vaciar, leer dirigido y volcar TODO lo que quede en el buffer del lector
-            import ctypes as _ct
-            def drain(tag=""):
-                out = []
-                for _i in range(3):
-                    buf = (_ct.c_ubyte * 131072)()
-                    total = _ct.c_uint32(0); count = _ct.c_uint32(0)
-                    ret = r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
-                    out.append({"ret": int(ret), "total": int(total.value),
-                                "count": int(count.value),
-                                "hex": bytes(buf[:total.value]).hex().upper() if total.value else ""})
-                    time.sleep(0.08)
-                return {"when": tag, "drains": out}
-            steps = []
-            # primero: que habia ANTES de tocar nada (restos del tag anterior)
-            steps.append(drain("antes de limpiar (restos)"))
-            r._lib.CFHid_ClearTagBuf(); time.sleep(0.1)
-            steps.append(drain("tras ClearTagBuf"))
-            res, epc, hx, det = _direct_read(r)
-            steps.append({"lectura": res, "epc": epc, "hex": hx})
-            steps.append(drain("tras lectura dirigida"))
-            try:
-                r.start_read(); time.sleep(0.6)
-                steps.append(drain("tras StartRead 0.6 s"))
-                r.stop_read()
-            except Exception as exc:  # noqa: BLE001
-                steps.append({"startread_error": str(exc)[:80]})
-            steps.append(drain("final"))
-            _log("info", "buffer_dump: %s" % (epc or "sin tag"))
-            return jsonify(ok=True, steps=steps)
-        if what == "first_tag":
-            # latencia hasta el primer tag, N rondas, con poll de 50 ms
-            import ctypes as _ct
-            from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
-                                     WORKMODE_ACTIVE as _WA,
-                                     WORKMODE_ANSWER as _WS)
-            rounds = int(cfg.get("rounds", 5) or 5)
-            samples = []
-            r._pace()
-            r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
-            r._pace(settle=True)
-            for i in range(rounds):
-                r._lib.CFHid_ClearTagBuf()
+        with r._lock:
+            if what == "read_epc":
                 t0 = time.monotonic()
+                data = r.read_card(1, 0, 6, b"\x00" * 4, retries=3)
+                ms = round((time.monotonic() - t0) * 1000)
+                _log("ok", "lectura dirigida EPC OK (%d ms): %s" % (ms, data.hex().upper()))
+                return jsonify(ok=True, ms=ms, hex=data.hex().upper())
+            if what == "scan":
+                t0 = time.monotonic()
+                tags = r.scan()
+                ms = round((time.monotonic() - t0) * 1000)
+                _log("ok" if tags else "warn",
+                     "scan(): %d tags en %d ms%s" % (len(tags), ms,
+                                                     "" if tags else " (sin tags)"))
+                return jsonify(ok=True, ms=ms, count=len(tags),
+                               tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+            if what == "inventory":
+                t0 = time.monotonic()
+                tags = r.inventory(rounds=8, delay=0.03)
+                ms = round((time.monotonic() - t0) * 1000)
+                _log("ok" if tags else "warn",
+                     "InventoryG2: %d tags en %d ms%s" % (len(tags), ms,
+                                                          "" if tags else " (sin respuesta)"))
+                return jsonify(ok=True, ms=ms, count=len(tags),
+                               tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+            if what == "startread":
                 r.start_read()
-                first = None
-                while time.monotonic() - t0 < 6.0:
-                    buf = (_ct.c_ubyte * 131072)()
-                    total = _ct.c_uint32(0); count = _ct.c_uint32(0)
-                    r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
-                    if count.value:
-                        first = round((time.monotonic() - t0) * 1000)
-                        break
-                    time.sleep(0.05)
+                _log("tx", "StartRead enviado")
+                time.sleep(float(cfg.get("wait", 3) or 3))
+                tags = r.poll_tags()
                 r.stop_read()
-                samples.append(first)
-                time.sleep(0.3)
-            try:
-                r._pace(); r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WS)
-            except Exception:  # noqa: BLE001
-                pass
-            good = [x for x in samples if x]
-            _log("info", "first_tag: %s ms" % samples)
-            return jsonify(ok=True, samples_ms=samples, mediana=(sorted(good)[len(good)//2] if good else None))
-        if what == "checkant":
-            try:
-                code = r._lib.CFHid_CheckAnt()
-            except Exception as exc:  # noqa: BLE001
-                return jsonify(ok=False, error="CheckAnt: " + str(exc))
-            _log("info", "CheckAnt() -> %s" % code)
-            return jsonify(ok=True, code=code)
-        if what == "maintenance":
-            # limpieza barata: cortar stream, vaciar buffer y volver a AnswerMode
-            steps = []
-            try:
-                r.stop_read(); steps.append("StopRead")
-            except Exception as exc:  # noqa: BLE001
-                steps.append("stop: " + str(exc)[:30])
-            try:
-                r.clear_tag_buf(); steps.append("ClearTagBuf")
-            except Exception:  # noqa: BLE001
-                steps.append("clear: error")
-            try:
+                _log("ok" if tags else "warn",
+                     "StartRead %ss + poll: %d tags" % (cfg.get("wait", 3), len(tags)))
+                return jsonify(ok=True, count=len(tags),
+                               callback=r.callback_stats(),
+                               tags=[{"epc": t.epc_hex, "ant": t.ant, "rssi": t.rssi} for t in tags])
+            if what == "stream_raw":
+                # diagnostico crudo del stream: StartRead + N polls de GetTagBuf
+                import ctypes as _ct
                 from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
-                                         WORKMODE_ANSWER as _WA)
-                r._pace(settle=True)
+                                         WORKMODE_ACTIVE as _WA, WORKMODE_ANSWER as _WS)
+                n = int(cfg.get("polls", 20) or 20)
+                r._pace()
                 r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
                 r._pace(settle=True)
-                steps.append("AnswerMode")
-            except Exception:  # noqa: BLE001
-                steps.append("mode: error")
-            _log("info", "mantenimiento: " + ", ".join(steps))
-            return jsonify(ok=True, steps=steps)
-        if what == "callback":
-            stats = r.callback_stats()
-            _log("info", "callback: %s" % stats)
-            return jsonify(ok=True, callback=stats)
-        return jsonify(ok=False, error="prueba desconocida: " + what)
+                r._lib.CFHid_ClearTagBuf()
+                r.start_read()
+                samples = []
+                got_tags = []
+                for i in range(n):
+                    time.sleep(0.1)
+                    buf = (_ct.c_ubyte * 131072)()
+                    total = _ct.c_uint32(0)
+                    count = _ct.c_uint32(0)
+                    ret = r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
+                    smp = {"i": i, "ret": int(ret), "total": int(total.value), "count": int(count.value)}
+                    if count.value and "hex0" not in smp and len(samples) < 40:
+                        smp["hex0"] = bytes(buf[:total.value]).hex().upper()
+                    samples.append(smp)
+                    if count.value:
+                        from ru5600_core import parse_tag_buffer as _ptb
+                        for t in _ptb(bytes(buf[:total.value]), count.value):
+                            got_tags.append(t.epc_hex)
+                r.stop_read()
+                try:
+                    r._pace(); r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WS)
+                except Exception:  # noqa: BLE001
+                    pass
+                with_data = [s2 for s2 in samples if s2["count"]]
+                _log("ok" if with_data else "warn",
+                     "stream_raw: %d polls, %d con datos, %d tags" % (n, len(with_data), len(got_tags)))
+                return jsonify(ok=True, start_ok=getattr(r, "last_start_ok", None),
+                               polls=n, con_datos=len(with_data),
+                               tags=got_tags[:20], samples=samples[:n])
+            if what == "buffer_dump":
+                # vaciar, leer dirigido y volcar TODO lo que quede en el buffer del lector
+                import ctypes as _ct
+                def drain(tag=""):
+                    out = []
+                    for _i in range(3):
+                        buf = (_ct.c_ubyte * 131072)()
+                        total = _ct.c_uint32(0); count = _ct.c_uint32(0)
+                        ret = r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
+                        out.append({"ret": int(ret), "total": int(total.value),
+                                    "count": int(count.value),
+                                    "hex": bytes(buf[:total.value]).hex().upper() if total.value else ""})
+                        time.sleep(0.08)
+                    return {"when": tag, "drains": out}
+                steps = []
+                # primero: que habia ANTES de tocar nada (restos del tag anterior)
+                steps.append(drain("antes de limpiar (restos)"))
+                r._lib.CFHid_ClearTagBuf(); time.sleep(0.1)
+                steps.append(drain("tras ClearTagBuf"))
+                res, epc, hx, det = _direct_read(r)
+                steps.append({"lectura": res, "epc": epc, "hex": hx})
+                steps.append(drain("tras lectura dirigida"))
+                try:
+                    r.start_read(); time.sleep(0.6)
+                    steps.append(drain("tras StartRead 0.6 s"))
+                    r.stop_read()
+                except Exception as exc:  # noqa: BLE001
+                    steps.append({"startread_error": str(exc)[:80]})
+                steps.append(drain("final"))
+                _log("info", "buffer_dump: %s" % (epc or "sin tag"))
+                return jsonify(ok=True, steps=steps)
+            if what == "first_tag":
+                # latencia hasta el primer tag, N rondas, con poll de 50 ms
+                import ctypes as _ct
+                from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
+                                         WORKMODE_ACTIVE as _WA,
+                                         WORKMODE_ANSWER as _WS)
+                rounds = int(cfg.get("rounds", 5) or 5)
+                samples = []
+                r._pace()
+                r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
+                r._pace(settle=True)
+                for i in range(rounds):
+                    r._lib.CFHid_ClearTagBuf()
+                    t0 = time.monotonic()
+                    r.start_read()
+                    first = None
+                    while time.monotonic() - t0 < 6.0:
+                        buf = (_ct.c_ubyte * 131072)()
+                        total = _ct.c_uint32(0); count = _ct.c_uint32(0)
+                        r._lib.CFHid_GetTagBuf(buf, _ct.byref(total), _ct.byref(count))
+                        if count.value:
+                            first = round((time.monotonic() - t0) * 1000)
+                            break
+                        time.sleep(0.05)
+                    r.stop_read()
+                    samples.append(first)
+                    time.sleep(0.3)
+                try:
+                    r._pace(); r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WS)
+                except Exception:  # noqa: BLE001
+                    pass
+                good = [x for x in samples if x]
+                _log("info", "first_tag: %s ms" % samples)
+                return jsonify(ok=True, samples_ms=samples, mediana=(sorted(good)[len(good)//2] if good else None))
+            if what == "checkant":
+                try:
+                    code = r._lib.CFHid_CheckAnt()
+                except Exception as exc:  # noqa: BLE001
+                    return jsonify(ok=False, error="CheckAnt: " + str(exc))
+                _log("info", "CheckAnt() -> %s" % code)
+                return jsonify(ok=True, code=code)
+            if what == "maintenance":
+                # limpieza barata: cortar stream, vaciar buffer y volver a AnswerMode
+                steps = []
+                try:
+                    r.stop_read(); steps.append("StopRead")
+                except Exception as exc:  # noqa: BLE001
+                    steps.append("stop: " + str(exc)[:30])
+                try:
+                    r.clear_tag_buf(); steps.append("ClearTagBuf")
+                except Exception:  # noqa: BLE001
+                    steps.append("clear: error")
+                try:
+                    from ru5600_core import (DEV_ADDR as _DA, PARAM_WORKMODE as _PW,
+                                             WORKMODE_ANSWER as _WA)
+                    r._pace(settle=True)
+                    r._lib.CFHid_SetDeviceOneParam(_DA, _PW, _WA)
+                    r._pace(settle=True)
+                    steps.append("AnswerMode")
+                except Exception:  # noqa: BLE001
+                    steps.append("mode: error")
+                _log("info", "mantenimiento: " + ", ".join(steps))
+                return jsonify(ok=True, steps=steps)
+            if what == "callback":
+                stats = r.callback_stats()
+                _log("info", "callback: %s" % stats)
+                return jsonify(ok=True, callback=stats)
+            return jsonify(ok=False, error="prueba desconocida: " + what)
     except Exception as exc:  # noqa: BLE001
         _log("error", "prueba %s: %s" % (what, exc))
         return jsonify(ok=False, error=str(exc))

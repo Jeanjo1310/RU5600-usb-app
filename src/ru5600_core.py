@@ -798,32 +798,41 @@ class Ru5600Reader:
 
     # -- device information ------------------------------------------------
     def system_info(self) -> SystemInfo:
-        self._pace()
-        buf = (ctypes.c_ubyte * 16)()
-        if self._lib.CFHid_GetDeviceSystemInfo(DEV_ADDR, buf) != 1:
-            raise ReaderError("GetDeviceSystemInfo failed")
-        raw = bytes(buf)
-        return SystemInfo(
-            soft_ver=f"{raw[0] >> 4}.{raw[0] & 0x0F}",
-            hard_ver=f"{raw[1] >> 4}.{raw[1] & 0x0F}",
-            device_sn=raw[2:9].hex().upper(),
-        )
+        with self._lock:
+            self._pace()
+            buf = (ctypes.c_ubyte * 16)()
+            if self._lib.CFHid_GetDeviceSystemInfo(DEV_ADDR, buf) != 1:
+                raise ReaderError("GetDeviceSystemInfo failed")
+            raw = bytes(buf)
+            return SystemInfo(
+                soft_ver=f"{raw[0] >> 4}.{raw[0] & 0x0F}",
+                hard_ver=f"{raw[1] >> 4}.{raw[1] & 0x0F}",
+                device_sn=raw[2:9].hex().upper(),
+            )
 
     def read_param(self, addr: int) -> int:
-        self._pace()
-        val = ctypes.c_ubyte(0)
-        if self._lib.CFHid_ReadDeviceOneParam(DEV_ADDR, addr, ctypes.byref(val)) != 1:
+        with self._lock:
+            self._pace()
+            val = ctypes.c_ubyte(0)
+            if self._lib.CFHid_ReadDeviceOneParam(DEV_ADDR, addr, ctypes.byref(val)) == 1:
+                return val.value
+            # el lector no contesta un parametro justo tras cambiar de modo o
+            # arrancar el stream (medido 2026-10-26): un reintento tras el
+            # settle lo salva sin abrir la carrera a otros comandos
+            self._pace(settle=True)
+            if self._lib.CFHid_ReadDeviceOneParam(DEV_ADDR, addr, ctypes.byref(val)) == 1:
+                return val.value
             raise ReaderError(f"ReadDeviceOneParam(0x{addr:02X}) failed")
-        return val.value
 
     def set_param(self, addr: int, value: int) -> bool:
-        self._pace()
-        if self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, addr, value) != 1:
-            raise ReaderError(f"SetDeviceOneParam(0x{addr:02X}, {value}) failed")
-        self._pace(settle=True)
-        return True
+        with self._lock:
+            self._pace()
+            if self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, addr, value) != 1:
+                raise ReaderError(f"SetDeviceOneParam(0x{addr:02X}, {value}) failed")
+            self._pace(settle=True)
+            return True
 
-    # -- RF ----------------------------------------------------------------
+        # -- RF ----------------------------------------------------------------
     def rf_power(self) -> int:
         return self.read_param(PARAM_RFPOWER)
 
@@ -849,24 +858,29 @@ class Ru5600Reader:
         return self.set_param(PARAM_FILTERTIME, seconds)
 
     def read_freq(self) -> bytes:
-        self._pace()
-        buf = (ctypes.c_ubyte * 2)()
-        if self._lib.CFHid_ReadFreq(DEV_ADDR, buf) != 1:
+        with self._lock:
+            self._pace()
+            buf = (ctypes.c_ubyte * 2)()
+            if self._lib.CFHid_ReadFreq(DEV_ADDR, buf) == 1:
+                return bytes(buf)
+            self._pace(settle=True)   # mismo caso: reintento tras modo/stream
+            if self._lib.CFHid_ReadFreq(DEV_ADDR, buf) == 1:
+                return bytes(buf)
             raise ReaderError("ReadFreq failed")
-        return bytes(buf)
 
     def set_freq(self, band: str) -> bool:
-        if band not in FREQ_BANDS:
-            raise ReaderError(f"unknown frequency band: {band}")
-        lo, hi = FREQ_BANDS[band]
-        self._pace()
-        buf = (ctypes.c_ubyte * 2)(lo, hi)
-        if self._lib.CFHid_SetFreq(DEV_ADDR, buf) != 1:
-            raise ReaderError(f"SetFreq({band}) failed")
-        self._pace(settle=True)
-        return True
+        with self._lock:
+            if band not in FREQ_BANDS:
+                raise ReaderError(f"unknown frequency band: {band}")
+            lo, hi = FREQ_BANDS[band]
+            self._pace()
+            buf = (ctypes.c_ubyte * 2)(lo, hi)
+            if self._lib.CFHid_SetFreq(DEV_ADDR, buf) != 1:
+                raise ReaderError(f"SetFreq({band}) failed")
+            self._pace(settle=True)
+            return True
 
-    # -- inventory / read / write -----------------------------------------
+        # -- inventory / read / write -----------------------------------------
     def detect(self, mode: str = "balanced") -> Detection:
         """Look for tags with the selected read effort.
 
@@ -882,29 +896,30 @@ class Ru5600Reader:
         * ``balanced`` - six rounds: good speed, still reliable
         * ``reliable`` - keeps going until the reader answers (the 8/8)
         """
-        rounds, gap = READ_MODES.get(mode, READ_MODES["balanced"])
-        det = Detection()
-        buf = (ctypes.c_ubyte * 65536)()
-        total = ctypes.c_ushort(0)
-        count = ctypes.c_ushort(0)
-        t0 = time.monotonic()
-        for _ in range(max(1, rounds)):
-            self._pace()
-            det.rounds += 1
-            if self._lib.CFHid_InventoryG2(
-                DEV_ADDR, buf, ctypes.byref(total), ctypes.byref(count)
-            ) == 1 and count.value:
-                det.hits += 1
-                for tag in parse_tag_buffer(bytes(buf[: total.value]),
-                                           count.value):
-                    if tag.epc_hex not in [t.epc_hex for t in det.tags]:
-                        det.tags.append(tag)
-                if det.tags:
-                    break
-            if gap:
-                time.sleep(gap)
-        det.elapsed = time.monotonic() - t0
-        return det
+        with self._lock:
+            rounds, gap = READ_MODES.get(mode, READ_MODES["balanced"])
+            det = Detection()
+            buf = (ctypes.c_ubyte * 65536)()
+            total = ctypes.c_ushort(0)
+            count = ctypes.c_ushort(0)
+            t0 = time.monotonic()
+            for _ in range(max(1, rounds)):
+                self._pace()
+                det.rounds += 1
+                if self._lib.CFHid_InventoryG2(
+                    DEV_ADDR, buf, ctypes.byref(total), ctypes.byref(count)
+                ) == 1 and count.value:
+                    det.hits += 1
+                    for tag in parse_tag_buffer(bytes(buf[: total.value]),
+                                               count.value):
+                        if tag.epc_hex not in [t.epc_hex for t in det.tags]:
+                            det.tags.append(tag)
+                    if det.tags:
+                        break
+                if gap:
+                    time.sleep(gap)
+            det.elapsed = time.monotonic() - t0
+            return det
 
     def measure(self, duration: float = 5.0, poll: float = 0.1,
                 stop=None) -> dict:
@@ -921,10 +936,12 @@ class Ru5600Reader:
         seen = {}
         polls = hits = 0
         self._pace()
-        self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                          WORKMODE_ACTIVE)
+        with self._lock:
+            self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                              WORKMODE_ACTIVE)
         self._pace(settle=True)
-        self._lib.CFHid_ClearTagBuf()
+        with self._lock:
+            self._lib.CFHid_ClearTagBuf()
         self._pace()
         # verificar que el modo quedo grabado: si no, el firmware no streamea
         for _try in range(3):
@@ -936,10 +953,12 @@ class Ru5600Reader:
             if mode_now == WORKMODE_ACTIVE:
                 break
             self._pace(settle=True)
-            self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                              WORKMODE_ACTIVE)
+            with self._lock:
+                self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                                  WORKMODE_ACTIVE)
             self._pace(settle=True)
-        started = self._lib.CFHid_StartRead()
+        with self._lock:
+            started = self._lib.CFHid_StartRead()
         self._pace(settle=True)
         self.last_start_ok = bool(started)
         t0 = time.monotonic()
@@ -957,11 +976,14 @@ class Ru5600Reader:
                 if poll:
                     time.sleep(poll)
         finally:
-            self._lib.CFHid_StopRead()
+            with self._lock:
+                self._lib.CFHid_StopRead()
             self._pace(settle=True)
-            self._lib.CFHid_ClearTagBuf()
-            self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                              WORKMODE_ANSWER)
+            with self._lock:
+                self._lib.CFHid_ClearTagBuf()
+            with self._lock:
+                self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                                  WORKMODE_ANSWER)
         elapsed = time.monotonic() - t0
         return {
             "elapsed": elapsed,
@@ -982,26 +1004,27 @@ class Ru5600Reader:
         the time.  Repeat the round until something is found or the budget
         is exhausted, and merge the results.
         """
-        buf = (ctypes.c_ubyte * 65536)()
-        total = ctypes.c_ushort(0)
-        count = ctypes.c_ushort(0)
-        seen: List[Tag] = []
-        keys = set()
-        for _ in range(max(1, rounds)):
-            self._pace()
-            if self._lib.CFHid_InventoryG2(
-                DEV_ADDR, buf, ctypes.byref(total), ctypes.byref(count)
-            ) == 1 and count.value:
-                for tag in parse_tag_buffer(bytes(buf[: total.value]), count.value):
-                    key = (tag.epc_hex, tag.ant)
-                    if key not in keys:
-                        keys.add(key)
-                        seen.append(tag)
-                if seen:
-                    break
-            if delay:
-                time.sleep(delay)
-        return seen
+        with self._lock:
+            buf = (ctypes.c_ubyte * 65536)()
+            total = ctypes.c_ushort(0)
+            count = ctypes.c_ushort(0)
+            seen: List[Tag] = []
+            keys = set()
+            for _ in range(max(1, rounds)):
+                self._pace()
+                if self._lib.CFHid_InventoryG2(
+                    DEV_ADDR, buf, ctypes.byref(total), ctypes.byref(count)
+                ) == 1 and count.value:
+                    for tag in parse_tag_buffer(bytes(buf[: total.value]), count.value):
+                        key = (tag.epc_hex, tag.ant)
+                        if key not in keys:
+                            keys.add(key)
+                            seen.append(tag)
+                    if seen:
+                        break
+                if delay:
+                    time.sleep(delay)
+            return seen
 
     def scan(self, dwell: float = 0.35, attempts: int = 4,
              restore_mode: bool = True) -> List[Tag]:
@@ -1029,12 +1052,15 @@ class Ru5600Reader:
                 previous = None
         for attempt in range(max(1, attempts)):
             self._pace()
-            self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                              WORKMODE_ACTIVE)
+            with self._lock:
+                self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                                  WORKMODE_ACTIVE)
             self._pace(settle=True)
-            self._lib.CFHid_ClearTagBuf()
+            with self._lock:
+                self._lib.CFHid_ClearTagBuf()
             self._pace()
-            self._lib.CFHid_StartRead()
+            with self._lock:
+                self._lib.CFHid_StartRead()
             self._pace(settle=True)
             tags: List[Tag] = []
             seen = set()
@@ -1048,7 +1074,8 @@ class Ru5600Reader:
                             seen.add(key)
                             tags.append(tag)
             finally:
-                self._lib.CFHid_StopRead()
+                with self._lock:
+                    self._lib.CFHid_StopRead()
                 self._pace(settle=True)
             if tags:
                 break
@@ -1081,12 +1108,15 @@ class Ru5600Reader:
         tags: List[Tag] = []
         seen = set()
         self._pace()
-        self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                          WORKMODE_ACTIVE)
+        with self._lock:
+            self._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                              WORKMODE_ACTIVE)
         self._pace(settle=True)
-        self._lib.CFHid_ClearTagBuf()
+        with self._lock:
+            self._lib.CFHid_ClearTagBuf()
         self._pace()
-        self._lib.CFHid_StartRead()
+        with self._lock:
+            self._lib.CFHid_StartRead()
         self._pace(settle=True)
         deadline = None if duration <= 0 else time.monotonic() + duration
         try:
@@ -1101,7 +1131,8 @@ class Ru5600Reader:
                             on_new(tag, len(tags))
         finally:
             try:
-                self._lib.CFHid_StopRead()
+                with self._lock:
+                    self._lib.CFHid_StopRead()
             except Exception:
                 pass
             self._pace(settle=True)
@@ -1123,40 +1154,44 @@ class Ru5600Reader:
 
     def poll_tags(self) -> List[Tag]:
         """Drain the tag buffer filled by active mode (callback primero)."""
-        tags = []
-        queued = getattr(self, "_cb_tags", None)
-        if queued:
-            tags.extend(queued)
-            del queued[:]
-        # drenar SIEMPRE el buffer del SDK tambien: si nadie lo lee, el hilo de
-        # recepcion deja de acumular (tope 0x1f7ff)
-        buf = (ctypes.c_ubyte * 131072)()
-        total = ctypes.c_uint32(0)
-        count = ctypes.c_uint32(0)
-        ret = self._lib.CFHid_GetTagBuf(buf, ctypes.byref(total), ctypes.byref(count))
-        if ret and count.value:
-            tags.extend(parse_tag_buffer(bytes(buf[: total.value]), count.value))
-        return tags
+        with self._lock:
+            tags = []
+            queued = getattr(self, "_cb_tags", None)
+            if queued:
+                tags.extend(queued)
+                del queued[:]
+            # drenar SIEMPRE el buffer del SDK tambien: si nadie lo lee, el hilo de
+            # recepcion deja de acumular (tope 0x1f7ff)
+            buf = (ctypes.c_ubyte * 131072)()
+            total = ctypes.c_uint32(0)
+            count = ctypes.c_uint32(0)
+            ret = self._lib.CFHid_GetTagBuf(buf, ctypes.byref(total), ctypes.byref(count))
+            if ret and count.value:
+                tags.extend(parse_tag_buffer(bytes(buf[: total.value]), count.value))
+            return tags
 
     def start_read(self) -> bool:
-        self._pace()
-        if self._lib.CFHid_StartRead() != 1:
-            raise ReaderError("StartRead failed")
-        self._pace(settle=True)
-        return True
+        with self._lock:
+            self._pace()
+            if self._lib.CFHid_StartRead() != 1:
+                raise ReaderError("StartRead failed")
+            self._pace(settle=True)
+            return True
 
     def stop_read(self) -> bool:
-        self._pace()
-        if self._lib.CFHid_StopRead() != 1:
-            raise ReaderError("StopRead failed")
-        self._pace(settle=True)
-        self._lib.CFHid_ClearTagBuf()
-        self._pace()
-        return True
+        with self._lock:
+            self._pace()
+            if self._lib.CFHid_StopRead() != 1:
+                raise ReaderError("StopRead failed")
+            self._pace(settle=True)
+            self._lib.CFHid_ClearTagBuf()
+            self._pace()
+            return True
 
     def clear_tag_buf(self) -> bool:
-        self._lib.CFHid_ClearTagBuf()
-        return True
+        with self._lock:
+            self._lib.CFHid_ClearTagBuf()
+            return True
 
     def read_card(self, mem: int = MEM_EPC, word_ptr: int = 0,
                   word_count: int = 6, password: bytes = b"\x00" * 4,
@@ -1242,51 +1277,53 @@ class Ru5600Reader:
         need to be retried.  A status of 0 means the reader did not
         answer properly and the attempt is worth repeating.
         """
-        data = (ctypes.c_ubyte * 256)()
-        pwd = (ctypes.c_ubyte * 4)(*password)
-        stale = 0
-        status = 0
-        for attempt in range(max(1, retries)):
-            if attempt:
-                time.sleep(retry_delay)
-            elif pace:
-                self._pace()
-            self._wipe_response()
-            self._lib.CFHid_ReadCardG2(
-                DEV_ADDR, pwd, mem, word_ptr, word_count, data)
-            # The library hands over the last frame it received, even
-            # when it is the answer of a *previous* command; after the
-            # wipe the buffer only holds a frame if the reader answered
-            # right now, and a frame that does not match the request is
-            # discarded instead of being passed off as data.
-            frame = self._read_response_frame()
-            parsed = parse_module_response(frame) if frame else None
-            if parsed is None:
-                status = 0
-                continue
-            ftype, status, body = parsed
-            if ftype != RESP_READ:
-                status = 0
+        with self._lock:
+            data = (ctypes.c_ubyte * 256)()
+            pwd = (ctypes.c_ubyte * 4)(*password)
+            stale = 0
+            status = 0
+            for attempt in range(max(1, retries)):
+                if attempt:
+                    time.sleep(retry_delay)
+                elif pace:
+                    self._pace()
+                self._wipe_response()
+                self._lib.CFHid_ReadCardG2(
+                    DEV_ADDR, pwd, mem, word_ptr, word_count, data)
+                # The library hands over the last frame it received, even
+                # when it is the answer of a *previous* command; after the
+                # wipe the buffer only holds a frame if the reader answered
+                # right now, and a frame that does not match the request is
+                # discarded instead of being passed off as data.
+                frame = self._read_response_frame()
+                parsed = parse_module_response(frame) if frame else None
+                if parsed is None:
+                    status = 0
+                    continue
+                ftype, status, body = parsed
+                if ftype != RESP_READ:
+                    status = 0
+                    stale += 1
+                    continue
+                if status == RESP_OK and len(body) == word_count * 2:
+                    # The data is taken from the frame, not from the buffer the
+                    # vendor library fills: that buffer can still hold the
+                    # bytes of a previous answer, and the frame is what was
+                    # validated.
+                    return bytes(body), RESP_OK
+                if status == RESP_NO_DATA:
+                    # the tag does not have that memory: a real answer, and
+                    # the same one every time
+                    return b"", RESP_NO_DATA
                 stale += 1
-                continue
-            if status == RESP_OK and len(body) == word_count * 2:
-                # The data is taken from the frame, not from the buffer the
-                # vendor library fills: that buffer can still hold the
-                # bytes of a previous answer, and the frame is what was
-                # validated.
-                return bytes(body), RESP_OK
-            if status == RESP_NO_DATA:
-                # the tag does not have that memory: a real answer, and
-                # the same one every time
-                return b"", RESP_NO_DATA
-            stale += 1
-        extra = f", {stale} stale" if stale else ""
-        raise ReaderError(
-            f"ReadCardG2 failed (bank={mem}, word={word_ptr}, "
-            f"words={word_count}, {retries} attempts{extra}, status "
-            f"0x{status:02X}). Is a tag on the antenna, and is the access "
-            f"password correct?"
-        ) from None
+            extra = f", {stale} stale" if stale else ""
+            raise ReaderError(
+                f"ReadCardG2 failed (bank={mem}, word={word_ptr}, "
+                f"words={word_count}, {retries} attempts{extra}, status "
+                f"0x{status:02X}). Is a tag on the antenna, and is the access "
+                f"password correct?"
+            ) from None
+
 
     def _read_at(self, reader, mem, offset, size, password, budget):
         """Read a chunk at an offset, retrying until the budget is spent."""
@@ -1573,23 +1610,26 @@ class Ru5600Reader:
 
     def write_card(self, data: bytes, mem: int = MEM_EPC, word_ptr: int = 0,
                    password: bytes = b"\x00" * 4, retries: int = 3) -> bool:
-        if len(data) % 2:
-            raise ReaderError("data length must be even (whole 16-bit words)")
-        word_count = len(data) // 2
-        pwd = (ctypes.c_ubyte * 4)(*password)
-        buf = (ctypes.c_ubyte * len(data))(*data)
-        for _ in range(max(1, retries)):
-            self._pace()
-            if self._lib.CFHid_WriteCardG2(
-                DEV_ADDR, pwd, mem, word_ptr, word_count, buf
-            ) == 1:
-                self._pace(settle=True)
-                return True
-            time.sleep(0.05)
-        raise ReaderError(
-            f"WriteCardG2 failed (bank={mem}, word={word_ptr}, "
-            f"words={word_count}). Is a tag on the antenna?"
-        ) from None
+        with self._lock:
+            if len(data) % 2:
+                raise ReaderError("data length must be even (whole 16-bit words)")
+            word_count = len(data) // 2
+            pwd = (ctypes.c_ubyte * 4)(*password)
+            buf = (ctypes.c_ubyte * len(data))(*data)
+            for _ in range(max(1, retries)):
+                self._pace()
+                if self._lib.CFHid_WriteCardG2(
+                    DEV_ADDR, pwd, mem, word_ptr, word_count, buf
+                ) == 1:
+                    self._pace(settle=True)
+                    return True
+                time.sleep(0.05)
+            raise ReaderError(
+                f"WriteCardG2 failed (bank={mem}, word={word_ptr}, "
+                f"words={word_count}). Is a tag on the antenna?"
+            ) from None
+
+
 
     def write_card_verified(self, data: bytes, mem: int = MEM_EPC,
                             word_ptr: int = 0,
@@ -1625,48 +1665,53 @@ class Ru5600Reader:
 
     def write_epc(self, epc: bytes, password: bytes = b"\x00" * 4,
                   retries: int = 3, verify: bool = True) -> bool:
-        pwd = (ctypes.c_ubyte * 4)(*password)
-        buf = (ctypes.c_ubyte * len(epc))(*epc)
-        for _ in range(max(1, retries)):
-            self._pace()
-            if self._lib.CFHid_WriteEPCG2(DEV_ADDR, pwd, buf, len(epc)) == 1:
-                self._pace(settle=True)
-                if not verify:
-                    return True
-                # verificacion tolerante a frames viejos: el tag tarda en
-                # quedar grabado y el lector puede devolver la lectura previa.
-                # Se reintenta LEER (sin reescribir) antes de declarar fallo.
-                words = max(4, (len(epc) + 4 + 1) // 2)
-                time.sleep(0.15)
-                for _v in range(4):
-                    try:
-                        back = self.read_card(MEM_EPC, 0, words, password,
-                                              retries=2)
-                    except ReaderError:
-                        time.sleep(0.12)
-                        continue
-                    if back[4:4 + len(epc)] == epc:
+        with self._lock:
+            pwd = (ctypes.c_ubyte * 4)(*password)
+            buf = (ctypes.c_ubyte * len(epc))(*epc)
+            for _ in range(max(1, retries)):
+                self._pace()
+                if self._lib.CFHid_WriteEPCG2(DEV_ADDR, pwd, buf, len(epc)) == 1:
+                    self._pace(settle=True)
+                    if not verify:
                         return True
-                    time.sleep(0.12)
-                time.sleep(0.1)
-                continue
-            time.sleep(0.05)
-        raise ReaderError(
-            "WriteEPCG2 failed or could not be verified. Is a tag on the "
-            "antenna?"
-        ) from None
+                    # verificacion tolerante a frames viejos: el tag tarda en
+                    # quedar grabado y el lector puede devolver la lectura previa.
+                    # Se reintenta LEER (sin reescribir) antes de declarar fallo.
+                    words = max(4, (len(epc) + 4 + 1) // 2)
+                    time.sleep(0.15)
+                    for _v in range(4):
+                        try:
+                            back = self.read_card(MEM_EPC, 0, words, password,
+                                                  retries=2)
+                        except ReaderError:
+                            time.sleep(0.12)
+                            continue
+                        if back[4:4 + len(epc)] == epc:
+                            return True
+                        time.sleep(0.12)
+                    time.sleep(0.1)
+                    continue
+                time.sleep(0.05)
+            raise ReaderError(
+                "WriteEPCG2 failed or could not be verified. Is a tag on the "
+                "antenna?"
+            ) from None
 
-    # -- misc --------------------------------------------------------------
+        # -- misc --------------------------------------------------------------
+            # -- misc --------------------------------------------------------------
+                # -- misc --------------------------------------------------------------
     def relay(self, on: bool) -> bool:
-        fn = self._lib.CFHid_RelayOn if on else self._lib.CFHid_RelayOff
-        if fn(DEV_ADDR) != 1:
-            raise ReaderError("Relay command failed")
-        return True
+        with self._lock:
+            fn = self._lib.CFHid_RelayOn if on else self._lib.CFHid_RelayOff
+            if fn(DEV_ADDR) != 1:
+                raise ReaderError("Relay command failed")
+            return True
 
     def reboot(self) -> bool:
-        if self._lib.CFHid_RebootDevice(DEV_ADDR) != 1:
-            raise ReaderError("RebootDevice failed")
-        return True
+        with self._lock:
+            if self._lib.CFHid_RebootDevice(DEV_ADDR) != 1:
+                raise ReaderError("RebootDevice failed")
+            return True
 
     def raw_command(self, cmd: int, payload: bytes = b"",
                     timeout_ms: int = 400, want_payload: bool = False):
