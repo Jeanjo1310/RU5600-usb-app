@@ -2049,11 +2049,15 @@ def _run(seconds, target=0, mode="answer"):
         _state["stabilized"] = 0
         t_start = time.monotonic()
         last_new = time.monotonic()
+        phase_new = time.monotonic()
         stall_after = float(_state.get("stall_after") or 30.0)
         direct_mode = False
         # con ventanas cortas, esperar 6 s deja casi sin tiempo al modo dirigido
         fallback_after = float(_state.get("fallback_after") or
                                (min(6.0, max(2.0, seconds * 0.35)) if seconds > 0 else 6.0))
+        # cuanto maximo del modo dirigido antes de volver al stream: con
+        # stall largo el dirigido trabaja de a ratos, no para siempre
+        stream_back_after = min(max(stall_after / 4.0, 15.0), 45.0)
         stream_saw = False
         last_stream = None
         last_link_chk = 0.0
@@ -2084,14 +2088,15 @@ def _run(seconds, target=0, mode="answer"):
                 # inalcanzables (Test B: 3/6 con 6 tags, 2026-10-26).
                 _fb_falta = bool(target) and len(_state["tags"]) < target
                 _fb_vacio = not _state["tags"]
-                _fb_sin_nuevos = (time.monotonic() - last_new) > fallback_after
+                _fb_sin_nuevos = (time.monotonic() - phase_new) > fallback_after
                 if (not direct_mode and _fb_sin_nuevos
                         and (_fb_vacio or _fb_falta)):
                     direct_mode = True
                     _state["mode_used"] = "dirigido"
-                    # ventana nueva para el modo dirigido: no heredar el tiempo
-                    # que ya se gastó esperando al stream
-                    last_new = time.monotonic()
+                    # fase nueva: el dirigido tiene su propio cuanto. El reloj
+                    # de ESTANCAMIENTO (last_new) no se toca: es global y es
+                    # lo que termina la corrida por stall.
+                    phase_new = time.monotonic()
                     _log("warn", "el stream no ve tags: paso a barrido dirigido")
                     try:
                         r.stop_read()
@@ -2105,6 +2110,33 @@ def _run(seconds, target=0, mode="answer"):
                     except Exception:  # noqa: BLE001
                         pass
                 if direct_mode:
+                    # vuelta al stream: el dirigido no encontro tags NUEVOS
+                    # en todo su cuanto -> se re-armea el stream y se sigue
+                    # ciclando hasta tope/tiempo/estancado. Asi un lote puro
+                    # de tags que streamean no queda clavado en dirigido
+                    # lento para siempre (medido: H9 caian a 0,8/s y ahi
+                    # quedaban); y un lote mixto alterna ambos caminos.
+                    if (time.monotonic() - phase_new) > stream_back_after:
+                        direct_mode = False
+                        _state["mode_used"] = "stream"
+                        phase_new = time.monotonic()
+                        _log("info", "vuelta al stream tras %.0f s de dirigido "
+                             "sin tags nuevos" % stream_back_after)
+                        try:
+                            r._pace()
+                            with r._lock:
+                                r._lib.CFHid_SetDeviceOneParam(
+                                    DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE)
+                            r._pace(settle=True)
+                            with r._lock:
+                                r._lib.CFHid_ClearTagBuf()
+                            r._pace()
+                            with r._lock:
+                                r._lib.CFHid_StartRead()
+                            r._pace(settle=True)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        continue
                     res, epc_d, hex_d, det = _direct_read(r)
                     if res != "ok" or not epc_d:
                         # "error" aca casi siempre es tag ausente (campo vacio):
@@ -2120,7 +2152,7 @@ def _run(seconds, target=0, mode="answer"):
                                               else "desconectado")
                                     break
                                 r = rr
-                                last_new = last_hit = time.monotonic()
+                                last_new = last_hit = phase_new = time.monotonic()
                         time.sleep(poll)
                         continue
                     key = epc_d.upper()
@@ -2167,7 +2199,7 @@ def _run(seconds, target=0, mode="answer"):
                             info["xl"] = "%s #%s" % (hit[0], hit[1])
                     info.update(raw=hex_d[:48], ant=0, rssi=None, n=1)
                     _state["seen"][key] = info
-                    last_new = time.monotonic()
+                    last_new = phase_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True
@@ -2220,7 +2252,7 @@ def _run(seconds, target=0, mode="answer"):
                     info.update(raw=blob_key.hex().upper()[:48], ant=tag.ant,
                                 rssi=tag.rssi, n=1)
                     _state["seen"][key] = info
-                    last_new = time.monotonic()
+                    last_new = phase_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
                     got = True
@@ -2260,9 +2292,9 @@ def _run(seconds, target=0, mode="answer"):
                                           else "desconectado")
                                 break
                             r = rr
-                            # ventana de estancamiento REINICIADA: el tiempo
-                            # desconectado no cuenta como "dejo de haber gente"
-                            last_new = last_hit = time.monotonic()
+                            # relojes REINICIADOS: el tiempo desconectado
+                            # no cuenta como "dejo de haber gente"
+                            last_new = last_hit = phase_new = time.monotonic()
                             continue
         finally:
             try:
