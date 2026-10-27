@@ -270,6 +270,11 @@ document.querySelectorAll('input[name=lang]').forEach(function(el){ el.onchange 
 document.getElementById('langSwitch').onchange = function () { applyLang(this.checked ? 'en' : 'es'); };
 try{ var _th=localStorage.getItem('ru5600_theme')||'light'; setTheme(_th); }catch(e){}
 try{ var _l=localStorage.getItem('ru5600_lang')||'es'; var _r=document.querySelector('input[name=lang][value="'+_l+'"]'); if(_r)_r.checked=true; applyLang(_l);}catch(e){applyLang('es');}
+// Inputs numéricos: seleccionar todo al enfocar. Sin esto, el valor por defecto
+// (ej. el 0 del Barrido) queda al teclear y se convierte en 0400 en vez de 400.
+document.querySelectorAll('input[type=number]').forEach(function (el) {
+  el.addEventListener('focus', function () { el.select(); });
+});
 </script>
 {% block scripts %}{% endblock %}
 </body>
