@@ -2339,6 +2339,21 @@ def api_recover():
         return jsonify(ok=False, error=str(exc), steps=steps)
 
 
+@app.route("/api/js_error", methods=["POST"])
+def api_js_error():
+    """La ventana nativa (pywebview) no tiene consola visible: el frontend
+    reporta aca sus errores (window.onerror) y quedan en el log de la app."""
+    try:
+        d = request.get_json(silent=True) or {}
+        msg = str(d.get("msg") or "")[:300]
+        where = "%s:%s" % (d.get("src", "?"), d.get("line", "?"))
+        ua = (request.headers.get("User-Agent") or "")[:80]
+        _log("warn", "JS en ventana: %s (%s) [%s]" % (msg, where, ua))
+        return jsonify(ok=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+
+
 @app.route("/api/log")
 def api_log():
     since = float(request.args.get("since", 0) or 0)

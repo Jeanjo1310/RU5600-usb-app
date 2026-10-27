@@ -7,6 +7,35 @@
 <script>
 try { var _tt = localStorage.getItem('ru5600_theme'); if (_tt === 'dark' || _tt === 'light') { document.documentElement.dataset.theme = _tt; } } catch (e) {}
 </script>
+<script>
+// Reporte de errores JS hacia el log de la app: la ventana nativa (pywebview)
+// no tiene consola visible; sin esto somos ciegos ante lo que falla ahi.
+// Va PRIMERO para atrapar errores de todos los scripts que siguen.
+// (capado a 20 reportes por pagina para no inundar el log si algo explota)
+try {
+  window.__errCount = 0;
+  window.addEventListener('error', function (ev) {
+    try {
+      if (window.__errCount >= 20) return;
+      window.__errCount++;
+      fetch('/api/js_error', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({msg: String(ev.message || ev.error || 'error'),
+          src: String(ev.filename || ''), line: ev.lineno || 0})}).catch(function(){});
+    } catch (e) {}
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    try {
+      if (window.__errCount >= 20) return;
+      window.__errCount++;
+      fetch('/api/js_error', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({msg: 'promise: ' + String((ev.reason && ev.reason.message) || ev.reason),
+          src: '', line: 0})}).catch(function(){});
+    } catch (e) {}
+  });
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bundle.css') }}">
 <style>
 /* Tablas: encabezados firmes y opacos dentro de contenedores con scroll vertical.
