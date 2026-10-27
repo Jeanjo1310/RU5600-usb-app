@@ -162,6 +162,17 @@ def conexion():
     return render_template("conexion.html")
 
 
+@app.after_request
+def _sin_cache_paginas(resp):
+    """Nada de cache en el navegador para HTML/CSS: los templates se editan en
+    caliente y la pagina quedaba vieja (contador viejo, 2026-10-26)."""
+    ct = resp.content_type or ""
+    if "text/html" in ct or "text/css" in ct:
+        resp.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
 @app.route("/api/conn_state")
 def conn_state():
     global _reader, _net_reader
