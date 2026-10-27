@@ -47,10 +47,29 @@
   <div class="mt-3 pt-3 border-t border-base-300 flex flex-wrap items-center gap-2 text-sm">
     <span class="text-base-content/60">AppImage</span>
     <span id="appVer" class="font-mono font-semibold">–</span>
+    <span id="appPort" class="font-mono text-xs text-base-content/60"></span>
     <span id="updBadge" class="badge badge-info badge-sm hidden"></span>
     <span id="updFile" class="font-mono text-xs text-base-content/60"></span>
   </div>
   <p id="updMsg" class="text-xs text-base-content/60 mt-1 hidden"></p>
+</div>
+<div class="card bg-base-100 shadow-sm p-6 mt-4">
+  <h2 class="text-lg font-semibold mb-1">Datos de la app</h2>
+  <p class="text-sm text-base-content/60 mb-3">Todo lo tuyo vive en una sola carpeta contenedora (<span class="font-mono">RU5600_Data</span>, con <span class="font-mono">EXPORTES/</span> y la base adentro). Elegí otra para mudar todo o ver datos viejos; Abrir la muestra en el gestor de archivos.</p>
+  <div class="text-sm mb-1"><span class="text-base-content/60">Carpeta: </span><span id="dataPath" class="font-mono break-all">–</span></div>
+  <div class="text-sm text-base-content/60 mb-3"><span id="dataStats">–</span></div>
+  <div class="grid grid-cols-2 gap-2">
+    <button id="dataPickBtn" class="btn btn-outline">Elegir carpeta…</button>
+    <button id="dataOpenBtn" class="btn btn-outline">Abrir carpeta</button>
+  </div>
+  <div id="dataManual" class="hidden mt-2">
+    <label class="block text-sm mb-1" for="dataPathIn">Ruta de la carpeta (absoluta)</label>
+    <div class="flex gap-2">
+      <input id="dataPathIn" class="input input-bordered w-full font-mono" placeholder="/home/usuario/RU5600_Data">
+      <button id="dataSetBtn" class="btn btn-primary">Usar</button>
+    </div>
+  </div>
+  <p id="dataMsg" class="mt-1 text-sm"></p>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -79,6 +98,7 @@ async function loadVersion() {
   try {
     const v = await fetch('/api/version').then(r => r.json());
     document.getElementById('appVer').textContent = 'v' + v.version;
+    if (v.port) document.getElementById('appPort').textContent = '· puerto ' + v.port;
     const u = v.update;
     if (u && u.available) {
       const b = document.getElementById('updBadge');
@@ -93,6 +113,48 @@ async function loadVersion() {
   } catch (e) { /* sin version: no rompe la pagina */ }
 }
 loadVersion();
+async function loadDataDir() {
+  try {
+    const d = await fetch('/api/data_dir').then(r => r.json());
+    if (!d.ok) return;
+    document.getElementById('dataPath').textContent = d.path || '–';
+    const n = [];
+    if (d.tags !== null && d.tags !== undefined) n.push(`${d.tags} tags guardados`);
+    n.push(`${d.exportes || 0} exportes`);
+    if ((d.ultimos || []).length) n.push('últ: ' + d.ultimos[d.ultimos.length - 1]);
+    document.getElementById('dataStats').textContent = n.join(' · ');
+  } catch (e) { /* no rompe */ }
+}
+async function setDataDir(path) {
+  const m = document.getElementById('dataMsg');
+  m.textContent = t('Cambiando carpeta…');
+  const r = await post('/api/data_dir', {path});
+  m.textContent = r.ok
+    ? `${t('Carpeta activa:')} ${r.path} (${r.tags} tags, ${r.exportes} exportes)`
+    : ('Error: ' + (r.error || '?'));
+  if (r.ok) loadDataDir();
+}
+document.getElementById('dataPickBtn').onclick = async () => {
+  const m = document.getElementById('dataMsg');
+  const r = await post('/api/data_pick', {});
+  if (r.ok && r.path) { setDataDir(r.path); return; }
+  if (r.manual) {
+    document.getElementById('dataManual').classList.remove('hidden');
+    m.textContent = t('Sin diálogo del sistema: escribí la ruta absoluta y apretá Usar.');
+    return;
+  }
+  m.textContent = 'Error: ' + (r.error || '?');
+};
+document.getElementById('dataSetBtn').onclick = async () => {
+  setDataDir(document.getElementById('dataPathIn').value || '');
+};
+document.getElementById('dataOpenBtn').onclick = async () => {
+  const r = await post('/api/data_open', {});
+  document.getElementById('dataMsg').textContent = r.ok
+    ? `${t('Abierta en el gestor:')} ${r.path}`
+    : ((r.error || '?') + (r.path ? (': ' + r.path) : ''));
+};
+loadDataDir();
 let connOpen = false;
 async function refreshState() {
   const s = await fetch('/api/conn_state').then(r => r.json());
@@ -149,11 +211,81 @@ document.getElementById('helpBtn').onclick = async () => {
   document.getElementById('connMsg').textContent = r.text;
 };
 document.getElementById('udevBtn').onclick = async () => {
-  const r = await fetch('/api/udev_rule').then(r => r.json());
+  const btn = document.getElementById('udevBtn');
   const el = document.getElementById('udevout');
-  el.textContent = r.rule + '\n\nInstalación en terminal:\n' + r.cmd;
-  el.classList.remove('hidden');
+  btn.disabled = true;
+  try {
+    el.textContent = t('Instalando… aceptá el diálogo del sistema (te pide tu clave).');
+    el.classList.remove('hidden');
+    const r = await post('/api/udev_install', {});
+    if (r.ok) {
+      el.innerHTML = '';
+      const ok = document.createElement('div');
+      ok.textContent = t('Regla instalada: ') + (r.steps || []).join(' · ');
+      el.appendChild(ok);
+      const hint = document.createElement('div');
+      hint.className = 'opacity-70';
+      hint.textContent = t('Si no conecta, desenchufá y enchufá el lector.');
+      el.appendChild(hint);
+    } else if (r.manual) {
+      showUdevManual(t('Instalación automática no disponible acá. Copiá el comando:'));
+    } else {
+      el.textContent = 'Error: ' + (r.error || '?');
+    }
+  } catch (e) {
+    el.textContent = 'Error: ' + e;
+  }
+  btn.disabled = false;
 };
+async function showUdevCmd() {
+  const el = document.getElementById('udevout');
+  let det = document.getElementById('udevDet');
+  if (!det) {
+    det = document.createElement('details');
+    det.id = 'udevDet';
+    det.className = 'mt-2';
+    const sum = document.createElement('summary');
+    sum.className = 'cursor-pointer text-sm opacity-70';
+    sum.textContent = t('Ver comando manual');
+    det.appendChild(sum);
+    const pre = document.createElement('pre');
+    pre.className = 'mt-1 text-xs whitespace-pre-wrap';
+    det.appendChild(pre);
+    el.appendChild(det);
+  }
+  try {
+    const r = await fetch('/api/udev_rule').then(x => x.json());
+    det.querySelector('pre').textContent = r.rule + '\n\nInstalación en terminal:\n' + r.cmd;
+  } catch (e) { /* sin regla no hay manual */ }
+}
+function showUdevManual(msg) {
+  const el = document.getElementById('udevout');
+  el.innerHTML = '';
+  const d = document.createElement('div');
+  d.textContent = msg;
+  el.appendChild(d);
+  const b = document.createElement('button');
+  b.className = 'btn btn-outline btn-sm mt-2';
+  b.textContent = t('Copiar comando');
+  b.onclick = async () => {
+    try {
+      const r = await fetch('/api/udev_rule').then(x => x.json());
+      const cmd = r.rule + '\n\n' + r.cmd;
+      try { await navigator.clipboard.writeText(cmd); b.textContent = t('¡Copiado!'); }
+      catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = cmd; ta.className = 'textarea textarea-bordered w-full mt-2';
+        el.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); b.textContent = t('¡Copiado!'); }
+        catch (e2) { b.textContent = t('No pude copiar: seleccionalo a mano'); }
+      }
+    } catch (e) { b.textContent = 'Error: ' + e; }
+    showUdevCmd();
+  };
+  el.appendChild(b);
+  el.classList.remove('hidden');
+  showUdevCmd();
+}
 document.getElementById('expBtn').onclick = () => { window.location = '/api/config_export'; };
 document.getElementById('impFile').onchange = async (ev) => {
   const t = await ev.target.files[0].text();

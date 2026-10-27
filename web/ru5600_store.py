@@ -16,6 +16,17 @@ import os
 import sqlite3
 import time
 
+def set_data_root(path):
+    """Cambia el contenedor de datos en caliente (elegir carpeta): la DB y
+    todo lo que use DATA_DIR/DB_PATH apuntan al contenedor nuevo. Crea la
+    carpeta y asegura el esquema."""
+    global DATA_DIR, DB_PATH
+    DATA_DIR = os.path.abspath(os.path.expanduser(path))
+    DB_PATH = os.path.join(DATA_DIR, "ru5600.db")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    init_db()
+
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 # El squashfs de la AppImage es read-only (y /tmp/.mount_* desaparece al
 # cerrar): la DB vive al lado del AppImage (RU5600_DATA_DIR o el directorio

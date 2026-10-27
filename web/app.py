@@ -1473,27 +1473,18 @@ EXPORTES_DIR = None  # se resuelve bajo demanda: RU5600_USB_RW_ZK/EXPORTES
 
 
 def _exportes_dir():
-    """Carpeta fija de exportes (el archivo tiene que quedar en un lugar
-    conocido, no solo en 'Descargas' del navegador).
-
-    Orden de resolucion:
-      1. RU5600_EXPORT_DIR (override explicito)
-      2. AppImage: al lado del AppImage ($APPIMAGE) — el squashfs es
-         read-only y /tmp/.mount_* desaparece al cerrar, asi que DENTRO de
-         la imagen no se puede escribir. Al lado = el USB lleva la app y
-         los exports juntos.
-      3. dev: RU5600_USB_RW_ZK/EXPORTES (comportamiento del repo)."""
+    """Carpeta fija de exportes: _data_root()/EXPORTES (dentro del
+    contenedor unico RU5600_Data), salvo override explicito legacy
+    RU5600_EXPORT_DIR (se respeta tal cual)."""
     global EXPORTES_DIR
     if EXPORTES_DIR is None:
         from pathlib import Path
         override = os.environ.get("RU5600_EXPORT_DIR")
-        appimg = os.environ.get("APPIMAGE")
         if override:
+            # override explicito legacy: se respeta tal cual
             EXPORTES_DIR = Path(override).expanduser()
-        elif appimg:
-            EXPORTES_DIR = Path(appimg).resolve().parent / "EXPORTES"
         else:
-            EXPORTES_DIR = Path(__file__).resolve().parents[2] / "EXPORTES"
+            EXPORTES_DIR = _data_root() / "EXPORTES"
         EXPORTES_DIR.mkdir(parents=True, exist_ok=True)
     return EXPORTES_DIR
 
@@ -3150,6 +3141,121 @@ def api_compare():
                    matches=matches, found=len(matches))
 
 
+def _pick_port(preferred=8000):
+    """Primer puerto libre: el preferido ($RU5600_PORT o --port), si no
+    8000..8011. Evita que la app muera si el puerto esta ocupado (otra
+    instancia, otro programa): autoroutea a uno libre."""
+    import socket
+    try:
+        first = int(os.environ.get("RU5600_PORT") or preferred or 8000)
+    except (TypeError, ValueError):
+        first = 8000
+    cands = [first] + [q for q in range(first + 1, first + 12)
+                     if 1 <= q <= 65535]
+    if first < 8000 or first > 8011:
+        # ademas del vecindario del preferido, el rango habitual
+        cands += [q for q in range(8000, 8012) if q not in cands]
+    for q in cands:
+        if not 1 <= q <= 65535:
+            continue
+        t = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            t.bind(("127.0.0.1", q))
+            return q
+        except OSError:
+            continue
+        finally:
+            try:
+                t.close()
+            except Exception:  # noqa: BLE001
+                pass
+    return first  # ultimo recurso: que falle con el error real
+
+
+def _config_path():
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+        os.path.expanduser("~"), ".config")
+    return os.path.join(base, "ru5600-reader", "config.json")
+
+
+def _load_config():
+    try:
+        import json as _j
+        with open(_config_path()) as fh:
+            d = _j.load(fh)
+            return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_config(patch):
+    import json as _j
+    path = _config_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        cur = _load_config()
+        cur.update(patch or {})
+        with open(path, "w") as fh:
+            _j.dump(cur, fh, indent=2, ensure_ascii=False)
+        return True
+    except OSError:
+        return False
+
+
+_DATA_ROOT = None  # override en memoria (POST /api/data_dir)
+
+
+def _data_root():
+    """Carpeta contenedora de datos (una sola: RU5600_Data).
+    Orden: override en memoria > RU5600_DATA_DIR (contenedor) >
+    config.json (data_dir) > defecto XDG. Siempre existe al volver."""
+    from pathlib import Path
+    if _DATA_ROOT:
+        root = Path(_DATA_ROOT).expanduser()
+    else:
+        override = os.environ.get("RU5600_DATA_DIR")
+        cfg = (None if override else _load_config().get("data_dir"))
+        if override:
+            root = Path(override).expanduser()
+        elif cfg:
+            root = Path(cfg).expanduser()
+        else:
+            xdg = os.environ.get("XDG_DATA_HOME") or os.path.join(
+                os.path.expanduser("~"), ".local", "share")
+            root = Path(xdg) / "ru5600-reader" / "RU5600_Data"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _migrate_legacy_data():
+    """Migracion unica desde el layout viejo (DATA/ y EXPORTES/ junto al
+    AppImage): si el contenedor esta fresco y hay DB vieja, se copia (db +
+    exportes). Best-effort, con log; nunca borra el origen."""
+    try:
+        from pathlib import Path
+        import shutil
+        appimg = os.environ.get("APPIMAGE")
+        if not appimg:
+            return
+        sib = Path(appimg).resolve().parent
+        root = _data_root()
+        if (root / "ru5600.db").exists():
+            return  # contenedor ya en uso: no tocar
+        legacy_db = sib / "DATA" / "ru5600.db"
+        if legacy_db.is_file():
+            shutil.copy2(legacy_db, root / "ru5600.db")
+            _log("ok", "datos migrados desde %s a %s" % (legacy_db, root))
+        legacy_ex = sib / "EXPORTES"
+        if legacy_ex.is_dir():
+            dest = root / "EXPORTES"
+            dest.mkdir(parents=True, exist_ok=True)
+            for f in legacy_ex.iterdir():
+                if f.is_file() and not (dest / f.name).exists():
+                    shutil.copy2(f, dest / f.name)
+    except Exception as exc:  # noqa: BLE001
+        _log("warn", "migracion de datos viejos omitida: %s" % exc)
+
+
 # --- version y actualizaciones ------------------------------------------------
 # VERSION vive en packaging/VERSION (y viaja dentro de la AppImage). El chequeo
 # de release lee latest.json AL LADO del AppImage (flujo USB, sin internet) o
@@ -3210,11 +3316,152 @@ def _find_latest_json():
     return None, ""
 
 
+def _data_stats():
+    """Lo que hay en el contenedor: ruta, tags en la DB, archivos en EXPORTES."""
+    from pathlib import Path
+    root = _data_root()
+    try:
+        ntags = store.stats().get("tags")
+    except Exception:  # noqa: BLE001
+        ntags = None
+    try:
+        files = sorted(p.name for p in (root / "EXPORTES").iterdir()
+                       if p.is_file()) if (root / "EXPORTES").is_dir() else []
+    except OSError:
+        files = []
+    return {"path": str(root), "tags": ntags,
+            "exportes": len(files), "ultimos": files[-5:]}
+
+
+@app.route("/api/data_dir")
+def api_data_dir():
+    """Contenedor de datos actual (ruta + contenido)."""
+    st = _data_stats()
+    return jsonify(ok=True, **st)
+
+
+@app.route("/api/data_dir", methods=["POST"])
+def api_data_dir_set():
+    """Cambia el contenedor de datos (elegir carpeta). Persiste en config y
+    aplica en el acto (DB + exportes apuntan ahi)."""
+    global _DATA_ROOT, EXPORTES_DIR
+    cfg = request.get_json(silent=True) or {}
+    raw = str(cfg.get("path") or "").strip()
+    if not raw:
+        return jsonify(ok=False, error="ruta vacia"), 400
+    from pathlib import Path
+    root = Path(raw).expanduser()
+    if not root.is_absolute():
+        return jsonify(ok=False, error="la ruta tiene que ser absoluta"), 400
+    if str(root).startswith("/tmp/.mount"):
+        return jsonify(ok=False,
+                        error="ahi no: es el montaje temporal de la AppImage "
+                              "(desaparece al cerrar)"), 400
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe = root / ".ru5600_write_test"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        return jsonify(ok=False, error="no se puede escribir ahi: %s" % exc), 400
+    _DATA_ROOT = str(root)
+    EXPORTES_DIR = None  # que se re-resuelva dentro del contenedor nuevo
+    try:
+        store.set_data_root(str(root))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="no pude usar esa carpeta: %s" % exc), 400
+    _save_config({"data_dir": str(root)})
+    _log("ok", "contenedor de datos: %s" % root)
+    st = _data_stats()
+    return jsonify(ok=True, **st)
+
+
+@app.route("/api/data_pick", methods=["POST"])
+def api_data_pick():
+    """Abre el dialogo NATIVO de carpetas (zenity) y devuelve la elegida.
+    Sin zenity: error y la UI ofrece escribir la ruta a mano."""
+    import shutil
+    import subprocess
+    if not shutil.which("zenity"):
+        return jsonify(ok=False, error="sin dialogo (falta zenity)",
+                       manual=True)
+    try:
+        r = subprocess.run(["zenity", "--file-selection", "--directory",
+                            "--title=Carpeta de datos RU5600"],
+                           capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return jsonify(ok=False, error="se agoto la espera del dialogo")
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc)[:120])
+    path = (r.stdout or "").strip()
+    if r.returncode != 0 or not path:
+        return jsonify(ok=False, error="cancelado")
+    return jsonify(ok=True, path=path)
+
+
+@app.route("/api/data_open", methods=["POST"])
+def api_data_open():
+    """Abre el contenedor en el gestor de archivos (xdg-open)."""
+    import shutil
+    import subprocess
+    root = str(_data_root())
+    if not shutil.which("xdg-open"):
+        return jsonify(ok=False, error="sin xdg-open", path=root)
+    try:
+        subprocess.Popen(["xdg-open", root],
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc)[:120], path=root)
+    return jsonify(ok=True, path=root)
+
+
+@app.route("/api/udev_install", methods=["POST"])
+def api_udev_install():
+    """Instala la regla USB en 1 clic: pkexec (dialogo de clave del sistema)
+    con un script FIJO (sin input del usuario adentro: no hay inyeccion).
+    Sin pkexec: indica el comando manual."""
+    import shutil
+    import subprocess
+    if not shutil.which("pkexec"):
+        return jsonify(ok=False, error="sin pkexec: usa el comando manual",
+                       manual=True)
+    rule = UDEV_RULE.rstrip("\n")
+    script = ("set -e\n"
+              "printf '%s\n' '" + rule + "' > "
+              "/etc/udev/rules.d/99-inveton-ru5600.rules\n"
+              "chmod 644 /etc/udev/rules.d/99-inveton-ru5600.rules\n"
+              "udevadm control --reload-rules\n"
+              "udevadm trigger --subsystem-match=usb --action=add\n")
+    try:
+        r = subprocess.run(["pkexec", "sh", "-c", script],
+                           capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return jsonify(ok=False, error="se agoto la espera del dialogo")
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc)[:120])
+    if r.returncode != 0:
+        err = (r.stderr or "").strip().split("\n")[-1] if r.stderr else ""
+        if r.returncode == 127:
+            return jsonify(ok=False,
+                            error="cancelado o clave incorrecta"), 200
+        return jsonify(ok=False,
+                        error=("pkexec fallo (%d): %s" % (r.returncode, err))[:160])
+    _log("ok", "regla USB instalada via pkexec")
+    return jsonify(ok=True, steps=["regla escrita en /etc/udev/rules.d/",
+                                   "udev recargado",
+                                   "si no conecta: desenchufa y enchufa el lector"])
+
+
 @app.route("/api/version")
 def api_version():
     """Version corriendo + estado del release mas nuevo (si hay con que comparar)."""
     cur = _app_version()
-    out = {"version": cur, "update": None}
+    try:
+        _port = int(str(request.host or "").rsplit(":", 1)[-1])
+    except (TypeError, ValueError):
+        _port = None
+    out = {"version": cur, "port": _port, "update": None}
     latest, origen = _find_latest_json()
     if latest and isinstance(latest.get("version"), str):
         newer = _version_tuple(latest["version"]) > _version_tuple(cur)
@@ -3296,6 +3543,16 @@ def _start_native(host="127.0.0.1", port=8000):
         sys.exit(1)
 
 
+# Al arrancar (importar): el contenedor unico queda fijado y la DB
+# apunta ahi. Migra una vez el layout viejo (DATA/ + EXPORTES/ junto al
+# AppImage) si el contenedor esta fresco.
+_migrate_legacy_data()
+try:
+    store.set_data_root(str(_data_root()))
+except Exception as _exc:  # noqa: BLE001 - sin datos no hay app
+    _log("warn", "contenedor de datos no usable: %s" % _exc)
+
+
 if __name__ == "__main__":
     import argparse
     _p = argparse.ArgumentParser()
@@ -3305,7 +3562,7 @@ if __name__ == "__main__":
                     help="no abre navegador (solo el servidor)")
     _p.add_argument("--port", type=int, default=8000)
     _args = _p.parse_args()
-    _port = _args.port
+    _port = _pick_port(_args.port)
     if _args.native:
         _start_native(port=_port)
     else:
@@ -3317,4 +3574,6 @@ if __name__ == "__main__":
         if not _args.no_browser:
             print(f"Abrí http://127.0.0.1:{_port} en tu navegador",
                   flush=True)
+        print(f"RU5600 web en http://127.0.0.1:{_port} (Ctrl+C para cortar)",
+              flush=True)
         app.run(host="127.0.0.1", port=_port, threaded=True)

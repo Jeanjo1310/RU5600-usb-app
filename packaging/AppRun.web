@@ -1,7 +1,9 @@
 #!/bin/sh
 # AppRun de la AppImage web del RU5600 Reader.
 # Aplicacion 100% NATIVA (ventana GTK+WebKit2 via pywebview). NO abre ningun
-# navegador en ningun caso: si falta el stack nativo, falla en voz alta.
+# navegador en ningun caso. Los datos del usuario viven en
+# ~/.local/share/ru5600-reader/RU5600_Data (elegible desde la app):
+# junto al AppImage solo viaja el .AppImage (+ latest.json del release).
 HERE="$(dirname "$(readlink -f "$0")")"
 APP_DIR="$HERE/usr/opt/ru5600-web"
 
@@ -17,14 +19,6 @@ export PYTHONPATH="$APP_DIR/pylibs:${PYTHONPATH:-}"
 for sp in /usr/lib/python3/dist-packages /usr/lib/python3/site-packages /usr/local/lib/python3*/dist-packages; do
     [ -d "$sp" ] && export PYTHONPATH="$PYTHONPATH:$sp"
 done
-
-if [ -z "$RU5600_EXPORT_DIR" ]; then
-    export RU5600_EXPORT_DIR="$(dirname "$(readlink -f "${APPIMAGE:-$0}")")/EXPORTES"
-fi
-if [ -z "$RU5600_DATA_DIR" ]; then
-    export RU5600_DATA_DIR="$(dirname "$(readlink -f "${APPIMAGE:-$0}")")/DATA"
-fi
-mkdir -p "$RU5600_EXPORT_DIR" "$RU5600_DATA_DIR" 2>/dev/null
 
 # pywebview usa WebKit2 del sistema (gir1.2-webkit2-4.1). Es requisito duro:
 # sin ventana nativa no hay modo navegador al que caer (esta app no abre
@@ -43,5 +37,5 @@ if [ "$MODE" = "--native" ] && ! $PYTHON -c 'import webview, gi; gi.require_vers
     exit 1
 fi
 
-echo "RU5600 web corriendo en http://127.0.0.1:${RU5600_PORT:-8000}  (Ctrl+C para cortar)"
+echo "RU5600 Reader iniciado (ventana nativa)"
 exec $PYTHON "$APP_DIR/app.py" $MODE $@
