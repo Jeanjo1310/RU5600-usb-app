@@ -152,6 +152,9 @@ PYINNER
 
 mkdir -p "$OUT"
 OUT="$(realpath "$OUT")"
+# Update info por defecto: va EMBEBIDA en cada build (seccion .upd_info).
+# Sin esto Gear Lever no autodetecta la fuente GitHub. Override con env.
+: "${UPDATE_INFO:=gh-releases-zsync|Jeanjo1310|RU5600-usb-app|latest|ru5600-*-x86_64.AppImage.zsync}"
 if [ -n "${UPDATE_INFO:-}" ]; then
     echo "update info: $UPDATE_INFO"
     ARCH=x86_64 "$APPIMAGETOOL" -u "$UPDATE_INFO" "$STAGE" "$OUT/$APPIMAGE"
