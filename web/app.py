@@ -1656,6 +1656,19 @@ def status():
                    elapsed=round(now - _state["started"], 1) if running else 0)
 
 
+@app.route("/api/sweep_clear", methods=["POST"])
+def api_sweep_clear():
+    """Limpia el listado del barrido (solo se puede cuando esta pausado)."""
+    with _lock:
+        if _state.get("running"):
+            return jsonify(ok=False, error="primero pausá la lectura"), 409
+        _state.update(tags=[], seen={}, hits=[], reason="", error="",
+                      last_rssi=None, last_rssi_t=0.0)
+        _state["mode_used"] = "stream"
+    _log("info", "barrido: listado limpiado")
+    return jsonify(ok=True)
+
+
 @app.route("/api/start", methods=["POST"])
 def start():
     cfg = request.get_json(silent=True) or {}
@@ -1686,20 +1699,25 @@ def start():
     # el stream de tags solo existe en ActiveMode; AnswerMode es para comandos dirigidos.
     # Sin "mode" explicito manda el perfil activo (perfiles de Parámetros).
     mode = (cfg.get("mode") or _sweep_cfg.get("mode") or "active").lower()
+    # keep=true: CONTINUA el listado anterior (no borra tags ni contadores);
+    # keep=false arranca de cero (lo usa el boton "Limpiar listado" + iniciar)
+    keep = bool(cfg.get("keep"))
     with _lock:
         if _state["running"]:
             return jsonify(ok=False, error="ya corriendo"), 409
-        _state.update(running=True, tags=[], error="", target=target,
+        prev_tags = list(_state.get("tags") or []) if keep else []
+        prev_seen = dict(_state.get("seen") or {}) if keep else {}
+        _state.update(running=True, tags=prev_tags, error="", target=target,
                       reason="", started=time.monotonic(), hits=[],
                       stall_after=stall, fallback_after=fallback,
                       last_rssi=None, last_rssi_t=0.0)
         # el modo mostrado era el de la corrida anterior hasta que el hilo arrancaba
         _state["mode_used"] = "stream"
-        _state["seen"] = {}
+        _state["seen"] = prev_seen
     _stop.clear()
     threading.Thread(target=_run, args=(seconds, target, mode),
                      daemon=True).start()
-    return jsonify(ok=True, target=target, mode=mode, stall=stall)
+    return jsonify(ok=True, target=target, mode=mode, stall=stall, keep=keep)
 
 
 @app.route("/api/stop", methods=["POST"])

@@ -15,7 +15,12 @@
       <label class="block mb-1 text-sm font-medium" for="stall" title="Si pasa este tiempo sin tags nuevos, la corrida corta sola">Sin tags nuevos en (s)</label>
       <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-32">
     </div>
+    <div class="pb-1">
+      <div class="text-3xl font-bold leading-none whitespace-nowrap"><span id="tagCount">0</span><span id="tagTarget" class="text-base font-medium opacity-60"></span></div>
+      <div id="tagFaltan" class="text-xs text-base-content/60 mt-1">—</div>
+    </div>
     <button id="sweepToggle" class="btn btn-primary">Iniciar lectura</button>
+    <button id="clearBtn" class="btn btn-outline btn-sm">Limpiar listado</button>
     <div class="pb-2">
       <div class="flex items-center gap-2">
         <span id="healthDot" class="inline-block w-2.5 h-2.5 rounded-full bg-base-300"></span>
@@ -92,9 +97,18 @@ async function poll() {
   const r = await fetch('/api/status').then(r => r.json());
   const extra = r.target ? ` / ${r.target}` : '';
   const modo = (r.mode_used === 'dirigido') ? ' · modo dirigido (el stream no ve este tag)' : '';
+  // contador visible + cuantos faltan para el objetivo
+  $('tagCount').textContent = r.count;
+  $('tagTarget').textContent = r.target ? extra : '';
+  $('tagFaltan').textContent = r.target
+    ? `${t('faltan')} ${Math.max(0, r.target - r.count)}`
+    : t('sin objetivo');
+  const pausado = !r.running && r.reason === 'usuario';
   $('status').textContent = r.running
     ? `${t('Leyendo…')} ${r.count}${extra} tags` + modo
-    : `${t('Detenido.')} ${r.count} tags.` + (r.reason ? ' ' + t('Se detuvo porque') + ' ' + t(reasonText(r.reason)) + '.' : '') + modo;
+    : pausado
+      ? `${t('Pausado.')} ${r.count}${extra} tags · ${t('apretá Iniciar para continuar')}.` + modo
+      : `${t('Detenido.')} ${r.count}${extra} tags.` + (r.reason ? ' ' + t('Se detuvo porque') + ' ' + t(reasonText(r.reason)) + '.' : '') + modo;
   const dot = $('healthDot');
   const warn = $('warnBox');
   if (!r.running) {
@@ -114,8 +128,8 @@ async function poll() {
     warn.classList.add('hidden');
   }
   const tb2 = $('sweepToggle');
-  tb2.textContent = t(r.running ? 'Parar' : 'Iniciar lectura');
-  tb2.className = 'btn ' + (r.running ? 'btn-error' : 'btn-primary');
+  tb2.textContent = t(r.running ? 'Pausar' : 'Iniciar lectura');
+  tb2.className = 'btn ' + (r.running ? 'btn-warning' : 'btn-primary');
   if (r.tags.length > seen) {
     const tb = $('rows');
     r.tags.slice(seen).forEach((x, i) => {
@@ -135,14 +149,20 @@ async function poll() {
   if (!r.running && timer) { clearInterval(timer); timer = null; }
 }
 $('sweepToggle').onclick = async () => {
-  const running = $('sweepToggle').textContent.trim() === t('Parar');
+  const running = $('sweepToggle').textContent.trim() === t('Pausar');
   if (running) { await post('/api/stop', {}); poll(); return; }
+  // keep: no limpia el listado — continúa donde estaba (pausado o cortado)
   const r = await post('/api/start', {seconds: parseFloat($('seconds').value) || 0,
                                       target: parseInt($('target').value) || 0,
-                                      stall: parseFloat($('stall').value) || 30});
+                                      stall: parseFloat($('stall').value) || 30,
+                                      keep: true});
   if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
-  $('rows').innerHTML = ''; seen = 0;
   timer = setInterval(poll, 400); poll();
+};
+$('clearBtn').onclick = async () => {
+  const r = await post('/api/sweep_clear', {});
+  if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
+  $('rows').innerHTML = ''; seen = 0; poll();
 };
 $('recoverBtn').onclick = async () => {
   $('recoverBtn').disabled = true;
