@@ -49,7 +49,10 @@ trap 'rm -rf "$STAGE"' EXIT
 install -D -m 755 "$HERE/AppRun.web"             "$STAGE/AppRun"
 install -D -m 644 "$HERE/$APP_NAME.desktop"      "$STAGE/$APP_NAME.desktop"
 install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/ru5600-reader.png"
-install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/.DirIcon"
+# NO instalar .DirIcon: el AppImage viejo (que funcionaba bien) no tenia
+# icono embebido en el binario. Algunos file managers (Nautilus) muestran
+# un damero para PNGs transparentes embebidos; sin .DirIcon muestran el
+# icono por defecto del sistema (sin damero).
 # icono en las rutas estandar (algunos DEs no miran la raiz del AppDir)
 install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/usr/share/icons/hicolor/256x256/apps/ru5600-reader.png"
 install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/usr/share/pixmaps/ru5600-reader.png"
