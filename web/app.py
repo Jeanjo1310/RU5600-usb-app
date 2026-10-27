@@ -1608,6 +1608,8 @@ def status():
                    stabilized=_state.get("stabilized", 0),
                    mode_used=_state.get("mode_used", "stream"),
                    stall=_state.get("stall_after", 30.0),
+                   last_rssi=_state.get("last_rssi"),
+                   last_rssi_t=_state.get("last_rssi_t", 0.0),
                    flags=_flags_safe(),
                    dps=round(len(ts) / 10.0, 1),
                    last_seen=None if last is None else round(last, 1),
@@ -1650,7 +1652,8 @@ def start():
             return jsonify(ok=False, error="ya corriendo"), 409
         _state.update(running=True, tags=[], error="", target=target,
                       reason="", started=time.monotonic(), hits=[],
-                      stall_after=stall, fallback_after=fallback)
+                      stall_after=stall, fallback_after=fallback,
+                      last_rssi=None, last_rssi_t=0.0)
         # el modo mostrado era el de la corrida anterior hasta que el hilo arrancaba
         _state["mode_used"] = "stream"
         _state["seen"] = {}
@@ -1799,6 +1802,11 @@ def _run(seconds, target=0, mode="answer"):
                     stream_saw = True
                     last_stream = time.monotonic()
                 for tag in stream_tags:
+                    # RSSI fresco en cada lectura (tambien en relecturas): es
+                    # lo que permite medir intensidad por altura/posicion
+                    if getattr(tag, "rssi", None) is not None:
+                        _state["last_rssi"] = tag.rssi
+                        _state["last_rssi_t"] = time.time()
                     # el parser nuevo ya entrega EPC/TID/RSSI: no re-parsear el blob
                     epc = (getattr(tag, "epc_hex", "") or "").upper()
                     info = {"epc": epc, "chip": "", "xl": "-",
