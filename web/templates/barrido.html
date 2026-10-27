@@ -97,15 +97,18 @@ async function poll() {
   const r = await fetch('/api/status').then(r => r.json());
   const extra = r.target ? ` / ${r.target}` : '';
   const modo = (r.mode_used === 'dirigido') ? ' · modo dirigido (el stream no ve este tag)' : '';
-  // contador: 137 / 236  =>  leídos / faltantes (suman N del campo de arriba)
-  if (r.target) {
-    $('tagFaltan').textContent = `${r.count} / ${Math.max(0, r.target - r.count)}`;
-    $('tagCount').textContent = `total ${r.target}`;
+  // contador: leídos / faltantes — el N sale del INPUT (reacciona al teclear):
+  //   input vacío  -> 0 / 0
+  //   N=400        -> 0 / 400, y con cada tag nuevo sube el 1º baja el 2º (400/0 = tope)
+  const N = parseInt($('target').value) || 0;
+  if (N > 0) {
+    $('tagFaltan').textContent = `${r.count} / ${Math.max(0, N - r.count)}`;
+    $('tagCount').textContent = `total ${N}`;
     $('tagTarget').textContent = '';
   } else {
-    $('tagFaltan').textContent = r.count;
+    $('tagFaltan').textContent = `${r.count} / 0`;
     $('tagCount').textContent = '';
-    $('tagTarget').textContent = ' ' + t('sin objetivo');
+    $('tagTarget').textContent = '';
   }
   const pausado = !r.running && r.reason === 'usuario';
   $('status').textContent = r.running
