@@ -1721,14 +1721,17 @@ def _run(seconds, target=0, mode="answer"):
                 # (b) el entrego pero se calla con el objetivo sin cumplir: en grupos
                 #     mixtos los tags no-stream quedarian inalcanzables y la corrida se
                 #     estancaba sin siquiera intentar el camino dirigido.
-                _fb_ref = last_stream if (stream_saw and last_stream) else t_start
+                # Fallback cuando hace rato que NO HAY TAGS NUEVOS y falta el
+                # objetivo (o si nunca llego nada). La version anterior exigia
+                # "silencio del stream", pero en un grupo MIXTO los tags que
+                # streamean repiten sin parar (last_stream siempre fresco): el
+                # fallback nunca se disparaba y los no-stream quedaban
+                # inalcanzables (Test B: 3/6 con 6 tags, 2026-10-26).
                 _fb_falta = bool(target) and len(_state["tags"]) < target
-                _fb_silencio = stream_saw and last_stream and (
-                    (time.monotonic() - last_stream) > fallback_after)
-                if (not direct_mode
-                        and (time.monotonic() - _fb_ref) > fallback_after
-                        and (not _state["tags"]
-                             or (_fb_falta and _fb_silencio))):
+                _fb_vacio = not _state["tags"]
+                _fb_sin_nuevos = (time.monotonic() - last_new) > fallback_after
+                if (not direct_mode and _fb_sin_nuevos
+                        and (_fb_vacio or _fb_falta)):
                     direct_mode = True
                     _state["mode_used"] = "dirigido"
                     # ventana nueva para el modo dirigido: no heredar el tiempo
