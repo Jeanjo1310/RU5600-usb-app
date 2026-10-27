@@ -48,11 +48,11 @@ trap 'rm -rf "$STAGE"' EXIT
 
 install -D -m 755 "$HERE/AppRun.web"             "$STAGE/AppRun"
 install -D -m 644 "$HERE/$APP_NAME.desktop"      "$STAGE/$APP_NAME.desktop"
-install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/$APP_NAME.png"
+install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/ru5600-reader.png"
 install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/.DirIcon"
 # icono en las rutas estandar (algunos DEs no miran la raiz del AppDir)
-install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/usr/share/icons/hicolor/256x256/apps/$APP_NAME.png"
-install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/usr/share/pixmaps/$APP_NAME.png"
+install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/usr/share/icons/hicolor/256x256/apps/ru5600-reader.png"
+install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/usr/share/pixmaps/ru5600-reader.png"
 
 # --- python sources + web app ------------------------------------------------
 install -D -m 644 "$ROOT/src/ru5600_core.py"     "$STAGE/usr/opt/$APP_NAME/ru5600_core.py"
