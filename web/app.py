@@ -1857,6 +1857,12 @@ def _run(seconds, target=0, mode="answer"):
                             r._pace(settle=True)
                             stabilized += 1
                             _state["stabilized"] = stabilized
+                            # trazabilidad: si el lector se pausa >6 s NOSOTROS
+                            # interrumpimos (Stop+Clear+Start) y podemos tirar
+                            # lo bufferizado — hay que poder distinguir una
+                            # pausa del firmware de una interrupcion propia
+                            _log("warn", "rearme del stream tras 6 s sin entrega "
+                                 "(interrupcion propia, #%d)" % stabilized)
                             last_hit = time.monotonic()
                         except Exception:  # noqa: BLE001
                             pass
