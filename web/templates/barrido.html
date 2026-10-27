@@ -97,12 +97,11 @@ async function poll() {
   const r = await fetch('/api/status').then(r => r.json());
   const extra = r.target ? ` / ${r.target}` : '';
   const modo = (r.mode_used === 'dirigido') ? ' · modo dirigido (el stream no ve este tag)' : '';
-  // lo principal son LOS FALTANTES (total del campo N menos lo leído);
-  // el total y lo leído van en la línea chica de abajo
+  // contador: 137 / 236  =>  leídos / faltantes (suman N del campo de arriba)
   if (r.target) {
-    $('tagFaltan').textContent = `${t('faltan')} ${Math.max(0, r.target - r.count)}`;
-    $('tagCount').textContent = `${r.count}${extra}`;
-    $('tagTarget').textContent = ` ${t('leídos')}`;
+    $('tagFaltan').textContent = `${r.count} / ${Math.max(0, r.target - r.count)}`;
+    $('tagCount').textContent = `total ${r.target}`;
+    $('tagTarget').textContent = '';
   } else {
     $('tagFaltan').textContent = r.count;
     $('tagCount').textContent = '';
