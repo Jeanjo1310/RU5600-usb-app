@@ -27,6 +27,12 @@ thead.sticky {
 
 /* Pestañas internas (Pruebas): la barra lleva el fondo de las sections
    (base-100) y la activa se marca en base-200 para que se diferencie. */
+/* El fondo gris llega hasta el final del viewport: DaisyUI pinta el html
+   (root) con base-100 (blanco en claro) y eso deja una franja blanca cuando
+   el contenido es mas corto que la ventana. Se iguala el root al base-200
+   (vale en claro y oscuro) y el body ocupa como minimo toda la altura. */
+html { background-color: var(--color-base-200, Canvas); }
+body { min-height: 100vh; }
 .tabs-card { background-color: var(--color-base-100, Canvas); }
 .tabs-card .tab-active {
   background-color: var(--color-base-200, Canvas);
