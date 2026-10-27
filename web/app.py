@@ -3227,7 +3227,7 @@ def _start_native(host="127.0.0.1", port=8000):
         # muestra "app.py" en vez del programa. Debe ir antes de start().
         try:
             from gi.repository import GLib
-            GLib.set_prgname("ru5600-reader")
+            GLib.set_prgname("RU5600 Reader")
             GLib.set_application_name("RU5600 Reader")
         except Exception:
             pass
