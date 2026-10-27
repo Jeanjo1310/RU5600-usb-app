@@ -3222,6 +3222,15 @@ def _start_native(host="127.0.0.1", port=8000):
 
     try:
         import webview
+        # Identidad de la ventana para el dock/barra: sin esto, GTK toma el
+        # nombre del script (argv[0] = "app.py") como WM_CLASS y el dock
+        # muestra "app.py" en vez del programa. Debe ir antes de start().
+        try:
+            from gi.repository import GLib
+            GLib.set_prgname("ru5600-reader")
+            GLib.set_application_name("RU5600 Reader")
+        except Exception:
+            pass
         webview.create_window("RU5600 Reader", f"http://{host}:{port}",
                              width=1280, height=800, min_size=(800, 600))
         webview.start()

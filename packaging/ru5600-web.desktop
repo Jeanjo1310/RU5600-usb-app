@@ -1,9 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=RU5600 Reader (web)
+Name=RU5600 Reader
 Comment=INVETON RU5600 UHF RFID reader - web interface
 Exec=ru5600-web
 Icon=ru5600-reader
+StartupWMClass=ru5600-reader
 Terminal=false
 Categories=Utility;System;
 Keywords=RFID;UHF;EPC;reader;web;
