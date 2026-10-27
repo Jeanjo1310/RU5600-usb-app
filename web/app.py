@@ -3305,7 +3305,8 @@ def _find_latest_json():
                 return json.load(fh), origen + ":" + path
         except (OSError, ValueError):
             continue
-    url = os.environ.get("RU5600_UPDATE_URL")
+    url = (os.environ.get("RU5600_UPDATE_URL")
+           or "https://github.com/Jeanjo1310/RU5600-usb-app/releases/latest/download/latest.json")
     if url:
         try:
             import urllib.request

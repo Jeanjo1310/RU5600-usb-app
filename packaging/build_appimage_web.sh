@@ -152,7 +152,12 @@ PYINNER
 
 mkdir -p "$OUT"
 OUT="$(realpath "$OUT")"
-ARCH=x86_64 "$APPIMAGETOOL" "$STAGE" "$OUT/$APPIMAGE"
+if [ -n "${UPDATE_INFO:-}" ]; then
+    echo "update info: $UPDATE_INFO"
+    ARCH=x86_64 "$APPIMAGETOOL" -u "$UPDATE_INFO" "$STAGE" "$OUT/$APPIMAGE"
+else
+    ARCH=x86_64 "$APPIMAGETOOL" "$STAGE" "$OUT/$APPIMAGE"
+fi
 chmod +x "$OUT/$APPIMAGE"
 
 SHA="$(sha256sum "$OUT/$APPIMAGE" | cut -d' ' -f1)"
