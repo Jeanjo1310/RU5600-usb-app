@@ -1801,6 +1801,12 @@ def _run(seconds, target=0, mode="answer"):
                 if stream_tags:
                     stream_saw = True
                     last_stream = time.monotonic()
+                    # CUALQUIER entrega cuenta como salud: antes solo los tags
+                    # NUEVOS refrescaban last_hit, entonces con un solo tag en la
+                    # lectora (todo repetido) el rearme se disparaba cada ~8 s y
+                    # cortaba la lectura (pausas del buzzer, medido: 5 rearms en
+                    # 40 s con 309 lecturas)
+                    last_hit = time.monotonic()
                 for tag in stream_tags:
                     # RSSI fresco en cada lectura (tambien en relecturas): es
                     # lo que permite medir intensidad por altura/posicion
