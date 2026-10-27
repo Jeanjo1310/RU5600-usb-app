@@ -9,11 +9,11 @@
     </div>
     <div class="w-28">
       <label class="block mb-1 text-sm font-medium text-center" for="target">Detener al llegar a N tags</label>
-      <input id="target" type="number" value="0" min="0" class="input input-bordered w-full">
+      <input id="target" type="number" value="400" min="0" class="input input-bordered w-full">
     </div>
     <div class="w-28">
       <label class="block mb-1 text-sm font-medium text-center" for="stall" title="Si pasa este tiempo sin tags nuevos, la corrida corta sola">Sin tags nuevos en (s)</label>
-      <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-full">
+      <input id="stall" type="number" value="120" min="5" max="600" class="input input-bordered w-full">
     </div>
     <div class="ml-3">
       <div class="text-xs text-base-content/60 whitespace-nowrap leading-none mb-1 text-center"><span id="tagCount">0</span><span id="tagTarget"></span></div>
@@ -161,7 +161,7 @@ $('sweepToggle').onclick = async () => {
   // keep: no limpia el listado — continúa donde estaba (pausado o cortado)
   const r = await post('/api/start', {seconds: parseFloat($('seconds').value) || 0,
                                       target: parseInt($('target').value) || 0,
-                                      stall: parseFloat($('stall').value) || 30,
+                                      stall: parseFloat($('stall').value) || 120,
                                       keep: true});
   if (!r.ok) { $('status').textContent = 'Error: ' + r.error; return; }
   timer = setInterval(poll, 400); poll();
