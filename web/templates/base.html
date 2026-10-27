@@ -14,6 +14,13 @@ try { var _tt = localStorage.getItem('ru5600_theme'); if (_tt === 'dark' || _tt 
 // (capado a 20 reportes por pagina para no inundar el log si algo explota)
 try {
   window.__errCount = 0;
+  window.__trace = function (m) {
+    try {
+      fetch('/api/js_error', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({msg: 'trace: ' + String(m), src: '', line: 0})}).catch(function(){});
+    } catch (e) {}
+  };
   window.addEventListener('error', function (ev) {
     try {
       if (window.__errCount >= 20) return;
@@ -332,6 +339,7 @@ async function post(url, body) {
   return r.json();
 }
 function setTheme(t) {
+  try { if (window.__trace) window.__trace('setTheme:' + t); } catch (e) {}
   document.documentElement.dataset.theme = t;
   try { localStorage.setItem('ru5600_theme', t); } catch (e) {}
   document.querySelectorAll('input[name=theme]').forEach(function(el){ el.checked = (el.value === t); });
