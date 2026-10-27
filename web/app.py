@@ -3272,9 +3272,13 @@ if __name__ == "__main__":
     _port = _args.port
     if _args.native:
         _start_native(port=_port)
-    elif _args.no_browser:
-        app.run(host="127.0.0.1", port=_port, threaded=True)
     else:
+        # Sin --native: solo servir. NO abrir el navegador solo: las aperturas
+        # automaticas (xdg-open en cada relanzamiento) dejaban pestanas
+        # viejas abiertas y el Creador pensaba que la app corria en el
+        # navegador en vez de la ventana nativa. Quien quiera navegador,
+        # abre http://127.0.0.1:PUERTO a mano.
+        if not _args.no_browser:
+            print(f"Abrí http://127.0.0.1:{_port} en tu navegador",
+                  flush=True)
         app.run(host="127.0.0.1", port=_port, threaded=True)
-        import webbrowser
-        webbrowser.open(f"http://127.0.0.1:{_port}")
