@@ -17,7 +17,18 @@ import sqlite3
 import time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE, "data")
+# El squashfs de la AppImage es read-only (y /tmp/.mount_* desaparece al
+# cerrar): la DB vive al lado del AppImage (RU5600_DATA_DIR o el directorio
+# de $APPIMAGE). En dev (sin AppImage) sigue en web/data/.
+_data_override = os.environ.get("RU5600_DATA_DIR")
+_appimg = os.environ.get("APPIMAGE")
+if _data_override:
+    DATA_DIR = os.path.expanduser(_data_override)
+elif _appimg:
+    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(_appimg)),
+                            "DATA")
+else:
+    DATA_DIR = os.path.join(BASE, "data")
 DB_PATH = os.path.join(DATA_DIR, "ru5600.db")
 
 SCHEMA = """

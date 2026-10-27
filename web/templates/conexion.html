@@ -44,6 +44,13 @@
   </div>
   <p class="mt-2 text-xs text-base-content/60">Exportar/Importar config guardan y restauran los parámetros del lector en un archivo. Cerrar relé y Liberar relé conmutan el contacto del relé del lector.</p>
   <p id="devMsg" class="mt-1 text-sm"></p>
+  <div class="mt-3 pt-3 border-t border-base-300 flex flex-wrap items-center gap-2 text-sm">
+    <span class="text-base-content/60">AppImage</span>
+    <span id="appVer" class="font-mono font-semibold">–</span>
+    <span id="updBadge" class="badge badge-info badge-sm hidden"></span>
+    <span id="updFile" class="font-mono text-xs text-base-content/60"></span>
+  </div>
+  <p id="updMsg" class="text-xs text-base-content/60 mt-1 hidden"></p>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -68,6 +75,24 @@ function syncDev() {
   if (t === 'net') { sel.disabled = true; return; }
   sel.disabled = sel.options.length === 0;
 }
+async function loadVersion() {
+  try {
+    const v = await fetch('/api/version').then(r => r.json());
+    document.getElementById('appVer').textContent = 'v' + v.version;
+    const u = v.update;
+    if (u && u.available) {
+      const b = document.getElementById('updBadge');
+      b.textContent = `${t('nueva versión')} v${u.latest}`;
+      b.classList.remove('hidden');
+      const m = document.getElementById('updMsg');
+      m.textContent = `${u.date} · ${u.file}` + (u.notes ? ' · ' + u.notes : '') +
+        ` · ${t('bajá el archivo nuevo y reemplazá el AppImage')}` +
+        (u.sha256 ? ` (sha256 ${u.sha256.slice(0, 12)}…)` : '');
+      m.classList.remove('hidden');
+    }
+  } catch (e) { /* sin version: no rompe la pagina */ }
+}
+loadVersion();
 let connOpen = false;
 async function refreshState() {
   const s = await fetch('/api/conn_state').then(r => r.json());

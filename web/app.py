@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import collections
 import io
+import json
 import os
 import re
 import sys
@@ -161,10 +162,28 @@ _VENDOR_MSGS = {
 _hid_events = []    # ultimos avisos del vendor con timestamp (para el JSON)
 
 
+def _line_buffer_stdout():
+    """glibc bufferea stdout COMPLETO cuando el fd 1 es un pipe (no una tty):
+    los puts() del vendor (ej. "Hid Disconnect") se quedarian pegados en el
+    buffer de C hasta 4 KB o hasta cerrar el proceso. Poner stdout en modo
+    line-buffered hace que cada puts (que agrega \n) se flushee al instante
+    y el watcher lo vea en el momento."""
+    import ctypes as _ct
+    try:
+        libc = _ct.CDLL(None)
+        stdout_var = _ct.c_void_p.in_dll(libc, "stdout")   # FILE* de glibc
+        libc.setvbuf.argtypes = [_ct.c_void_p, _ct.c_void_p,
+                                 _ct.c_int, _ct.c_size_t]
+        libc.setvbuf(stdout_var.value, None, 2, 0)          # 2 = _IOLBF
+    except Exception:  # noqa: BLE001 - sin glibc o sin el simbolo: best-effort
+        pass
+
+
 def _install_vendor_stdout_watcher():
     """Captura los puts() del SDK del vendor sin perder el log: fd 1 -> pipe,
     un hilo lee, reenvia al fd original y registra los avisos conocidos."""
     try:
+        _line_buffer_stdout()
         r_fd, w_fd = os.pipe()
         orig_fd = os.dup(1)
         os.dup2(w_fd, 1)
@@ -1454,12 +1473,27 @@ EXPORTES_DIR = None  # se resuelve bajo demanda: RU5600_USB_RW_ZK/EXPORTES
 
 
 def _exportes_dir():
-    """Carpeta fija de exportes, fuera del repo (app empaquetada: el archivo
-    tiene que quedar en un lugar conocido, no solo en 'Descargas' del navegador)."""
+    """Carpeta fija de exportes (el archivo tiene que quedar en un lugar
+    conocido, no solo en 'Descargas' del navegador).
+
+    Orden de resolucion:
+      1. RU5600_EXPORT_DIR (override explicito)
+      2. AppImage: al lado del AppImage ($APPIMAGE) — el squashfs es
+         read-only y /tmp/.mount_* desaparece al cerrar, asi que DENTRO de
+         la imagen no se puede escribir. Al lado = el USB lleva la app y
+         los exports juntos.
+      3. dev: RU5600_USB_RW_ZK/EXPORTES (comportamiento del repo)."""
     global EXPORTES_DIR
     if EXPORTES_DIR is None:
         from pathlib import Path
-        EXPORTES_DIR = Path(__file__).resolve().parents[2] / "EXPORTES"
+        override = os.environ.get("RU5600_EXPORT_DIR")
+        appimg = os.environ.get("APPIMAGE")
+        if override:
+            EXPORTES_DIR = Path(override).expanduser()
+        elif appimg:
+            EXPORTES_DIR = Path(appimg).resolve().parent / "EXPORTES"
+        else:
+            EXPORTES_DIR = Path(__file__).resolve().parents[2] / "EXPORTES"
         EXPORTES_DIR.mkdir(parents=True, exist_ok=True)
     return EXPORTES_DIR
 
@@ -3082,6 +3116,86 @@ def api_compare():
 
     return jsonify(ok=True, total=len(tags), sheet_rows=len(values),
                    matches=matches, found=len(matches))
+
+
+# --- version y actualizaciones ------------------------------------------------
+# VERSION vive en packaging/VERSION (y viaja dentro de la AppImage). El chequeo
+# de release lee latest.json AL LADO del AppImage (flujo USB, sin internet) o
+# de RU5600_UPDATE_URL si esta seteada. El build es quien genera latest.json.
+
+
+def _app_version() -> str:
+    for cand in (os.path.join(os.path.dirname(__file__), "VERSION"),
+                 os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                              "packaging", "VERSION")):
+        try:
+            with open(cand) as fh:
+                return fh.read().strip()
+        except OSError:
+            continue
+    return "dev"
+
+
+def _version_tuple(v: str):
+    """(1,2,0) para comparar; lo no numerico se ignora (1.2.0-rc1 -> (1,2,0))."""
+    out = []
+    for part in (v or "").split("."):
+        digits = "".join(ch for ch in part if ch.isdigit())
+        out.append(int(digits) if digits else 0)
+    while len(out) < 3:
+        out.append(0)
+    return tuple(out[:3])
+
+
+def _find_latest_json():
+    """Busca latest.json: al lado del AppImage ($APPIMAGE), en
+    RU5600_UPDATE_DIR (test/dev) o en RU5600_UPDATE_URL. Devuelve (dict, origen)."""
+    cands = []
+    appimg = os.environ.get("APPIMAGE")          # solo dentro de una AppImage
+    if appimg:
+        cands.append(("appimage", os.path.join(os.path.dirname(appimg),
+                                               "latest.json")))
+    upd_dir = os.environ.get("RU5600_UPDATE_DIR")
+    if upd_dir:
+        cands.append(("dir", os.path.join(upd_dir, "latest.json")))
+    # en dev: el dist/ del repo (donde cae el build)
+    cands.append(("repo", os.path.join(os.path.dirname(os.path.dirname(
+        os.path.dirname(__file__))), "dist", "latest.json")))
+    for origen, path in cands:
+        try:
+            with open(path) as fh:
+                return json.load(fh), origen + ":" + path
+        except (OSError, ValueError):
+            continue
+    url = os.environ.get("RU5600_UPDATE_URL")
+    if url:
+        try:
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                return json.loads(resp.read().decode("utf-8")), "url:" + url
+        except Exception:  # noqa: BLE001
+            return None, "url-failed:" + url
+    return None, ""
+
+
+@app.route("/api/version")
+def api_version():
+    """Version corriendo + estado del release mas nuevo (si hay con que comparar)."""
+    cur = _app_version()
+    out = {"version": cur, "update": None}
+    latest, origen = _find_latest_json()
+    if latest and isinstance(latest.get("version"), str):
+        newer = _version_tuple(latest["version"]) > _version_tuple(cur)
+        out["update"] = {
+            "available": newer,
+            "latest": latest["version"],
+            "file": latest.get("file", ""),
+            "sha256": latest.get("sha256", ""),
+            "date": latest.get("date", ""),
+            "notes": latest.get("notes", ""),
+            "source": origen.split(":")[0],
+        }
+    return jsonify(out)
 
 
 if __name__ == "__main__":

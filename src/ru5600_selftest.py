@@ -90,30 +90,48 @@ def test_response_layout() -> None:
 
 
 def test_tag_records() -> None:
-    """The packed tag buffer: [len][type][ant][id][rssi]."""
-    print("tag records")
-    tags = parse_tag_buffer(TAG_RAW, 1)
-    check("one tag parsed", len(tags), 1)
-    if tags:
-        t = tags[0]
-        check("antenna", t.ant, 1)
-        check("type", t.type, 0x03)
-        check("no timestamp", t.has_timestamp, False)
-        check("rssi", t.rssi, 0x30)
-        check("epc slot length", len(t.raw_id), 24)
-        # the slot is the whole EPC: 192 bit here, 96 bit on the other tag
-        check("epc", t.epc_hex,
-              "E20047066BC06027AC480114000000000100000000000000")
-        check("epc starts with the 96 bit prefix", t.epc_hex.startswith(
-            "E20047066BC06027AC480114"), True)
+    """Tag buffer, BOTH formats.
 
-    tags = parse_tag_buffer(TAG_96, 1)
-    check("96 bit tag parsed", len(tags), 1)
+    Firmware 7.1 answers 92-byte records (measured 2026-10-26); parse_tag_buffer
+    decodes that one. The packed [len][type][ant][id][rssi] records belong to
+    the legacy decoder, kept in the core as _parse_tag_buffer_legacy. The old
+    fixtures test the legacy path; a synthetic 92-byte record exercises the
+    current parser (EPC 12 B + TID 12 B + 65-byte tail, RSSI at rec[n-44])."""
+    print("tag records")
+    from ru5600_core import _parse_tag_buffer_legacy
+    tags = _parse_tag_buffer_legacy(TAG_RAW, 1)
+    check("legacy: one tag parsed", len(tags), 1)
     if tags:
         t = tags[0]
-        check("96 bit epc", t.epc_hex, "E20047019951662B039FD1AD")
-        check("96 bit rssi", t.rssi, 0x34)
-        check("96 bit slot length", len(t.raw_id), 12)
+        check("legacy antenna", t.ant, 1)
+        check("legacy rssi", t.rssi, 0x30)
+        check("legacy epc", t.epc_hex,
+              "E20047066BC06027AC480114000000000100000000000000")
+
+    tags = _parse_tag_buffer_legacy(TAG_96, 1)
+    check("legacy: 96 bit tag parsed", len(tags), 1)
+    if tags:
+        t = tags[0]
+        check("legacy 96 bit epc", t.epc_hex, "E20047019951662B039FD1AD")
+        check("legacy 96 bit rssi", t.rssi, 0x34)
+
+    # firmware 7.1: registro de 92 bytes [91][tipo][ant][EPC 12][TID 12][65]
+    rec = bytearray(92)
+    rec[0] = 91
+    rec[1] = 0x03
+    rec[2] = 0x01
+    rec[3:15] = bytes.fromhex("E20047068123456789ABCDEF")
+    rec[15:27] = bytes.fromhex("E28281000011223344556677")
+    rec[92 - 44] = 45  # RSSI medido en el registro real
+    tags = parse_tag_buffer(bytes(rec), 1)
+    check("fw7.1: one 92B tag parsed", len(tags), 1)
+    if tags:
+        t = tags[0]
+        check("fw7.1 epc", t.epc_hex, "E20047068123456789ABCDEF")
+        check("fw7.1 rssi", t.rssi, 45)
+        check("fw7.1 antenna", t.ant, 1)
+        # raw_id keeps the WHOLE 92 B record (the UI shows it as "raw")
+        check("fw7.1 raw_id is the full record", len(t.raw_id), 92)
 
 
 def test_safety() -> None:
