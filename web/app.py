@@ -1770,14 +1770,21 @@ def _run(seconds, target=0, mode="answer"):
                     info = {"epc": key, "chip": "", "xl": "-",
                             "conf": "candidato",
                             "code": epc_d[6:14] if len(epc_d) >= 14 else ""}
-                    # TID solo para tags nuevos; si contesta frame viejo, un reintento
+                    # TID solo para tags nuevos; si contesta frame viejo, un reintento.
+                    # IMPORTANTE (Test B 2026-10-26): en un barrido con objetivo >1 el
+                    # TID se lee SIN Select y puede responder OTRO tag del campo — el
+                    # chip queda como "candidato". En el stream NO pasa: el TID viene en
+                    # el mismo registro del EPC (mismo tag), ahi es confiable.
                     for _attempt in range(2):
                         try:
                             tid = r.read_card(2, 0, 2, b"\x00" * 4, retries=2)
                             prefix = tid.hex().upper()[:8]
                             ent = TID_PREFIX_DB.get(prefix)
                             info["chip"] = ("%s %s" % (ent[0], ent[1])).strip() if isinstance(ent, tuple) and len(ent) >= 2 else prefix
-                            if isinstance(ent, tuple):
+                            if target > 1:
+                                info["chip"] = (info["chip"] or prefix) + " (candidato)"
+                                info["conf"] = "candidato (TID sin Select)"
+                            elif isinstance(ent, tuple):
                                 info["conf"] = "confirmado"
                             break
                         except Exception:  # noqa: BLE001

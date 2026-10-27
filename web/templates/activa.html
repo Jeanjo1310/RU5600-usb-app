@@ -20,7 +20,7 @@
   <div class="flex justify-end mb-1"><button class="btn btn-outline btn-sm" onclick="exportTable('#arows', 'lectura-continua')">Exportar</button></div>
   <div class="overflow-x-auto">
     <table class="table table-zebra w-full text-sm">
-      <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Crudo</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Ant</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2">RSSI</th><th class="px-4 py-2">Última vez</th></tr></thead>
+      <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">Crudo</th><th class="px-4 py-2">Chip</th><th class="px-4 py-2">Ant</th><th class="px-4 py-2">Veces</th><th class="px-4 py-2" title="45 = presencia (valor fijo medido de 50 cm a contacto); no mide intensidad — para eso usá Veces/lecturas por segundo">RSSI</th><th class="px-4 py-2">Última vez</th></tr></thead>
       <tbody id="arows"></tbody>
     </table>
   </div>
