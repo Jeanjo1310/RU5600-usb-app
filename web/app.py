@@ -1207,6 +1207,43 @@ def _map_problems(a_hex, b_hex):
     return probs
 
 
+EXPORTES_DIR = None  # se resuelve bajo demanda: RU5600_USB_RW_ZK/EXPORTES
+
+
+def _exportes_dir():
+    """Carpeta fija de exportes, fuera del repo (app empaquetada: el archivo
+    tiene que quedar en un lugar conocido, no solo en 'Descargas' del navegador)."""
+    global EXPORTES_DIR
+    if EXPORTES_DIR is None:
+        from pathlib import Path
+        EXPORTES_DIR = Path(__file__).resolve().parents[2] / "EXPORTES"
+        EXPORTES_DIR.mkdir(parents=True, exist_ok=True)
+    return EXPORTES_DIR
+
+
+def _guardar_copia(data: bytes, filename: str) -> str:
+    """Guarda una copia del export en EXPORTES/ con nombre fechado. Best-effort."""
+    try:
+        destino = _exportes_dir() / filename
+        i = 1
+        while destino.exists():                 # nunca pisar: sufijo -2, -3…
+            destino = _exportes_dir() / (destino.stem + "-%d" % i + destino.suffix)
+            i += 1
+        destino.write_bytes(data)
+        return str(destino)
+    except Exception:  # noqa: BLE001 - el export al navegador sigue funcionando
+        return ""
+
+
+def _nombre_fechado(name: str, ext: str) -> str:
+    """barrido + .xlsx -> barrido-2026-10-26-211530.xlsx"""
+    import time as _t
+    base = (name or "export").replace("/", "-")
+    if base.lower().endswith(ext):
+        base = base[:-len(ext)]
+    return "%s-%s%s" % (base[:50].strip("-"), _t.strftime("%Y-%m-%d-%H%M%S"), ext)
+
+
 @app.route("/api/export/xlsx", methods=["POST"])
 def api_export_xlsx():
     """Recibe headers + rows y devuelve un .xlsx (para las tablas de salida)."""
@@ -1222,7 +1259,7 @@ def api_export_xlsx():
         from openpyxl.styles import Font
         wb = Workbook()
         ws = wb.active
-        ws.title = (cfg.get("sheet") or "datos")[:31]
+        ws.title = ((cfg.get("sheet") or cfg.get("name") or "datos")).replace("/", "-")[:31]
         if headers:
             ws.append(headers)
             for c in ws[1]:
@@ -1234,12 +1271,13 @@ def api_export_xlsx():
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = min(48, max(10, ancho + 2))
         buf = io.BytesIO()
         wb.save(buf)
-        buf.seek(0)
-        name = (cfg.get("name") or "export").replace("/", "-")[:60]
-        if not name.lower().endswith(".xlsx"):
-            name += ".xlsx"
-        return send_file(buf, as_attachment=True, download_name=name,
+        datos = buf.getvalue()
+        name = _nombre_fechado(cfg.get("name") or "export", ".xlsx")
+        guardado = _guardar_copia(datos, name)   # copia en EXPORTES/ (AppImage)
+        resp = send_file(io.BytesIO(datos), as_attachment=True, download_name=name,
                          mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        resp.headers["X-Export-Ruta"] = guardado or "no-guardado"
+        return resp
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc)), 500
 
@@ -1251,12 +1289,13 @@ def api_export_txt():
     text = cfg.get("text") or ""
     if not str(text).strip():
         return jsonify(ok=False, error="no hay texto para exportar"), 400
-    name = (cfg.get("name") or "export").replace("/", "-")[:60]
-    if not name.lower().endswith(".txt"):
-        name += ".txt"
-    buf = io.BytesIO(str(text).encode("utf-8"))
-    return send_file(buf, as_attachment=True, download_name=name,
+    name = _nombre_fechado(cfg.get("name") or "export", ".txt")
+    datos = str(text).encode("utf-8")
+    guardado = _guardar_copia(datos, name)
+    resp = send_file(io.BytesIO(datos), as_attachment=True, download_name=name,
                      mimetype="text/plain; charset=utf-8")
+    resp.headers["X-Export-Ruta"] = guardado or "no-guardado"
+    return resp
 
 
 @app.route("/api/map_template")
