@@ -24,6 +24,14 @@ thead.sticky th {
 thead.sticky {
   opacity: 1; /* anula opacity-70: el texto del título queda sólido */
 }
+
+/* Pestañas internas (Pruebas): la barra lleva el fondo de las sections
+   (base-100) y la activa se marca en base-200 para que se diferencie. */
+.tabs-card { background-color: var(--color-base-100, Canvas); }
+.tabs-card .tab-active {
+  background-color: var(--color-base-200, Canvas);
+  font-weight: 600;
+}
 </style>
 </head>
 <body class="bg-base-200 text-base-content">
