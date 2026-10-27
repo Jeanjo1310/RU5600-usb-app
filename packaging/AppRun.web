@@ -5,8 +5,18 @@
 HERE="$(dirname "$(readlink -f "$0")")"
 APP_DIR="$HERE/usr/opt/ru5600-web"
 
+# Python: bundled (self-contained) first, system fallback
+if [ -x "$HERE/usr/lib/python3.12/bin/python3" ]; then
+    PYTHON="$HERE/usr/lib/python3.12/bin/python3"
+else
+    PYTHON="python3"
+fi
 export LD_LIBRARY_PATH="$APP_DIR/vendor:${LD_LIBRARY_PATH:-}"
 export PYTHONPATH="$APP_DIR/pylibs:${PYTHONPATH:-}"
+# gi/WebKit2 (si está en el sistema) para la ventana nativa
+for sp in /usr/lib/python3/dist-packages /usr/lib/python3/site-packages /usr/local/lib/python3*/dist-packages; do
+    [ -d "$sp" ] && export PYTHONPATH="$PYTHONPATH:$sp"
+done
 
 if [ -z "$RU5600_EXPORT_DIR" ]; then
     export RU5600_EXPORT_DIR="$(dirname "$(readlink -f "${APPIMAGE:-$0}")")/EXPORTES"
@@ -26,10 +36,10 @@ for arg in "$@"; do
     esac
 done
 
-if [ -n "$MODE" ] && ! python3 -c 'import webview, gi; gi.require_version("WebKit2","4.1")' >/dev/null 2>&1; then
-    echo "RU5600 web: pywebview no disponible en el sistema, modo navegador." >&2
+if [ -n "$MODE" ] && ! $PYTHON -c 'import webview, gi; gi.require_version("WebKit2","4.1")' >/dev/null 2>&1; then
+    echo "RU5600 web: pywebview/WebKit2 no disponible, modo navegador." >&2
     MODE=""
 fi
 
 echo "RU5600 web corriendo en http://127.0.0.1:${RU5600_PORT:-8000}  (Ctrl+C para cortar)"
-exec python3 "$APP_DIR/app.py" $MODE $@
+exec $PYTHON "$APP_DIR/app.py" $MODE $@

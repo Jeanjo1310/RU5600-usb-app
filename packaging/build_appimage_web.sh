@@ -71,6 +71,23 @@ if [ -f "$ROOT/vendor/libusb-1.0.so.0" ]; then
         "$STAGE/usr/opt/$APP_NAME/vendor/libusb-1.0.so.0"
 fi
 
+# --- bundled Python interpreter (self-contained: no system python3 needed) ---
+echo "== bundling Python 3.12 (standalone) =="
+python3 - "$STAGE/usr/lib" "$HERE/vendor/python-standalone/python-standalone.tar.gz" <<'PYINNER'
+import sys, tarfile
+from pathlib import Path
+target = Path(sys.argv[1])
+target.mkdir(parents=True, exist_ok=True)
+with tarfile.open(sys.argv[2]) as t:
+    t.extractall(target)
+# The standalone Python extracts to "python/" — rename to a fixed name
+src = target / "python"
+dst = target / "python3.12"
+if src.exists() and not dst.exists():
+    src.rename(dst)
+print("Python bundled:", (dst / "bin" / "python3").exists())
+PYINNER
+
 # --- bundled python deps (flask + openpyxl + tree), no network at run time ---
 echo "== bundling python deps =="
 python3 - "$STAGE/usr/opt/$APP_NAME/pylibs" <<'PY'
