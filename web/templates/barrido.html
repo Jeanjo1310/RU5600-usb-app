@@ -2,7 +2,7 @@
 {% block title %}Barrido{% endblock %}
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
-  <div class="flex flex-wrap items-end gap-4 mb-2">
+  <div class="flex flex-wrap items-end gap-3 mb-2">
     <div class="w-28">
       <label class="block mb-1 text-sm font-medium" for="seconds">Segundos (0 = hasta parar)</label>
       <input id="seconds" type="number" value="0" min="0" class="input input-bordered w-full">
@@ -15,9 +15,9 @@
       <label class="block mb-1 text-sm font-medium" for="stall" title="Si pasa este tiempo sin tags nuevos, la corrida corta sola">Sin tags nuevos en (s)</label>
       <input id="stall" type="number" value="30" min="5" max="600" class="input input-bordered w-full">
     </div>
-    <div class="pb-1">
+    <div>
+      <div class="text-xs text-base-content/60 whitespace-nowrap leading-none mb-1"><span id="tagCount">0</span><span id="tagTarget"></span></div>
       <div id="tagFaltan" class="font-bold whitespace-nowrap" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.5rem; line-height: 2.5rem;">—</div>
-      <div class="text-xs text-base-content/60 mt-1 whitespace-nowrap"><span id="tagCount">0</span><span id="tagTarget"></span></div>
     </div>
     <div class="pb-2 flex-1 min-w-0">
       <div class="flex items-center gap-2 min-w-0">
