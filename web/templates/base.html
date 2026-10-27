@@ -434,6 +434,47 @@ document.querySelectorAll('input[type=number]').forEach(function (el) {
     wrap.appendChild(btn);
     wrap.appendChild(menu);
     sel.style.display = 'none';
+    // Sincronia con asignaciones por codigo (ej. pread() hace
+    // rf.selectedIndex = r.rf al abrir Parametros): ni .value ni
+    // .selectedIndex disparan MutationObserver, asi que se interceptan
+    // con accesores propios que refrescan el boton. Sin esto, el boton
+    // quedaba clavado en la primera opcion ("0dBm") aunque el select
+    // oculto ya tuviera el valor real del lector.
+    (function () {
+      var curIdx = sel.selectedIndex;
+      function applyIdx(i, fromNative) {
+        curIdx = i;
+        if (!fromNative) {
+          try {
+            var d = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+            if (d && d.set) d.set.call(sel, i);
+          } catch (e) { /* motor sin descriptor: el estado vive en curIdx */ }
+        }
+        refreshBtn(wrap, sel, btn);
+      }
+      try {
+        Object.defineProperty(sel, 'selectedIndex', {
+          configurable: true,
+          get: function () { return curIdx; },
+          set: function (i) { applyIdx(i === -1 ? -1 : (i | 0)); }
+        });
+        Object.defineProperty(sel, 'value', {
+          configurable: true,
+          get: function () {
+            var o = sel.options[curIdx];
+            return o ? o.value : '';
+          },
+          set: function (v) {
+            v = String(v);
+            var idx = -1;
+            for (var i = 0; i < sel.options.length; i++) {
+              if (sel.options[i].value === v) { idx = i; break; }
+            }
+            applyIdx(idx);
+          }
+        });
+      } catch (e) { /* sin defineProperty: el menu igual funciona por clic */ }
+    })();
     rebuildMenu(wrap, sel, menu, btn);
     if (window.MutationObserver) {
       var obs = new MutationObserver(function () { rebuildMenu(wrap, sel, menu, btn); });

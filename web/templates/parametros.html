@@ -55,7 +55,7 @@
 {% block scripts %}
 <script>
 const BANDS = ["USA","Europe","China","Korea","Australia","Singapore","Taiwan","Canada","Brazil","Israel","South Africa","Thailand","Malaysia","Japan","New Zealand","India","Hongkong","Mexico"];
-for (let v = 0; v <= 30; v++) { const o = document.createElement('option'); o.textContent = v + 'dBm'; document.getElementById('rf').appendChild(o); }
+for (let v = 0; v <= 18; v++) { const o = document.createElement('option'); o.textContent = v + 'dBm'; document.getElementById('rf').appendChild(o); }
 BANDS.forEach(x => { const o = document.createElement('option'); o.textContent = x; document.getElementById('fband').appendChild(o); });
 async function pread() {
   const campos = ['rf', 'wm', 'filt', 'beep'];
