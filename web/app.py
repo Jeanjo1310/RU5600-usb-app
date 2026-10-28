@@ -2267,15 +2267,15 @@ def _run(seconds, target=0, mode="answer"):
                     poll = base
                 else:
                     poll = min(base * 2.5, poll + 0.02)
-                    # prevencion: solo tras la primera entrega. En el silencio
-                    # inicial (usuario aun acercando tags) rearmar es tirar
-                    # el buffer y cortar la espera sin motivo (medido: 1
-                    # rearme innecesario al arrancar la muestra de 50).
+                    # Umbral 15 s: el intercambio de grupos (sacar + posicionar)
+                    # roza los 6-8 s de silencio; patear ahi come el arranque
+                    # de cada presentacion (demora + rampa lenta). Solo se
+                    # patea el silencio largo de verdad. Tope 5.
                     # El rearme patea (Stop+Start) pero NO vacia el buffer:
                     # el ClearTagBuf tiraba lecturas que el firmware ya tenia
                     # y reiniciaba su ciclo de anticolision (medido: loop de
                     # 12 rearms en 90 s de silencio). Tope 10, no 40.
-                    if now2 - last_hit > 6 and stabilized < 10 and _state.get("tags"):
+                    if now2 - last_hit > 15 and stabilized < 5 and _state.get("tags"):
                         try:
                             # Patear sin vaciar: Stop + Start. El ClearTagBuf
                             # de antes descartaba el buffer del firmware.
