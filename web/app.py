@@ -3039,6 +3039,186 @@ def api_clone_write():
         return jsonify(ok=False, error="clone_write falló: " + str(exc))
 
 
+_clone_job = {"running": False, "result": None, "error": None,
+               "seconds": 0, "started": 0.0}
+_clone_stop = threading.Event()
+
+
+@app.route("/api/clone_scan", methods=["POST"])
+def api_clone_scan():
+    """Lista corta de tags a la vista (stream de N s) para elegir origen."""
+    cfg = request.get_json(silent=True) or {}
+    try:
+        seconds = float(cfg.get("seconds", 6))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="segundos invalidos"), 400
+    seconds = max(3.0, min(seconds, 15.0))
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    try:
+        rows, elapsed = _stream_sweep(r, seconds)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="barrido fallo: " + str(exc))
+    out = [{"epc": x["epc"], "chip": x.get("chip") or "candidato"} for x in rows]
+    return jsonify(ok=True, count=len(out), seconds=round(elapsed, 1), tags=out)
+
+
+@app.route("/api/clone_pick", methods=["POST"])
+def api_clone_pick():
+    """Fija como origen el EPC elegido de la lista (verificado por lectura)."""
+    global _clone_src
+    cfg = request.get_json(silent=True) or {}
+    want = str(cfg.get("epc") or "").strip().upper()
+    if not want:
+        return jsonify(ok=False, error="falta el EPC a fijar"), 400
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    try:
+        t0 = time.monotonic()
+        epc = None
+        while time.monotonic() - t0 < 6.0:
+            cur, _raw = _clone_probe(r, attempts=3, pause=0.1)
+            if cur and cur.upper() == want:
+                epc = cur
+                break
+            time.sleep(0.2)
+        if not epc:
+            return jsonify(ok=False,
+                           error="ese tag no esta a la vista: presentalo solo y reintenta")
+        tid = _read_tid(r)
+        if not tid:
+            return jsonify(ok=False,
+                           error="lei el EPC pero no el TID: no puedo clonar sin TID")
+        chip = _chip_from_prefix(tid)
+        with _lock:
+            _clone_src = {"epc": epc, "tid": tid, "chip": chip,
+                          "ts": time.strftime("%Y-%m-%d %H:%M:%S")}
+        _log("ok", "clone_pick: EPC %s / TID %s (%s)" % (epc, tid, chip))
+        return jsonify(ok=True, epc=epc, tid=tid, chip=chip)
+    except Exception as exc:  # noqa: BLE001
+        _log("error", "clone_pick: %s" % exc)
+        return jsonify(ok=False, error="no pude fijar el origen: " + str(exc))
+
+
+@app.route("/api/clone_burst", methods=["POST"])
+def api_clone_burst():
+    """Rafaga de clonado con parada absoluta: N segundos y corta solo."""
+    cfg = request.get_json(silent=True) or {}
+    try:
+        seconds = int(cfg.get("seconds", 5))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="segundos invalidos"), 400
+    seconds = max(1, min(seconds, 10))
+    if not _clone_src:
+        return jsonify(ok=False, error="primero lee o elegi el tag origen"), 400
+    with _lock:
+        if _clone_job["running"]:
+            return jsonify(ok=False, error="ya corriendo"), 409
+        _clone_job.update(running=True, result=None, error=None,
+                          seconds=seconds, started=time.monotonic())
+        _clone_stop.clear()
+    try:
+        r = _need_usb()
+    except Exception as exc:  # noqa: BLE001
+        with _lock:
+            _clone_job["running"] = False
+        return jsonify(ok=False, error=str(exc))
+    threading.Thread(target=_clone_run_burst, args=(r, seconds),
+                     daemon=True).start()
+    return jsonify(ok=True, seconds=seconds)
+
+
+@app.route("/api/clone_burst_status", methods=["GET"])
+def api_clone_burst_status():
+    with _lock:
+        job = dict(_clone_job)
+    left = 0.0
+    if job["running"]:
+        left = max(0.0, job["seconds"] - (time.monotonic() - job["started"]))
+    return jsonify(ok=True, running=job["running"], left=round(left, 1),
+                   result=job["result"], error=job["error"])
+
+
+@app.route("/api/clone_stop", methods=["POST"])
+def api_clone_stop():
+    _clone_stop.set()
+    return jsonify(ok=True)
+
+
+def _clone_run_burst(r, seconds):
+    """Loop de clonado con deadline: vencido el tiempo no se abre
+    ninguna escritura nueva. El origen se omite siempre por TID."""
+    src = _clone_src
+    deadline = time.monotonic() + seconds
+    done_tids: set = set()
+    clonados = omitidos = errores = 0
+    try:
+        while time.monotonic() < deadline and not _clone_stop.is_set():
+            cur_epc, _raw = _clone_probe(r, attempts=3, pause=0.05)
+            if not cur_epc:
+                time.sleep(0.2)
+                continue
+            tid_dst = _read_tid(r)
+            if not tid_dst:
+                time.sleep(0.2)
+                continue
+            if tid_dst in done_tids:
+                time.sleep(0.3)
+                continue
+            same = _tid_compare(src["tid"], tid_dst)
+            if same or same is None:
+                omitidos += 1
+                done_tids.add(tid_dst)
+                _log("warn", "clone_burst: origen a la vista, omitido")
+                time.sleep(0.3)
+                continue
+            if time.monotonic() >= deadline:
+                break
+            try:
+                r.write_epc(bytes.fromhex(src["epc"]), b"\x00" * 4,
+                            verify=True)
+            except Exception as exc:  # noqa: BLE001
+                errores += 1
+                _log("error", "clone_burst: no pude escribir: %s" % exc)
+                time.sleep(0.3)
+                continue
+            epc_after, _raw2 = _clone_probe(r, attempts=5)
+            if (epc_after or "").upper() == src["epc"].upper():
+                clonados += 1
+                done_tids.add(tid_dst)
+                _log("ok", "clone_burst: EPC %s en TID %s (verificado)"
+                     % (src["epc"], tid_dst))
+            else:
+                errores += 1
+                _log("warn", "clone_burst: escribio pero no verifico (TID %s)"
+                     % tid_dst)
+            time.sleep(0.2)
+        result = {"clonados": clonados, "omitidos_origen": omitidos,
+                  "errores": errores, "seconds": seconds,
+                  "cortado": bool(_clone_stop.is_set())}
+    except Exception as exc:  # noqa: BLE001
+        result = None
+        with _lock:
+            _clone_job["error"] = "rafaga fallo: " + str(exc)
+        _log("error", "clone_burst: %s" % exc)
+    else:
+        with _lock:
+            _clone_job["error"] = None
+    with _lock:
+        _clone_job["result"] = result
+        _clone_job["running"] = False
+    try:
+        store.add_trabajo("clone_burst", "ok", total=clonados + omitidos + errores,
+                          hechos=clonados,
+                          extra={"origen": src, "resultado": result})
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @app.route("/api/bench", methods=["POST"])
 def api_bench():
     """Benchmark de antena: N lecturas dirigidas, una sola tirada cada una.
