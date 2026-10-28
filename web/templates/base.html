@@ -185,6 +185,15 @@ html[data-theme="dark"] { color-scheme: dark; }
   </div>
   <form method="dialog" class="modal-backdrop"><button>cerrar</button></form>
 </dialog>
+<dialog id="exportModal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-semibold mb-2" id="exportTitle">Exportación</h3>
+    <p class="text-sm" id="exportMsg"></p>
+    <p class="text-xs opacity-70 mt-2 font-mono" id="exportPath"></p>
+    <div class="modal-action"><button class="btn btn-outline btn-sm" onclick="document.getElementById('exportModal').close()">Cerrar</button></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>cerrar</button></form>
+</dialog>
 <script>
 const STR = {
   "Benchmark de antena": "Antenna benchmark",
@@ -347,18 +356,38 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); openHelp(); }
 }, true);
 async function downloadExport(path, payload) {
-  const r = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
-  if (!r.ok) { alert('No se pudo exportar'); return; }
+  function showExport(ok, msg, pathSaved) {
+    document.getElementById('exportTitle').textContent = ok ? 'Exportación exitosa' : 'No se pudo exportar';
+    document.getElementById('exportMsg').textContent = msg;
+    document.getElementById('exportPath').textContent = pathSaved || '';
+    document.getElementById('exportModal').showModal();
+  }
+  let r;
+  try {
+    r = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+  } catch (e) {
+    showExport(false, 'Error de conexión: ' + (e && e.message ? e.message : e), '');
+    return;
+  }
+  if (!r.ok) {
+    let detail = '';
+    try { const j = await r.clone().json(); detail = j.error || ''; } catch (e) {}
+    showExport(false, 'El servidor devolvió ' + r.status + (detail ? ': ' + detail : ''), '');
+    return;
+  }
   const blob = await r.blob();
   const cd = r.headers.get('Content-Disposition') || '';
   const m = cd.match(/filename="?([^";]+)"?/);
+  const fname = m ? m[1] : (payload.name || 'export');
+  const saved = r.headers.get('X-Export-Ruta') || '';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = m ? m[1] : (payload.name || 'export');
+  a.download = fname;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(a.href);
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+  showExport(true, 'Archivo "' + fname + '" descargado.' + (saved && saved !== 'no-guardado' ? ' Copia guardada en el contenedor.' : ''), saved && saved !== 'no-guardado' ? saved : '');
 }
 function exportTable(sel, name) {
   let tb = document.querySelector(sel);
