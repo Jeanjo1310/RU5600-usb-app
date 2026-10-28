@@ -2001,6 +2001,21 @@ def api_distance_points():
     return jsonify(ok=True, count=len(points), labels=labels, points=points)
 
 
+@app.route("/api/distance_clear", methods=["POST"])
+def api_distance_clear():
+    """Borra los puntos de una etiqueta (limpiar la prueba en curso)."""
+    cfg = request.get_json(silent=True) or {}
+    label = str(cfg.get("label") or "").strip()
+    if not label:
+        return jsonify(ok=False, error="poné la etiqueta a limpiar"), 400
+    try:
+        n = store.clear_mediciones(label)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc))
+    _log("ok", "distancia: %d punto(s) borrados (%s)" % (n, label))
+    return jsonify(ok=True, deleted=n, label=label)
+
+
 @app.route("/api/status")
 def status():
     now = time.monotonic()

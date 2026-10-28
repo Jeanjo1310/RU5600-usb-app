@@ -47,7 +47,10 @@
 <div class="card bg-base-100 shadow-sm overflow-x-auto p-2 mb-4">
   <div class="flex justify-between items-center px-2 pt-2">
     <span id="dcount" class="text-sm text-base-content/60"></span>
-    <button class="btn btn-outline btn-sm" onclick="exportTable('#distRows', 'distancias')">Exportar</button>
+    <div class="flex gap-2">
+      <button id="dclear" class="btn btn-outline btn-sm" title="Borra los puntos de la etiqueta escrita arriba">Limpiar puntos</button>
+      <button class="btn btn-outline btn-sm" onclick="exportTable('#distRows', 'distancias')">Exportar</button>
+    </div>
   </div>
   <table class="table table-zebra w-full text-sm" id="distTable">
     <thead class="text-xs uppercase opacity-70">
@@ -219,8 +222,15 @@ async function loadPoints() {
   renderAll(r.points || []);
 }
 
-$d('dgo').onclick = async () => {
+$d('dclear').onclick = async () => {
   const label = $d('dlabel').value.trim();
+  if (!label) { $d('dmsg').textContent = 'Poné en Etiqueta cuál prueba querés limpiar.'; $d('dlabel').focus(); return; }
+  const r = await post('/api/distance_clear', {label});
+  $d('dmsg').textContent = r.ok ? `${r.deleted} punto(s) borrados (${r.label}).` : 'Error: ' + (r.error || '?');
+  await loadPoints();
+};
+
+$d('dgo').onclick = async () => {  const label = $d('dlabel').value.trim();
   const distance = $d('ddist').value;
   const seconds = parseFloat($d('dsecs').value) || 5;
   if (!label) { $d('dmsg').textContent = 'Poné una etiqueta (tag y altura).'; $d('dlabel').focus(); return; }

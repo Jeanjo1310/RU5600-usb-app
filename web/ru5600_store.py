@@ -250,6 +250,20 @@ def list_mediciones(limit: int = 500, label: str = "") -> list[dict]:
     return [dict(row) for row in reversed(rows)]
 
 
+def clear_mediciones(label: str) -> int:
+    """Borra los puntos de una etiqueta (la prueba en curso). Devuelve borrados."""
+    name = str(label or "").strip()
+    if not name:
+        return 0
+    con = _connect()
+    try:
+        cur = con.execute("DELETE FROM mediciones WHERE label = ?", (name,))
+        con.commit()
+        return cur.rowcount or 0
+    finally:
+        con.close()
+
+
 def list_medicion_labels() -> list[str]:
     """Etiquetas presentes en ``mediciones``, de la mas nueva a la mas vieja."""
     con = _connect()
