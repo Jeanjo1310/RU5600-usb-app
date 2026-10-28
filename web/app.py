@@ -3160,6 +3160,140 @@ def api_compare():
                    matches=matches, found=len(matches))
 
 
+# --- Patrones EPC (spec 2026-10-28-patrones-epc-design) ----------------------
+# Analisis determinista de planillas, offline y sin IA. La logica pura vive
+# en patrones.py; aca solo rutas + padrones en _data_root()/PADRONES.
+import patrones as _patrones  # noqa: E402
+
+_PATRONES: dict = {}  # token -> payload del ultimo analyze (para el informe)
+
+
+@app.route("/patrones")
+def patrones():
+    return render_template("patrones.html")
+
+
+def _padron_cargar(kind: str) -> dict:
+    """Lee el padron guardado (si existe) y devuelve sets {epcs, w34}."""
+    from pathlib import Path
+    for ext in (".xlsx", ".xlsm", ".csv"):
+        p = Path(str(_data_root())) / "PADRONES" / (kind + ext)
+        if p.is_file():
+            try:
+                raw = p.read_bytes()
+                if ext == ".csv":
+                    epcs = _patrones.extract_epcs_csv(raw)
+                else:
+                    epcs = _patrones.extract_epcs_xlsx(raw)
+                return _patrones.padron_sets(epcs)
+            except Exception:  # noqa: BLE001 - padron ilegible = padron vacio
+                return {"epcs": set(), "w34": set()}
+    return {"epcs": set(), "w34": set()}
+
+
+def _padron_hay(kind: str) -> bool:
+    from pathlib import Path
+    return any((Path(str(_data_root())) / "PADRONES" / (kind + ext)).is_file()
+               for ext in (".xlsx", ".xlsm", ".csv"))
+
+
+@app.route("/api/patrones/analyze", methods=["POST"])
+def api_patrones_analyze():
+    import uuid
+    up = request.files.get("file")
+    if up is None:
+        return jsonify(ok=False, error="falta el archivo")
+    name = (up.filename or "").lower()
+    try:
+        raw = up.read()
+        if name.endswith((".xlsx", ".xlsm")):
+            epcs = _patrones.extract_epcs_xlsx(raw)
+        elif name.endswith(".csv"):
+            epcs = _patrones.extract_epcs_csv(raw)
+        else:
+            return jsonify(ok=False,
+                           error="formato no soportado (usá .xlsx o .csv)")
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="no pude leer el archivo: " + str(exc))
+    warnings = []
+    hay_h10, hay_zk = _padron_hay("h10"), _padron_hay("zkteco")
+    if not hay_h10 and not hay_zk:
+        warnings.append("sin padrones cargados")
+    else:
+        if not hay_h10:
+            warnings.append("sin padrón h10 cargado")
+        if not hay_zk:
+            warnings.append("sin padrón zkteco cargado")
+    payload = _patrones.analyze_epcs(
+        epcs, _padron_cargar("h10") if hay_h10 else None,
+        _padron_cargar("zkteco") if hay_zk else None)
+    payload["filename"] = up.filename or ""
+    payload["warnings"] = warnings
+    token = uuid.uuid4().hex[:8]
+    _PATRONES[token] = payload
+    if len(_PATRONES) > 20:  # memoria acotada: solo informes recientes
+        _PATRONES.pop(next(iter(_PATRONES)))
+    return jsonify(ok=True, filename=payload["filename"], token=token,
+                   count=len(epcs), rows=payload["rows"],
+                   summary=payload["summary"], warnings=warnings)
+
+
+@app.route("/api/patrones/registry", methods=["POST"])
+def api_patrones_registry():
+    kind = str(request.form.get("kind") or "").lower()
+    if kind not in ("h10", "zkteco"):
+        return jsonify(ok=False, error="kind invalido (h10|zkteco)"), 400
+    up = request.files.get("file")
+    if up is None:
+        return jsonify(ok=False, error="falta el archivo")
+    name = (up.filename or "").lower()
+    try:
+        raw = up.read()
+        if name.endswith((".xlsx", ".xlsm")):
+            epcs = _patrones.extract_epcs_xlsx(raw)
+        elif name.endswith(".csv"):
+            epcs = _patrones.extract_epcs_csv(raw)
+        else:
+            return jsonify(ok=False,
+                           error="formato no soportado (usá .xlsx o .csv)")
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error="no pude leer el archivo: " + str(exc))
+    from pathlib import Path
+    dest = Path(str(_data_root())) / "PADRONES"
+    dest.mkdir(parents=True, exist_ok=True)
+    ext = ".csv" if name.endswith(".csv") else ".xlsx"
+    (dest / (kind + ext)).write_bytes(raw)
+    # si cambia el formato, borrar el anterior para no leerlo dos veces
+    for other in (".xlsx", ".csv"):
+        if other != ext:
+            try:
+                (dest / (kind + other)).unlink()
+            except OSError:
+                pass
+    validos = _patrones.padron_sets(epcs)
+    return jsonify(ok=True, kind=kind, count=len(validos["epcs"]))
+
+
+@app.route("/api/patrones/report")
+def api_patrones_report():
+    token = str(request.args.get("token") or "")
+    payload = _PATRONES.get(token)
+    if payload is None:
+        return jsonify(ok=False, error="informe vencido: repetí el análisis"), 404
+    try:
+        datos = _patrones.build_report(payload)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(ok=False, error=str(exc)), 500
+    base = (payload.get("filename") or "patrones").rsplit(".", 1)[0][:40]
+    return send_file(io.BytesIO(datos), as_attachment=True,
+                     download_name="patrones-%s.xlsx" % base,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 def _pick_port(preferred=8000):
     """Primer puerto libre: el preferido ($RU5600_PORT o --port), si no
     8000..8011. Evita que la app muera si el puerto esta ocupado (otra
