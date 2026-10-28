@@ -1918,7 +1918,11 @@ def api_distance_points():
 @app.route("/api/status")
 def status():
     now = time.monotonic()
-    ts = [x for x in _state.get("hits", []) if now - x <= 10.0]
+    # Ventana corta (3 s): el dps tiene que reflejar el AHORA, no el
+    # promedio de los ultimos 10 s (tras un silencio, la media de 10 s
+    # tardaba ~6-10 s en subir aunque la entrega ya iba a fondo y se
+    # percibia como "arranque lento").
+    ts = [x for x in _state.get("hits", []) if now - x <= 3.0]
     _state["hits"] = ts
     last = (now - ts[-1]) if ts else None
     if ts:
@@ -1942,7 +1946,7 @@ def status():
                    last_rssi=_state.get("last_rssi"),
                    last_rssi_t=_state.get("last_rssi_t", 0.0),
                    flags=_flags_safe(),
-                   dps=round(len(ts) / 10.0, 1),
+                   dps=round(len(ts) / 3.0, 1),
                    last_seen=None if last is None else round(last, 1),
                    stalled=bool(running and _silence > _stall_limit),
                    reconnect=dict(_reconn),
