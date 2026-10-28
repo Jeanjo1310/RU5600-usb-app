@@ -13,8 +13,11 @@ Restricción dura: TODO offline y sin IA (corre dentro del AppImage).
 - Salida: tabla + resumen + informe xlsx descargable.
 
 ## Reglas de análisis (deterministas, ~150 líneas)
-1. Columnas derivadas: W34 = pos 7-14; card = decimal 10 dígitos de W34;
-   tag id hex/dec = pos 17-24; short = pos 19-24 (6 hex).
+1. Columnas derivadas: W34, card/tag id/short en UNA columna conmutable
+   (conmutador global HEX↔DECIMAL en la vista, no dos columnas juntas).
+   W34 = pos 7-14; card = su decimal 10 dígitos; tag id = pos 17-24;
+   short = pos 19-24. En modo HEX se muestra el corte, en modo DECIMAL
+   su valor (card con 10 dígitos, TAG ID ZKTECO con 8).
    Chip: solo familia probable por encabezado EPC, marcada (candidato).
 2. Patrones: familias por prefijo; marcador fijo = tramo con <5 valores
    distintos; serial = todo distinto; rangos mín/máx; secuencialidad.
@@ -25,8 +28,8 @@ Restricción dura: TODO offline y sin IA (corre dentro del AppImage).
 
 ## UI y flujo
 - Pestaña "Patrones": dropzone del archivo + alta única de padrones.
-- Resultado: tabla (id, epc, w34, card, tagid, short, familia) + panel
-  resumen (familias, marcadores, duplicados, rarezas, choques).
+- Resultado: tabla (id, epc, w34, card, tagid, short, familia) con
+  conmutador HEX/DECIMAL + panel resumen (familias, marcadores, duplicados, rarezas, choques).
 - Botón Descargar informe: xlsx con datos + OBSERVACIONES + ejemplos
   de fórmulas como texto (no activas).
 - Errores: sin columna EPC detectable → aviso + selector manual;
