@@ -1104,9 +1104,13 @@ def _active_run():
                 for tag in tags_a:
                     raw = (bytes(tag.raw_id) if tag.raw_id
                            else bytes(tag.epc))
-                    # Clave por EPC (como el Barrido): el mismo tag puede
-                    # llegar con tramas de distinto largo y el crudo cambia.
-                    epc, chip = _carve(raw)
+                    # EPC por el parser nuevo (igual que el Barrido stream):
+                    # el tallador viejo no entiende la cabecera 5B0301 y
+                    # devolvia vacio -> se mostraba el crudo como EPC.
+                    epc = (getattr(tag, "epc_hex", "") or "").upper()
+                    chip = ""
+                    if not epc:
+                        epc, chip = _carve(raw)
                     tid = bytes(getattr(tag, "tid", b"") or b"")
                     if tid:
                         prefix = tid.hex().upper()[:8]
