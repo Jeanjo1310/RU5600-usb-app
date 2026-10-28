@@ -160,6 +160,7 @@ async function poll() {
   tb2.textContent = t(r.running ? 'Pausar' : 'Iniciar lectura');
   if ($('sweepMode')) $('sweepMode').value = (r.mode_used === 'dirigido') ? 'answer' : 'active';
   tb2.className = 'btn ' + (r.running ? 'btn-warning' : 'btn-primary');
+  if (r.mode_error) $('status').textContent += ' · ' + r.mode_error;
   if (r.tags.length > seen) {
     const tb = $('rows');
     r.tags.slice(seen).forEach((x, i) => {

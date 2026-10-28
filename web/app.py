@@ -1949,6 +1949,7 @@ def status():
                    dps=round(len(ts) / 3.0, 1),
                    last_seen=None if last is None else round(last, 1),
                    stalled=bool(running and _silence > _stall_limit),
+                   mode_error=_state.get("mode_error") or "",
                    reconnect=dict(_reconn),
                    elapsed=round(now - _state["started"], 1) if running else 0)
 
@@ -2020,7 +2021,7 @@ def start():
         prev_seen = dict(_state.get("seen") or {}) if keep else {}
         _state.update(running=True, tags=prev_tags, error="", target=target,
                       reason="", started=time.monotonic(), hits=[],
-                      stall_after=stall,
+                      stall_after=stall, mode_error="",
                       last_rssi=None, last_rssi_t=0.0,
                       last_seen_ts=time.monotonic())
         # el modo mostrado era el de la corrida anterior hasta que el hilo arrancaba
@@ -2129,9 +2130,23 @@ def _run(seconds, target=0, mode="answer"):
                                 with r._lock:
                                     r._lib.CFHid_StartRead()
                                 r._pace(settle=True)
+                            # Verificar que el lector acepto el modo pedido:
+                            # si lo rechaza, volver al anterior y avisar en
+                            # vez de quedar "sordo" con modo mentido en la UI.
+                            want_wm = WORKMODE_ANSWER if direct_mode else WORKMODE_ACTIVE
+                            try:
+                                got_wm = r.work_mode()
+                            except Exception:  # noqa: BLE001
+                                got_wm = None
+                            if got_wm is not None and int(got_wm) != int(want_wm):
+                                raise RuntimeError("lector no acepto WorkMode (quedo en %s)" % got_wm)
                         except Exception as exc:  # noqa: BLE001
-                            _log("warn", "cambio de modo en caliente fallo: %s" % exc)
+                            direct_mode = not _want_dir
+                            _state["mode_used"] = "dirigido" if direct_mode else "stream"
+                            _state["mode_error"] = "el lector no acepto el modo (reabri la conexion)"
+                            _log("error", "cambio de modo en caliente fallo: %s (vuelvo a %s)" % (exc, _state["mode_used"]))
                         else:
+                            _state.pop("mode_error", None)
                             _log("ok", "modo en caliente: %s" % _state["mode_used"])
                 # Ritmo CONSTANTE: una pausa por loop, siempre la misma.
                 # La unica pausa valida es la que pide el usuario.
