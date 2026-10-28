@@ -27,13 +27,13 @@ Restricción dura: TODO offline y sin IA (corre dentro del AppImage).
    ambos padrones. Veredicto: compatible / lista de choques.
 
 ## UI y flujo
-- Pestaña "Patrones": dropzone del archivo + alta única de padrones.
-- Resultado: tabla (id, epc, w34, card, tagid, short, familia) con
-  conmutador HEX/DECIMAL + panel resumen (familias, marcadores, duplicados, rarezas, choques).
-- Botón Descargar informe: xlsx con datos + OBSERVACIONES + ejemplos
-  de fórmulas como texto (no activas).
-- Errores: sin columna EPC detectable → aviso + selector manual;
-  reemplazar padrones solo con confirmación.
+- Pestaña "Patrones": dropzone del archivo a analizar (único).
+- Resultado: tabla con conmutador HEX/DECIMAL tipo interruptor
+  (por defecto DECIMAL) + resumen estructurado (familias con conteos,
+  marcadores por tramo, duplicados y rarezas clicables que filtran
+  la tabla; filas duplicadas en rojo, rarezas en naranja) + buscador
+  de tabla + botón Descargar informe (datos + OBSERVACIONES + ejemplos).
+- Errores: sin columna EPC detectable → aviso + selector manual.
 
 ## Testing
 - Analizador contra los 3 archivos reales (1000, ZKTECO, 400 leídos):

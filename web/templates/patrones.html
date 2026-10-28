@@ -10,10 +10,9 @@
       <input id="patfile" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered w-72">
     </div>
     <button id="patBtn" class="btn btn-primary">Analizar</button>
-    <div class="flex gap-1 items-end ml-2" role="group" aria-label="HEX/DECIMAL">
-      <button id="modeHex" class="btn btn-sm btn-active">HEX</button>
-      <button id="modeDec" class="btn btn-sm">DECIMAL</button>
-    </div>
+    <label class="flex items-center gap-2 cursor-pointer text-sm ml-2" title="HEX / DECIMAL">HEX <input id="modeSw" type="checkbox" class="toggle toggle-sm" checked> DECIMAL</label>
+    <input id="q" type="text" placeholder="Filtrar por EPC o familia" class="input input-bordered input-sm w-56">
+    <span id="fltBadge" class="badge badge-info hidden" style="cursor:pointer" title="Mostrar todos"></span>
     <button id="patDl" class="btn btn-outline" disabled>Descargar informe</button>
   </div>
   <p id="patmsg" class="text-sm mt-2"></p>
@@ -25,49 +24,97 @@
 </div>
 <div class="card bg-base-100 shadow-sm overflow-x-auto p-2">
   <table class="table table-zebra w-full text-sm" id="patTable">
-    <thead class="text-xs uppercase opacity-70">
-      <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">W34</th><th class="px-4 py-2">Card</th><th class="px-4 py-2">Tag ID</th><th class="px-4 py-2">Short</th><th class="px-4 py-2">Familia</th></tr>
-    </thead>
+    <thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">W34</th><th class="px-4 py-2">Card</th><th class="px-4 py-2">Tag ID</th><th class="px-4 py-2">Short</th><th class="px-4 py-2">Familia</th></tr></thead>
     <tbody id="patRows"></tbody>
   </table>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-let PAT = {rows: [], token: null, mode: 'HEX'};
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+let PAT = {rows: [], token: null, mode: 'DEC', only: null, onlyLabel: '', q: '', dups: [], raras: []};
 function setMode(m) {
   PAT.mode = m;
-  document.getElementById('modeHex').classList.toggle('btn-active', m === 'HEX');
-  document.getElementById('modeDec').classList.toggle('btn-active', m === 'DEC');
+  document.getElementById('modeSw').checked = (m !== 'HEX');
   document.querySelectorAll('#patRows td[data-hex]').forEach(function(td){
     td.textContent = (m === 'HEX') ? td.getAttribute('data-hex') : td.getAttribute('data-dec');
   });
 }
-document.getElementById('modeHex').onclick = function(){ setMode('HEX'); };
-document.getElementById('modeDec').onclick = function(){ setMode('DEC'); };
-function render(rows) {
-  PAT.rows = rows;
+document.getElementById('modeSw').onchange = function(){ setMode(this.checked ? 'DEC' : 'HEX'); };
+function matchRow(r) {
+  if (PAT.only && PAT.only.indexOf(r[1]) < 0) return false;
+  if (PAT.q) {
+    const hay = (String(r[1]) + ' ' + String(r[8])).toLowerCase();
+    if (hay.indexOf(PAT.q) < 0) return false;
+  }
+  return true;
+}
+function refreshBadge() {
+  const b = document.getElementById('fltBadge');
+  if (PAT.only) { b.textContent = 'filtro: ' + PAT.onlyLabel + ' (' + PAT.only.length + ')';
+    b.classList.remove('hidden'); }
+  else { b.textContent = ''; b.classList.add('hidden'); }
+}
+document.getElementById('fltBadge').onclick = () => { PAT.only = null; PAT.onlyLabel = ''; render(); };
+document.getElementById('q').oninput = function(){ PAT.q = this.value.trim().toLowerCase(); render(); };
+function setOnly(label, epcs) {
+  if (PAT.onlyLabel === label) { PAT.only = null; PAT.onlyLabel = ''; }
+  else { PAT.only = epcs.slice(); PAT.onlyLabel = label; }
+  render();
+}
+function render() {
+  const rows = PAT.rows;
   const tb = document.getElementById('patRows');
   tb.innerHTML = '';
-  rows.forEach(function(r, i){
+  const dupSet = {};
+  PAT.dups.forEach(function(e){ dupSet[e] = 1; });
+  const raraSet = {};
+  PAT.raras.forEach(function(x){ if (x && x.epc) raraSet[x.epc] = 1; });
+  let n = 0;
+  rows.forEach(function(r){
+    if (!matchRow(r)) return;
+    n++;
     const tr = document.createElement('tr');
-    tr.className = 'border-b border-base-300';
+    const isDup = !!dupSet[r[1]];
+    const isRara = !!raraSet[r[1]];
+    tr.className = 'border-b border-base-300' + (isDup ? ' bg-error/10' : (isRara ? ' bg-warning/10' : ''));
     const fam = String(r[8] || '');
     const bad = /irregular|duplicado|pendiente/i.test(fam);
-    tr.innerHTML = '<td class="px-4 py-2">' + (i + 1) + '</td>'
-      + '<td class="px-4 py-2 font-mono">' + esc(r[1]) + '</td>'
-      + '<td class="px-4 py-2 font-mono" data-hex="' + esc(r[2]) + '" data-dec="' + esc(r[3]) + '">' + esc(PAT.mode === 'HEX' ? r[2] : r[3]) + '</td>'
-      + '<td class="px-4 py-2 font-mono">' + esc(r[3]) + '</td>'
-      + '<td class="px-4 py-2 font-mono" data-hex="' + esc(r[4]) + '" data-dec="' + esc(r[5]) + '">' + esc(PAT.mode === 'HEX' ? r[4] : r[5]) + '</td>'
-      + '<td class="px-4 py-2 font-mono" data-hex="' + esc(r[6]) + '" data-dec="' + esc(r[7]) + '">' + esc(PAT.mode === 'HEX' ? r[6] : r[7]) + '</td>'
-      + '<td class="px-4 py-2">' + (bad ? '<span class="badge badge-warning badge-xs">' + esc(fam) + '</span>' : esc(fam)) + '</td>';
+    tr.innerHTML = '<td class="px-4 py-2">' + n + '</td>'
+      + '<td class="px-4 py-2 font-mono' + (isDup ? ' text-error font-semibold' : (isRara ? ' text-warning' : '')) + '">' + r[1] + '</td>'
+      + '<td class="px-4 py-2 font-mono" data-hex="' + r[2] + '" data-dec="' + r[3] + '">' + (PAT.mode === 'HEX' ? r[2] : r[3]) + '</td>'
+      + '<td class="px-4 py-2 font-mono">' + r[3] + '</td>'
+      + '<td class="px-4 py-2 font-mono" data-hex="' + r[4] + '" data-dec="' + r[5] + '">' + (PAT.mode === 'HEX' ? r[4] : r[5]) + '</td>'
+      + '<td class="px-4 py-2 font-mono" data-hex="' + r[6] + '" data-dec="' + r[7] + '">' + (PAT.mode === 'HEX' ? r[6] : r[7]) + '</td>'
+      + '<td class="px-4 py-2">' + (bad ? '<span class="badge badge-warning badge-xs">' + fam + '</span>' : fam) + '</td>';
     tb.appendChild(tr);
   });
   setMode(PAT.mode);
+  refreshBadge();
 }
 function li(label, val) {
-  return '<div><span class="font-semibold">' + esc(label) + ':</span> ' + val + '</div>';
+  return '<div><span class="font-semibold">' + label + ':</span> ' + val + '</div>';
+}
+function chipList(obj) {
+  const ks = Object.keys(obj || {}).sort(function(a, b){ return obj[b] - obj[a]; });
+  return ks.map(function(k){ return '<span class="badge badge-outline badge-sm mr-1 mb-1">' + k + ' ×' + obj[k] + '</span>'; }).join('');
+}
+function tramoLines(obj) {
+  const names = {'pos01-06':'pos 01–06', 'pos07-14':'pos 07–14', 'pos15-16':'pos 15–16', 'pos17-24':'pos 17–24', 'pos19-24':'pos 19–24'};
+  return Object.keys(obj || {}).map(function(k){
+    const parts = String(obj[k]).split(',').map(function(p){ return p.trim(); });
+    return '<div class="ml-2">▸ ' + (names[k] || k) + ': ' + parts.slice(0, 6).join(', ') + (parts.length > 6 ? ' …' : '') + '</div>';
+  }).join('');
+}
+function epclist(arr, maxn) {
+  arr = arr || [];
+  return arr.slice(0, maxn || 10).map(function(e){ return '<span class="font-mono">' + e + '</span>'; }).join(', ') + (arr.length > (maxn || 10) ? ' …(' + arr.length + ')' : '');
+}
+function rarasList(arr) {
+  arr = arr || [];
+  return arr.slice(0, 10).map(function(x){
+    if (typeof x === 'string') return '<span class="font-mono">' + x + '</span>';
+    return 'fila ' + x.fila + ': ' + x.motivo;
+  }).join(' · ') + (arr.length > 10 ? ' …(' + arr.length + ')' : '');
 }
 function renderSummary(s) {
   const box = document.getElementById('sumBody');
@@ -76,19 +123,25 @@ function renderSummary(s) {
   const ok = /compat/i.test(String(s.veredicto || ''));
   v.textContent = s.veredicto || '';
   v.className = 'badge ml-2 ' + (ok ? 'badge-success' : 'badge-error');
+  PAT.dups = (s.duplicados || []).slice();
+  PAT.raras = (s.rarezas || []).slice();
   let h = '';
-  h += li('Total', esc(s.total));
-  if (s.familias) h += li('Familias', esc(typeof s.familias === 'string' ? s.familias : JSON.stringify(s.familias)));
-  if (s.marcadores) h += li('Marcadores detectados', esc(typeof s.marcadores === 'string' ? s.marcadores : JSON.stringify(s.marcadores)));
-  if (s.duplicados && s.duplicados.length) h += li('Duplicados (' + s.duplicados.length + ')', esc(s.duplicados.slice(0, 20).join(', ')) + (s.duplicados.length > 20 ? '…' : ''));
-  if (s.rarezas && s.rarezas.length) h += li('Rarezas (' + s.rarezas.length + ')', esc(s.rarezas.slice(0, 20).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); }).join(' · ')) + (s.rarezas.length > 20 ? '…' : ''));
+  h += li('Total', s.total);
+  if (s.familias) h += '<div><span class="font-semibold">Familias:</span> ' + chipList(s.familias) + '</div>';
+  if (s.marcadores) h += '<div><span class="font-semibold">Marcadores detectados:</span>' + tramoLines(s.marcadores) + '</div>';
+  if (PAT.dups.length) h += '<div id="sumDup" style="cursor:pointer"><span class="font-semibold">Duplicados (' + PAT.dups.length + '):</span> <span class="text-error">' + epclist(PAT.dups) + '</span></div>';
+  if (PAT.raras.length) h += '<div id="sumRara" style="cursor:pointer"><span class="font-semibold">Rarezas (' + PAT.raras.length + '):</span> <span class="text-warning">' + rarasList(PAT.raras) + '</span></div>';
   box.innerHTML = h;
+  const d = document.getElementById('sumDup');
+  if (d) d.onclick = () => setOnly('duplicados', PAT.dups);
+  const g = document.getElementById('sumRara');
+  if (g) g.onclick = () => setOnly('rarezas', PAT.raras.map(function(x){ return typeof x === 'string' ? x : x.epc; }));
 }
 document.getElementById('patBtn').onclick = async () => {
   const f = document.getElementById('patfile').files[0];
   document.getElementById('paterr').textContent = '';
-  if (!f) { document.getElementById('paterr').textContent = t('Elegí el archivo a analizar primero.'); return; }
-  document.getElementById('patmsg').textContent = t('Analizando…');
+  if (!f) { document.getElementById('paterr').textContent = 'Elegí el archivo a analizar primero.'; return; }
+  document.getElementById('patmsg').textContent = 'Analizando…';
   const fd = new FormData();
   fd.append('file', f);
   try {
@@ -97,7 +150,9 @@ document.getElementById('patBtn').onclick = async () => {
     document.getElementById('patmsg').textContent = r.filename + ' · ' + r.count + ' tags';
     PAT.token = r.token || null;
     document.getElementById('patDl').disabled = !PAT.token;
-    render(r.rows || []);
+    PAT.rows = r.rows || [];
+    PAT.only = null; PAT.onlyLabel = ''; PAT.q = ''; document.getElementById('q').value = '';
+    render();
     renderSummary(r.summary || {});
   } catch (e) { document.getElementById('paterr').textContent = 'Error: ' + e; document.getElementById('patmsg').textContent = ''; }
 };
