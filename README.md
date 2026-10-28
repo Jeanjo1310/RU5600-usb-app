@@ -1,5 +1,7 @@
 # RU5600 Reader — Linux client for the INVETON RU5600 UHF RFID reader
 
+[![Featured on Made with REA](https://madewithrea.com/badges/featured.svg)](https://madewithrea.com/builds/ru5600-uhf-rfid-reader-linux-client-from-a-protocol-reverse-engineered)
+
 Unofficial Linux replacement for the Windows `ReaderSoftV5.1` that ships with
 the RU5600 SDK. It talks to the reader over USB and reproduces the layout of
 the original program: connection panel on the left, tabbed parameter pages on
