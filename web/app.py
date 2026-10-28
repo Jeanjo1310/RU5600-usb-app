@@ -2050,6 +2050,19 @@ def _run(seconds, target=0, mode="answer"):
                 DEV_ADDR, PARAM_WORKMODE,
                 WORKMODE_ACTIVE if mode == "active" else WORKMODE_ANSWER)
         r._pace(settle=True)
+        # Verificar que el lector acepto el modo: si lo rechaza (firmware
+        # trabado tras una corrida), el barrido quedaria SORDO contando cero
+        # con tags enfrente y sin pitos. Mejor avisar que fingir que lee.
+        try:
+            want_wm = WORKMODE_ACTIVE if mode == "active" else WORKMODE_ANSWER
+            got_wm = r.work_mode()
+        except Exception:  # noqa: BLE001 - si no se puede leer, se sigue igual
+            got_wm = None
+        if got_wm is not None and int(got_wm) != int(want_wm):
+            reason = "desconectado"
+            _state.update(running=False, error="el lector no acepto el modo (reabri la conexion)", reason=reason)
+            _log("error", "barrido sordo evitado: WorkMode quedo en %s (queria %s)" % (got_wm, want_wm))
+            return
         with r._lock:
             r._lib.CFHid_ClearTagBuf()
         r._pace()
@@ -2231,6 +2244,10 @@ def _run(seconds, target=0, mode="answer"):
                     if prev is not None:
                         prev["n"] = prev.get("n", 1) + 1
                         _state.setdefault("hits", []).append(time.monotonic())
+                        # CUALQUIER entrega (nuevo o repetido) mantiene el poll
+                        # rapido: el lector sigue viendo tags en campo y puede
+                        # aparecer uno nuevo en cualquier momento (grupos).
+                        got = True
                         continue
                     info.update(raw=blob_key.hex().upper()[:48], ant=tag.ant,
                                 rssi=tag.rssi, n=1)
@@ -2241,12 +2258,20 @@ def _run(seconds, target=0, mode="answer"):
                     got = True
                     last_hit = time.monotonic()
                 now2 = time.monotonic()
+                # El ritmo del stream lo decide el modo de lectura (perfil o
+                # Conexion): Rafaga 30 ms, Balanceado 120 ms, Confiable 250 ms.
+                # Asi los perfiles cambian el stream de verdad, no solo el
+                # camino dirigido.
+                base = _read_pace()["pause"]
                 if got:
-                    poll = 0.1
+                    poll = base
                 else:
-                    poll = min(0.3, poll + 0.02)
-                    # prevencion: si dejo de entregar 6 s, rearmar el stream (una vez cada 6 s)
-                    if now2 - last_hit > 6 and stabilized < 40:
+                    poll = min(base * 2.5, poll + 0.02)
+                    # prevencion: solo tras la primera entrega. En el silencio
+                    # inicial (usuario aun acercando tags) rearmar es tirar
+                    # el buffer y cortar la espera sin motivo (medido: 1
+                    # rearme innecesario al arrancar la muestra de 50).
+                    if now2 - last_hit > 6 and stabilized < 40 and _state.get("tags"):
                         try:
                             r.stop_read()
                             with r._lock:
