@@ -2024,8 +2024,8 @@ def start():
                       stall_after=stall, mode_error="",
                       last_rssi=None, last_rssi_t=0.0,
                       last_seen_ts=time.monotonic())
-        # el modo mostrado era el de la corrida anterior hasta que el hilo arrancaba
-        _state["mode_used"] = "stream"
+        # modo pedido desde el arranque (sin flash del modo anterior)
+        _state["mode_used"] = "dirigido" if mode != "active" else "stream"
         _state["seen"] = prev_seen
     _stop.clear()
     threading.Thread(target=_run, args=(seconds, target, mode),
