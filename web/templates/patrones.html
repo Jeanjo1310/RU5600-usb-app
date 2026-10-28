@@ -3,6 +3,139 @@
 {% block content %}
 <div class="card bg-base-100 shadow-sm p-6 mb-4">
   <h2 class="text-lg font-semibold mb-1">Patrones EPC</h2>
-  <p class="text-sm text-base-content/60">Vista en construcción: el análisis completo (tabla + resumen + informe) llega con el frontend. El backend ya expone <code>/api/patrones/analyze</code>, <code>/api/patrones/registry</code> y <code>/api/patrones/report</code>.</p>
+  <p class="text-sm text-base-content/60 mb-3">Subí el archivo a analizar (solo importa la columna EPC: se detecta sola; el resto lo calcula la vista).</p>
+  <div class="flex flex-wrap items-end gap-3 mb-2">
+    <div>
+      <label class="block text-sm mb-1" for="patfile">Archivo a analizar</label>
+      <input id="patfile" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered w-72">
+    </div>
+    <button id="patBtn" class="btn btn-primary">Analizar</button>
+    <div class="flex gap-1 items-end ml-2" role="group" aria-label="HEX/DECIMAL">
+      <button id="modeHex" class="btn btn-sm btn-active">HEX</button>
+      <button id="modeDec" class="btn btn-sm">DECIMAL</button>
+    </div>
+    <button id="patDl" class="btn btn-outline" disabled>Descargar informe</button>
+  </div>
+  <div class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-sm mb-1" for="regH10">Padrón H10</label>
+      <div class="flex gap-2 items-center">
+        <input id="regH10" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered file-input-sm w-56">
+        <button id="regH10Btn" class="btn btn-outline btn-sm">Subir</button>
+        <span id="regH10St" class="text-xs opacity-70">no cargado</span>
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm mb-1" for="regZK">Padrón ZKTECO</label>
+      <div class="flex gap-2 items-center">
+        <input id="regZK" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered file-input-sm w-56">
+        <button id="regZKBtn" class="btn btn-outline btn-sm">Subir</button>
+        <span id="regZKSt" class="text-xs opacity-70">no cargado</span>
+      </div>
+    </div>
+  </div>
+  <p id="patmsg" class="text-sm mt-2"></p>
+  <p id="paterr" class="text-sm mt-2 text-error"></p>
 </div>
+<div class="card bg-base-100 shadow-sm p-6 mb-4 hidden" id="sumCard">
+  <h3 class="text-md font-semibold mb-2">Resumen <span id="sumVerdict" class="badge badge-neutral ml-2"></span></h3>
+  <div id="sumBody" class="text-sm grid gap-1"></div>
+</div>
+<div class="card bg-base-100 shadow-sm overflow-x-auto p-2">
+  <table class="table table-zebra w-full text-sm" id="patTable">
+    <thead class="text-xs uppercase opacity-70">
+      <tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC</th><th class="px-4 py-2">W34</th><th class="px-4 py-2">Card</th><th class="px-4 py-2">Tag ID</th><th class="px-4 py-2">Short</th><th class="px-4 py-2">Familia</th></tr>
+    </thead>
+    <tbody id="patRows"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let PAT = {rows: [], token: null, mode: 'HEX'};
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function setMode(m) {
+  PAT.mode = m;
+  document.getElementById('modeHex').classList.toggle('btn-active', m === 'HEX');
+  document.getElementById('modeDec').classList.toggle('btn-active', m === 'DEC');
+  document.querySelectorAll('#patRows td[data-hex]').forEach(function(td){
+    td.textContent = (m === 'HEX') ? td.getAttribute('data-hex') : td.getAttribute('data-dec');
+  });
+}
+document.getElementById('modeHex').onclick = function(){ setMode('HEX'); };
+document.getElementById('modeDec').onclick = function(){ setMode('DEC'); };
+function render(rows) {
+  PAT.rows = rows;
+  const tb = document.getElementById('patRows');
+  tb.innerHTML = '';
+  rows.forEach(function(r, i){
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-base-300';
+    const fam = String(r[8] || '');
+    const bad = /irregular|duplicado|pendiente/i.test(fam);
+    tr.innerHTML = '<td class="px-4 py-2">' + (i + 1) + '</td>'
+      + '<td class="px-4 py-2 font-mono">' + esc(r[1]) + '</td>'
+      + '<td class="px-4 py-2 font-mono" data-hex="' + esc(r[2]) + '" data-dec="' + esc(r[3]) + '">' + esc(PAT.mode === 'HEX' ? r[2] : r[3]) + '</td>'
+      + '<td class="px-4 py-2 font-mono">' + esc(r[3]) + '</td>'
+      + '<td class="px-4 py-2 font-mono" data-hex="' + esc(r[4]) + '" data-dec="' + esc(r[5]) + '">' + esc(PAT.mode === 'HEX' ? r[4] : r[5]) + '</td>'
+      + '<td class="px-4 py-2 font-mono" data-hex="' + esc(r[6]) + '" data-dec="' + esc(r[7]) + '">' + esc(PAT.mode === 'HEX' ? r[6] : r[7]) + '</td>'
+      + '<td class="px-4 py-2">' + (bad ? '<span class="badge badge-warning badge-xs">' + esc(fam) + '</span>' : esc(fam)) + '</td>';
+    tb.appendChild(tr);
+  });
+  setMode(PAT.mode);
+}
+function li(label, val) {
+  return '<div><span class="font-semibold">' + esc(label) + ':</span> ' + val + '</div>';
+}
+function renderSummary(s) {
+  const box = document.getElementById('sumBody');
+  document.getElementById('sumCard').classList.remove('hidden');
+  const v = document.getElementById('sumVerdict');
+  const ok = /compat/i.test(String(s.veredicto || ''));
+  v.textContent = s.veredicto || '';
+  v.className = 'badge ml-2 ' + (ok ? 'badge-success' : 'badge-error');
+  let h = '';
+  h += li('Total', esc(s.total));
+  if (s.familias) h += li('Familias', esc(typeof s.familias === 'string' ? s.familias : JSON.stringify(s.familias)));
+  if (s.marcadores) h += li('Marcadores detectados', esc(typeof s.marcadores === 'string' ? s.marcadores : JSON.stringify(s.marcadores)));
+  if (s.duplicados && s.duplicados.length) h += li('Duplicados (' + s.duplicados.length + ')', esc(s.duplicados.slice(0, 20).join(', ')) + (s.duplicados.length > 20 ? '…' : ''));
+  if (s.rarezas && s.rarezas.length) h += li('Rarezas (' + s.rarezas.length + ')', esc(s.rarezas.slice(0, 20).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); }).join(' · ')) + (s.rarezas.length > 20 ? '…' : ''));
+  const ch = (s.choques && s.choques.h10) || [];
+  const cz = (s.choques && s.choques.zkteco) || [];
+  h += li('Choques H10 (' + ch.length + ')', ch.length ? esc(ch.slice(0, 20).join(', ')) : '—');
+  h += li('Choques ZKTECO (' + cz.length + ')', cz.length ? esc(cz.slice(0, 20).join(', ')) : '—');
+  box.innerHTML = h;
+}
+document.getElementById('patBtn').onclick = async () => {
+  const f = document.getElementById('patfile').files[0];
+  document.getElementById('paterr').textContent = '';
+  if (!f) { document.getElementById('paterr').textContent = t('Elegí el archivo a analizar primero.'); return; }
+  document.getElementById('patmsg').textContent = t('Analizando…');
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const r = await fetch('/api/patrones/analyze', {method: 'POST', body: fd}).then(x => x.json());
+    if (!r.ok) { document.getElementById('paterr').textContent = 'Error: ' + (r.error || '?'); document.getElementById('patmsg').textContent = ''; return; }
+    document.getElementById('patmsg').textContent = r.filename + ' · ' + r.count + ' tags';
+    PAT.token = r.token || null;
+    document.getElementById('patDl').disabled = !PAT.token;
+    render(r.rows || []);
+    renderSummary(r.summary || {});
+  } catch (e) { document.getElementById('paterr').textContent = 'Error: ' + e; document.getElementById('patmsg').textContent = ''; }
+};
+async function uploadReg(kind, inputId, stId) {
+  const f = document.getElementById(inputId).files[0];
+  if (!f) return;
+  const fd = new FormData();
+  fd.append('kind', kind);
+  fd.append('file', f);
+  try {
+    const r = await fetch('/api/patrones/registry', {method: 'POST', body: fd}).then(x => x.json());
+    document.getElementById(stId).textContent = r.ok ? (t('cargado:') + ' ' + r.count + ' ' + t('tags')) : ('Error: ' + (r.error || '?'));
+  } catch (e) { document.getElementById(stId).textContent = 'Error: ' + e; }
+}
+document.getElementById('regH10Btn').onclick = () => uploadReg('h10', 'regH10', 'regH10St');
+document.getElementById('regZKBtn').onclick = () => uploadReg('zkteco', 'regZK', 'regZKSt');
+document.getElementById('patDl').onclick = () => { if (PAT.token) window.location = '/api/patrones/report?token=' + encodeURIComponent(PAT.token); };
+</script>
 {% endblock %}
