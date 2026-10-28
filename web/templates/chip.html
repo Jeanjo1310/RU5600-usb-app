@@ -21,10 +21,10 @@
       <p class="mt-1">Antes de escribir se lee el TID del tag presente: si es el mismo que el del origen, la operación se rechaza («poné el tag destino»).</p>
     </div>
   </div>
-  <div class="flex flex-wrap items-center gap-3">
-    <button id="cloneRead" class="btn btn-outline">Leer tag origen</button>
+    <div class="flex flex-wrap items-center gap-3">
+    <button id="cloneScan" class="btn btn-outline">Escanear muestra</button>
     <button id="cloneWrite" class="btn btn-primary" disabled>Clonar en el tag que está ahora</button>
-    <button id="cloneScan" class="btn btn-outline">Escanear cercanos</button>
+    <button id="cloneScanStop" class="btn btn-outline" disabled>Detener</button>
   </div>
   <div id="cloneInfo" class="text-sm mt-3 font-mono whitespace-pre-wrap"></div>
   <div id="cloneListWrap" class="mt-3 hidden">
@@ -41,6 +41,7 @@
     <button id="cloneBurst" class="btn btn-warning" disabled>Clonar en ráfaga</button>
     <button id="cloneHalt" class="btn btn-outline" disabled>Detener</button>
     <span id="cloneBurstMsg" class="text-sm"></span>
+    <div id="cloneVerify" class="w-full overflow-x-auto"></div>
   </div>
 </div>
 {% endblock %}
@@ -60,25 +61,6 @@ const cloneWrite = document.getElementById('cloneWrite');
 let cloneSrc = null;
 let cloneTimer = null;
 document.getElementById('cloneSecs').oninput = function(){ document.getElementById('cloneSecsv').textContent = this.value; };
-document.getElementById('cloneRead').onclick = async () => {
-  const btn = document.getElementById('cloneRead');
-  btn.disabled = true;
-  cloneInfo.textContent = 'Leyendo el tag origen (lectura dirigida + TID)...';
-  try {
-    const r = await post('/api/clone_read', {});
-    if (!r.ok) { cloneSrc = null; cloneWrite.disabled = true; cloneInfo.textContent = 'Error: ' + r.error; return; }
-    cloneSrc = r;
-    cloneWrite.disabled = false;
-    document.getElementById('cloneBurst').disabled = false;
-    cloneInfo.textContent =
-      'ORIGEN\nEPC: ' + r.epc + '\nTID: ' + r.tid + '\nChip: ' + (r.chip || '?') +
-      '\n\nAhora poné el tag destino y apretá «Clonar en el tag que está ahora».';
-  } catch (e) {
-    cloneInfo.textContent = 'Error: ' + e;
-  } finally {
-    btn.disabled = false;
-  }
-};
 cloneWrite.onclick = async () => {
   if (!cloneSrc) return;
   cloneWrite.disabled = true;
@@ -104,13 +86,26 @@ cloneWrite.onclick = async () => {
     document.getElementById('cloneBurst').disabled = !cloneSrc;
   }
 };
+let scanToken = 0;
+document.getElementById('cloneScanStop').onclick = async () => {
+  scanToken++;
+  await post('/api/clone_scan_stop', {});
+  document.getElementById('cloneScan').disabled = false;
+  document.getElementById('cloneScanStop').disabled = true;
+};
 document.getElementById('cloneScan').onclick = async () => {
+  const my = ++scanToken;
   const tb = document.getElementById('cloneRows');
   tb.innerHTML = '';
   document.getElementById('cloneListWrap').classList.add('hidden');
-  cloneInfo.textContent = 'Escaneando tags cercanos (6 s, stream)…';
+  document.getElementById('cloneScan').disabled = true;
+  document.getElementById('cloneScanStop').disabled = false;
+  cloneInfo.textContent = 'Escaneando muestra (hasta 8 s, stream)…';
   try {
-    const r = await post('/api/clone_scan', {seconds: 6});
+    const r = await post('/api/clone_scan', {seconds: 8});
+    if (my !== scanToken) return;
+    document.getElementById('cloneScan').disabled = false;
+    document.getElementById('cloneScanStop').disabled = true;
     if (!r.ok) { cloneInfo.textContent = 'Error: ' + (r.error || '?'); return; }
     if (!r.tags.length) { cloneInfo.textContent = 'Sin tags a la vista.'; return; }
     document.getElementById('cloneListWrap').classList.remove('hidden');
@@ -138,8 +133,19 @@ document.getElementById('cloneScan').onclick = async () => {
       tb.appendChild(tr);
     });
     cloneInfo.textContent = r.count + ' tag(s) a la vista. Elegí el origen con «Usar como origen».';
-  } catch (e) { cloneInfo.textContent = 'Error: ' + e; }
+  } catch (e) { if (my === scanToken) cloneInfo.textContent = 'Error: ' + e; }
+  finally { if (my === scanToken) { document.getElementById('cloneScan').disabled = false; document.getElementById('cloneScanStop').disabled = true; } }
 };
+function renderVerify(result, srcEpc) {
+  const box = document.getElementById('cloneVerify');
+  const det = (result && result.detalle) || [];
+  if (!det.length) { box.innerHTML = ''; return; }
+  let h = '<table class="table table-zebra w-full text-sm mt-2"><thead class="text-xs uppercase opacity-70"><tr><th class="px-4 py-2">#</th><th class="px-4 py-2">EPC (igual en todos)</th><th class="px-4 py-2">TID (distinto = clon OK)</th><th class="px-4 py-2">Estado</th></tr></thead><tbody>';
+  det.forEach(function(d, i){
+    h += '<tr class="border-b border-base-300"><td class="px-4 py-2">' + (i + 1) + '</td><td class="px-4 py-2 font-mono">' + srcEpc + '</td><td class="px-4 py-2 font-mono">' + d.tid + '</td><td class="px-4 py-2"><span class="badge badge-success badge-xs">clonado ✓</span></td></tr>';
+  });
+  box.innerHTML = h + '</tbody></table>';
+}
 async function cloneBurstPoll() {
   const s = await fetch('/api/clone_burst_status').then(x => x.json());
   const msg = document.getElementById('cloneBurstMsg');
@@ -148,6 +154,7 @@ async function cloneBurstPoll() {
     if (cloneTimer) { clearInterval(cloneTimer); cloneTimer = null; }
     document.getElementById('cloneBurst').disabled = !cloneSrc;
     document.getElementById('cloneHalt').disabled = true;
+    if (s.result) renderVerify(s.result, (cloneSrc && cloneSrc.epc) || '');
     if (s.result) msg.textContent = `Listo: ${s.result.clonados} clonados · ${s.result.omitidos_origen} origen omitido · ${s.result.errores} errores.` + (s.result.cortado ? ' (cortado a mano)' : '');
     else if (s.error) msg.textContent = 'Error: ' + s.error;
   }

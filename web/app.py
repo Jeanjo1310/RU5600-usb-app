@@ -1856,7 +1856,7 @@ def _chip_from_prefix(tid_hex):
     return prefix
 
 
-def _stream_sweep(r, seconds):
+def _stream_sweep(r, seconds, stop_ev=None):
     """Barrido de stream en ActiveMode: lecturas y RSSI por EPC.
 
     Es la misma secuencia del stream de la app (ActiveMode + StartRead +
@@ -1880,7 +1880,8 @@ def _stream_sweep(r, seconds):
     stats: dict = {}
     elapsed = 0.0
     try:
-        while time.monotonic() - t0 < seconds:
+        while time.monotonic() - t0 < seconds and not (
+                stop_ev is not None and stop_ev.is_set()):
             for tag in r.poll_tags():
                 epc = (getattr(tag, "epc_hex", "") or "").upper()
                 chip = None
@@ -3044,25 +3045,38 @@ _clone_job = {"running": False, "result": None, "error": None,
 _clone_stop = threading.Event()
 
 
+_clone_job = {"running": False, "result": None, "error": None,
+               "seconds": 0, "started": 0.0}
+_clone_stop = threading.Event()
+_clone_scan_stop = threading.Event()
+
+
 @app.route("/api/clone_scan", methods=["POST"])
 def api_clone_scan():
     """Lista corta de tags a la vista (stream de N s) para elegir origen."""
     cfg = request.get_json(silent=True) or {}
     try:
-        seconds = float(cfg.get("seconds", 6))
+        seconds = float(cfg.get("seconds", 8))
     except (TypeError, ValueError):
         return jsonify(ok=False, error="segundos invalidos"), 400
-    seconds = max(3.0, min(seconds, 15.0))
+    seconds = max(3.0, min(seconds, 20.0))
     try:
         r = _need_usb()
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
+    _clone_scan_stop.clear()
     try:
-        rows, elapsed = _stream_sweep(r, seconds)
+        rows, elapsed = _stream_sweep(r, seconds, _clone_scan_stop)
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error="barrido fallo: " + str(exc))
     out = [{"epc": x["epc"], "chip": x.get("chip") or "candidato"} for x in rows]
     return jsonify(ok=True, count=len(out), seconds=round(elapsed, 1), tags=out)
+
+
+@app.route("/api/clone_scan_stop", methods=["POST"])
+def api_clone_scan_stop():
+    _clone_scan_stop.set()
+    return jsonify(ok=True)
 
 
 @app.route("/api/clone_pick", methods=["POST"])
@@ -3156,6 +3170,7 @@ def _clone_run_burst(r, seconds):
     deadline = time.monotonic() + seconds
     done_tids: set = set()
     clonados = omitidos = errores = 0
+    detalle: list = []
     try:
         while time.monotonic() < deadline and not _clone_stop.is_set():
             cur_epc, _raw = _clone_probe(r, attempts=3, pause=0.05)
@@ -3190,6 +3205,8 @@ def _clone_run_burst(r, seconds):
             if (epc_after or "").upper() == src["epc"].upper():
                 clonados += 1
                 done_tids.add(tid_dst)
+                if len(detalle) < 200:
+                    detalle.append({"tid": tid_dst})
                 _log("ok", "clone_burst: EPC %s en TID %s (verificado)"
                      % (src["epc"], tid_dst))
             else:
@@ -3198,7 +3215,7 @@ def _clone_run_burst(r, seconds):
                      % tid_dst)
             time.sleep(0.2)
         result = {"clonados": clonados, "omitidos_origen": omitidos,
-                  "errores": errores, "seconds": seconds,
+                  "errores": errores, "seconds": seconds, "detalle": detalle,
                   "cortado": bool(_clone_stop.is_set())}
     except Exception as exc:  # noqa: BLE001
         result = None
