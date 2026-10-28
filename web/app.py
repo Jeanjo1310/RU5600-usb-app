@@ -2129,9 +2129,9 @@ def _run(seconds, target=0, mode="answer"):
                             _log("warn", "cambio de modo en caliente fallo: %s" % exc)
                         else:
                             _log("ok", "modo en caliente: %s" % _state["mode_used"])
-                # poll adaptativo: rapido cuando entrega, mas lento cuando no
+                # Ritmo CONSTANTE: una pausa por loop, siempre la misma.
+                # La unica pausa valida es la que pide el usuario.
                 time.sleep(poll)
-                got = False
                 # MODO MANUAL: sin fallback automatico. Si el usuario quiere
                 # el otro camino lo pide en caliente (/api/sweep_mode).
                 if direct_mode:
@@ -2160,7 +2160,6 @@ def _run(seconds, target=0, mode="answer"):
                         # igual, o sea un comando extra por relectura (~50% mas de ordenes).
                         prev["n"] = prev.get("n", 1) + 1
                         _state.setdefault("hits", []).append(time.monotonic())
-                        got = True
                         last_hit = time.monotonic()
                         continue
                     info = {"epc": key, "chip": "", "xl": "-",
@@ -2200,7 +2199,6 @@ def _run(seconds, target=0, mode="answer"):
                     last_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
-                    got = True
                     last_hit = time.monotonic()
                     # pausa entre lecturas dirigidas: la decide el modo de lectura
                     # (Conexión): Ráfaga 30 ms · Balanceado 120 ms · Confiable 250 ms
@@ -2255,49 +2253,23 @@ def _run(seconds, target=0, mode="answer"):
                     last_new = time.monotonic()
                     _state["tags"].append(info)
                     _state.setdefault("hits", []).append(time.monotonic())
-                    got = True
                     last_hit = time.monotonic()
                 now2 = time.monotonic()
-                # El ritmo del stream lo decide el modo de lectura (perfil o
-                # Conexion): Rafaga 30 ms, Balanceado 120 ms, Confiable 250 ms.
-                # Asi los perfiles cambian el stream de verdad, no solo el
-                # camino dirigido.
-                base = _read_pace()["pause"]
-                if got:
-                    poll = base
-                else:
-                    poll = min(base * 2.5, poll + 0.02)
-                    # Umbral 15 s: el intercambio de grupos (sacar + posicionar)
-                    # roza los 6-8 s de silencio; patear ahi come el arranque
-                    # de cada presentacion (demora + rampa lenta). Solo se
-                    # patea el silencio largo de verdad. Tope 5.
-                    # El rearme patea (Stop+Start) pero NO vacia el buffer:
-                    # el ClearTagBuf tiraba lecturas que el firmware ya tenia
-                    # y reiniciaba su ciclo de anticolision (medido: loop de
-                    # 12 rearms en 90 s de silencio). Tope 10, no 40.
-                    if now2 - last_hit > 15 and stabilized < 5 and _state.get("tags"):
-                        try:
-                            # Patear sin vaciar: Stop + Start. El ClearTagBuf
-                            # de antes descartaba el buffer del firmware.
-                            r.stop_read()
-                            r._pace(settle=True)
-                            with r._lock:
-                                r._lib.CFHid_StartRead()
-                            r._pace(settle=True)
-                            stabilized += 1
-                            _state["stabilized"] = stabilized
-                            # trazabilidad: si el lector se pausa >6 s NOSOTROS
-                            # interrumpimos (Stop+Clear+Start) y podemos tirar
-                            # lo bufferizado — hay que poder distinguir una
-                            # pausa del firmware de una interrupcion propia
-                            _log("warn", "rearme del stream tras 6 s sin entrega "
-                                 "(interrupcion propia, #%d)" % stabilized)
-                            last_hit = time.monotonic()
-                        except Exception:  # noqa: BLE001
-                            # el rearme fallo: o el firmware esta ocupado, o el
-                            # lector se cayo. Sonda barata para distinguirlo.
-                            if not _link_dead(r):
-                                continue   # vivo: era una pausa, se reintenta
+                # Ritmo CONSTANTE 24/7: lo decide el modo de lectura
+                # (perfil o Conexion: Rafaga 30 ms, Balanceado 120 ms,
+                # Confiable 250 ms). Sin adaptaciones: la unica pausa
+                # valida es la que pide el usuario (Pausar/Destrabar).
+                poll = _read_pace()["pause"]
+                # Sin patadas automaticas: si el lector se calla, no se lo
+                # toca (nada de Stop/Start que interrumpa su ciclo). Solo se
+                # verifica que siga VIVO con una sonda barata (max 1 cada
+                # 3 s): si se cayo, flujo de reconexion; si esta vivo, se
+                # sigue esperando en rafaga. La recuperacion manual es el
+                # boton "Destrabar lector".
+                if now2 - last_hit > 15 and _state.get("tags"):
+                    if now2 - last_link_chk > 3.0:
+                        last_link_chk = now2
+                        if _link_dead(r):
                             rr = _reconn_or_die(r, direct_mode, _stop)
                             if rr is None:
                                 reason = ("usuario" if _stop.is_set()
@@ -2307,7 +2279,6 @@ def _run(seconds, target=0, mode="answer"):
                             # relojes REINICIADOS: el tiempo desconectado
                             # no cuenta como "dejo de haber gente"
                             last_new = last_hit = time.monotonic()
-                            continue
         finally:
             try:
                 with r._lock:
