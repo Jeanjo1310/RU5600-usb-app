@@ -8,9 +8,14 @@
       <div class="text-sm mb-1">Lectura</div>
       <button id="aToggle" class="btn btn-soft btn-success">Leer</button>
     </div>
+    <div>
+      <label class="block text-sm mb-1" for="aMode">Modo</label>
+      <select id="aMode" class="select select-bordered"><option value="active">Stream</option><option value="answer">Dirigido</option></select>
+    </div>
+    <div class="pb-2"><button id="aClear" class="btn btn-outline">Limpiar listado</button></div>
     <div class="pb-2"><span id="astatus" class="text-sm text-base-content/60">Detenido.</span></div>
     <span class="flex-1"></span>
-    <div>
+    <div title="Benchmark: lee N segundos y reporta detecciones y lecturas/s. Sirve para probar alcance/antena.">
       <label class="block text-sm mb-1" for="mdur">Segundos de medición: <span id="mdurv" class="font-mono">10</span></label>
       <input id="mdur" type="range" class="range range-sm w-48" min="5" max="60" step="5" value="10">
     </div>
@@ -52,7 +57,7 @@ async function poll() {
       + `<td class="px-4 py-2">${x.chip === 'interpreter pending' ? t('sin identificar') : x.chip}</td>`
       + `<td class="px-4 py-2">${x.ant}</td>`
       + `<td class="px-4 py-2">${x.n}</td>`
-      + `<td class="px-4 py-2">${x.rssi}</td>`
+      + `<td class="px-4 py-2">${x.rssi === null || x.rssi === undefined ? '–' : x.rssi}</td>`
       + `<td class="px-4 py-2">${new Date().toLocaleTimeString()}</td>`;
   });
   while (tb.children.length > r.tags.length) tb.removeChild(tb.lastChild);
@@ -62,10 +67,15 @@ document.getElementById('aToggle').onclick = async () => {
   if (isRunning) {
     await post('/api/active_stop', {});
   } else {
-    const r = await post('/api/active_start', {});
+    const r = await post('/api/active_start', {mode: document.getElementById('aMode').value});
     if (!r.ok) { document.getElementById('astatus').textContent = 'Error: ' + r.error; return; }
     if (!timer) timer = setInterval(poll, 500);
   }
+  poll();
+};
+document.getElementById('aClear').onclick = async () => {
+  const r = await post('/api/active_clear', {});
+  if (!r.ok) { document.getElementById('astatus').textContent = 'Error: ' + r.error; return; }
   poll();
 };
 const dur = document.getElementById('mdur');

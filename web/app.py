@@ -1022,7 +1022,7 @@ def lote():
     return render_template("lote.html")
 
 
-_active = {"running": False, "tags": [], "seen": set()}
+_active = {"running": False, "tags": [], "seen": set(), "mode": "active"}
 _active_stop = threading.Event()
 _batch = {"running": False, "done": 0, "total": 0, "rows": []}
 _batch_stop = threading.Event()
@@ -1044,12 +1044,27 @@ def _carve(blob):
 
 @app.route("/api/active_start", methods=["POST"])
 def api_active_start():
+    cfg = request.get_json(silent=True) or {}
+    mode = (cfg.get("mode") or "active").lower()
+    if mode not in ("active", "answer"):
+        mode = "active"
     with _lock:
         if _active["running"]:
             return jsonify(ok=False, error="ya corriendo")
-        _active.update(running=True, tags=[], seen=set())
+        # El listado NO se borra al parar/leer de nuevo: se acumula hasta
+        # que el usuario aprieta Limpiar (boton dedicado).
+        _active.update(running=True, mode=mode)
         _active_stop.clear()
-    threading.Thread(target=_active_run, daemon=True).start()
+    threading.Thread(target=_active_run, args=(mode,), daemon=True).start()
+    return jsonify(ok=True, mode=mode)
+
+
+@app.route("/api/active_clear", methods=["POST"])
+def api_active_clear():
+    with _lock:
+        if _active["running"]:
+            return jsonify(ok=False, error="pará la lectura primero"), 409
+        _active.update(tags=[], seen=set())
     return jsonify(ok=True)
 
 
@@ -1064,15 +1079,69 @@ def api_active_tags():
     return jsonify(running=_active["running"], tags=_active["tags"])
 
 
-def _active_run():
+def _active_run_directed(r):
+    """Lectura dirigida continua: de a un tag hasta Parar (H10, UCODE...).
+
+    Sin objetivos ni topes: cada tag nuevo crea fila, el repetido suma.
+    El ritmo lo decide el modo de lectura (Conexion): Rafaga 30 ms,
+    Balanceado 120 ms, Confiable 250 ms + reintentos.
+    """
+    from ru5600_chip import TID_PREFIX_DB
+    last_chk_d = 0.0
+    try:
+        while not _active_stop.is_set():
+            res, epc_d, hex_d, det = _direct_read(r)
+            if res != "ok" or not epc_d:
+                if res == "error" and time.monotonic() - last_chk_d > 3.0:
+                    last_chk_d = time.monotonic()
+                    if _link_dead(r):
+                        if not _await_reconnect(_active_stop):
+                            return
+                        continue
+                time.sleep(_read_pace()["pause"])
+                continue
+            key = epc_d.upper()
+            if key in _active["seen"]:
+                for row in _active["tags"]:
+                    if row.get("key", row.get("epc")) == key:
+                        row["n"] += 1
+                time.sleep(_read_pace()["pause"])
+                continue
+            info = {"key": key, "raw": (hex_d or "")[:48], "epc": key,
+                    "tid": "", "chip": "", "ant": 0, "rssi": None, "n": 1}
+            for _attempt in range(2):
+                try:
+                    tid = r.read_card(2, 0, 2, b"\x00" * 4, retries=2)
+                    prefix = tid.hex().upper()[:8]
+                    ent = TID_PREFIX_DB.get(prefix)
+                    info["chip"] = (("%s %s" % (ent[0], ent[1])).strip()
+                                     if isinstance(ent, tuple) and len(ent) >= 2
+                                     else prefix)
+                    break
+                except Exception:  # noqa: BLE001
+                    time.sleep(0.12)
+            if not info["chip"]:
+                info["chip"] = "interpreter pending"
+            _active["seen"].add(key)
+            _active["tags"].append(info)
+            time.sleep(_read_pace()["pause"])
+    finally:
+        _active["running"] = False
+
+
+def _active_run(mode="active"):
     try:
         r = _get_reader()
-        from ru5600_core import DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE
+        from ru5600_core import DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE, WORKMODE_ANSWER
+        want_active = (mode != "answer")
         r._pace()
         with r._lock:
             r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
-                                          WORKMODE_ACTIVE)
+                                            WORKMODE_ACTIVE if want_active else WORKMODE_ANSWER)
         r._pace(settle=True)
+        if not want_active:
+            _active_run_directed(r)
+            return
         with r._lock:
             r._lib.CFHid_ClearTagBuf()
         r._pace()
