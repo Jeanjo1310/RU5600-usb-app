@@ -48,6 +48,14 @@ trap 'rm -rf "$STAGE"' EXIT
 
 install -D -m 755 "$HERE/AppRun.web"             "$STAGE/AppRun"
 install -D -m 644 "$HERE/$APP_NAME.desktop"      "$STAGE/$APP_NAME.desktop"
+# Version estampada: Gear Lever lee X-AppImage-Version del .desktop para
+# mostrar la version instalada y poder comparar contra releases. Sin esto
+# no muestra version y la deteccion automatica no funciona como el resto.
+if grep -q '^X-AppImage-Version=' "$STAGE/$APP_NAME.desktop"; then
+  sed -i "s/^X-AppImage-Version=.*/X-AppImage-Version=$APP_VERSION/" "$STAGE/$APP_NAME.desktop"
+else
+  printf 'X-AppImage-Version=%s\n' "$APP_VERSION" >> "$STAGE/$APP_NAME.desktop"
+fi
 install -D -m 644 "$HERE/ru5600-reader.png"      "$STAGE/ru5600-reader.png"
 # .DirIcon EMBEBIDO (igual que la app vieja 1.0.0): el file manager lo usa
 # como miniatura del .AppImage. Sin esto la imagen nueva queda sin icono
