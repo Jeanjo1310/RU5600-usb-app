@@ -6,10 +6,10 @@ hoy se hace a mano en Excel. Se lleva a la app como vista "Patrones".
 Restricción dura: TODO offline y sin IA (corre dentro del AppImage).
 
 ## Alcance
-- Entrada: archivo .xlsx/.csv subido por el usuario (columna EPC
+- Entrada: UN solo archivo .xlsx/.csv (columna EPC
   autodetectada: encabezados conocidos, si no escaneo regex hex 12+,
   si no desplegable manual). Sin TID por el momento.
-- Padrones H10 y ZKTECO se suben una sola vez y quedan en `RU5600_Data`.
+- Sin padrones: la familia se auto-detecta por prefijo del EPC.
 - Salida: tabla + resumen + informe xlsx descargable.
 
 ## Reglas de análisis (deterministas, ~150 líneas)

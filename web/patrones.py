@@ -29,6 +29,8 @@ def norm_epc(v) -> str:
 
 
 def familia_de(epc: str) -> str:
+    # Patron auto-detectado por prefijo: cualquier familia (H10, H9, ...)
+    # emerge sola con su etiqueta; lo desconocido usa su propio prefijo.
     p = (epc or "")[:6]
     if p == "E20047":
         return "H10 (candidato)"
@@ -36,7 +38,7 @@ def familia_de(epc: str) -> str:
         return "ZKTECO AA (candidato)"
     if p in ("E22004", "B22004"):
         return "ZKTECO E2/B2 (candidato)"
-    return "pendiente (candidato)"
+    return ("%s (patrón)" % p) if p else "pendiente (candidato)"
 
 
 def derivar(epc: str) -> dict:

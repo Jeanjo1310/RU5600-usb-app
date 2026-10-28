@@ -16,24 +16,6 @@
     </div>
     <button id="patDl" class="btn btn-outline" disabled>Descargar informe</button>
   </div>
-  <div class="flex flex-wrap items-end gap-3">
-    <div>
-      <label class="block text-sm mb-1" for="regH10">Padrón H10</label>
-      <div class="flex gap-2 items-center">
-        <input id="regH10" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered file-input-sm w-56">
-        <button id="regH10Btn" class="btn btn-outline btn-sm">Subir</button>
-        <span id="regH10St" class="text-xs opacity-70">no cargado</span>
-      </div>
-    </div>
-    <div>
-      <label class="block text-sm mb-1" for="regZK">Padrón ZKTECO</label>
-      <div class="flex gap-2 items-center">
-        <input id="regZK" type="file" accept=".xlsx,.xlsm,.csv" class="file-input file-input-bordered file-input-sm w-56">
-        <button id="regZKBtn" class="btn btn-outline btn-sm">Subir</button>
-        <span id="regZKSt" class="text-xs opacity-70">no cargado</span>
-      </div>
-    </div>
-  </div>
   <p id="patmsg" class="text-sm mt-2"></p>
   <p id="paterr" class="text-sm mt-2 text-error"></p>
 </div>
@@ -100,10 +82,6 @@ function renderSummary(s) {
   if (s.marcadores) h += li('Marcadores detectados', esc(typeof s.marcadores === 'string' ? s.marcadores : JSON.stringify(s.marcadores)));
   if (s.duplicados && s.duplicados.length) h += li('Duplicados (' + s.duplicados.length + ')', esc(s.duplicados.slice(0, 20).join(', ')) + (s.duplicados.length > 20 ? '…' : ''));
   if (s.rarezas && s.rarezas.length) h += li('Rarezas (' + s.rarezas.length + ')', esc(s.rarezas.slice(0, 20).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); }).join(' · ')) + (s.rarezas.length > 20 ? '…' : ''));
-  const ch = (s.choques && s.choques.h10) || [];
-  const cz = (s.choques && s.choques.zkteco) || [];
-  h += li('Choques H10 (' + ch.length + ')', ch.length ? esc(ch.slice(0, 20).join(', ')) : '—');
-  h += li('Choques ZKTECO (' + cz.length + ')', cz.length ? esc(cz.slice(0, 20).join(', ')) : '—');
   box.innerHTML = h;
 }
 document.getElementById('patBtn').onclick = async () => {
@@ -123,19 +101,6 @@ document.getElementById('patBtn').onclick = async () => {
     renderSummary(r.summary || {});
   } catch (e) { document.getElementById('paterr').textContent = 'Error: ' + e; document.getElementById('patmsg').textContent = ''; }
 };
-async function uploadReg(kind, inputId, stId) {
-  const f = document.getElementById(inputId).files[0];
-  if (!f) return;
-  const fd = new FormData();
-  fd.append('kind', kind);
-  fd.append('file', f);
-  try {
-    const r = await fetch('/api/patrones/registry', {method: 'POST', body: fd}).then(x => x.json());
-    document.getElementById(stId).textContent = r.ok ? (t('cargado:') + ' ' + r.count + ' ' + t('tags')) : ('Error: ' + (r.error || '?'));
-  } catch (e) { document.getElementById(stId).textContent = 'Error: ' + e; }
-}
-document.getElementById('regH10Btn').onclick = () => uploadReg('h10', 'regH10', 'regH10St');
-document.getElementById('regZKBtn').onclick = () => uploadReg('zkteco', 'regZK', 'regZKSt');
 document.getElementById('patDl').onclick = () => { if (PAT.token) window.location = '/api/patrones/report?token=' + encodeURIComponent(PAT.token); };
 </script>
 {% endblock %}
