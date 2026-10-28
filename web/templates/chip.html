@@ -86,55 +86,62 @@ cloneWrite.onclick = async () => {
     document.getElementById('cloneBurst').disabled = !cloneSrc;
   }
 };
-let scanToken = 0;
-document.getElementById('cloneScanStop').onclick = async () => {
-  scanToken++;
-  await post('/api/clone_scan_stop', {});
-  document.getElementById('cloneScan').disabled = false;
-  document.getElementById('cloneScanStop').disabled = true;
-};
-document.getElementById('cloneScan').onclick = async () => {
-  const my = ++scanToken;
+let scanTimer = null;
+function renderScanList(tags) {
   const tb = document.getElementById('cloneRows');
   tb.innerHTML = '';
-  document.getElementById('cloneListWrap').classList.add('hidden');
-  document.getElementById('cloneScan').disabled = true;
-  document.getElementById('cloneScanStop').disabled = false;
-  cloneInfo.textContent = 'Escaneando muestra (hasta 8 s, stream)…';
-  try {
-    const r = await post('/api/clone_scan', {seconds: 8});
-    if (my !== scanToken) return;
+  if (!tags.length) return;
+  document.getElementById('cloneListWrap').classList.remove('hidden');
+  tags.forEach(function(x, i){
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-base-300';
+    tr.innerHTML = '<td class="px-4 py-2">' + (i + 1) + '</td><td class="px-4 py-2 font-mono">' + x.epc + '</td><td class="px-4 py-2">' + (x.chip || '') + '</td><td class="px-4 py-2"></td>';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-outline btn-sm';
+    btn.textContent = 'Usar como origen';
+    btn.onclick = async () => {
+      btn.disabled = true;
+      cloneInfo.textContent = 'Verificando el tag elegido (presentalo solo)...';
+      try {
+        const q = await post('/api/clone_pick', {epc: x.epc});
+        if (!q.ok) { cloneInfo.textContent = 'Error: ' + (q.error || '?'); return; }
+        cloneSrc = q;
+        cloneWrite.disabled = false;
+        document.getElementById('cloneBurst').disabled = false;
+        cloneInfo.textContent = 'ORIGEN (de la lista)\nEPC: ' + q.epc + '\nTID: ' + q.tid + '\nChip: ' + (q.chip || '?');
+      } catch (e) { cloneInfo.textContent = 'Error: ' + e; }
+      finally { btn.disabled = false; }
+    };
+    tr.lastChild.appendChild(btn);
+    tb.appendChild(tr);
+  });
+}
+async function scanStatus() {
+  const s = await fetch('/api/clone_scan_status').then(x => x.json());
+  renderScanList(s.tags || []);
+  if (s.running) {
+    cloneInfo.textContent = 'Escaneando muestra... quedan ' + s.left + ' s (' + s.count + ' tags)';
+  } else {
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
     document.getElementById('cloneScan').disabled = false;
     document.getElementById('cloneScanStop').disabled = true;
-    if (!r.ok) { cloneInfo.textContent = 'Error: ' + (r.error || '?'); return; }
-    if (!r.tags.length) { cloneInfo.textContent = 'Sin tags a la vista.'; return; }
-    document.getElementById('cloneListWrap').classList.remove('hidden');
-    r.tags.forEach((x, i) => {
-      const tr = document.createElement('tr');
-      tr.className = 'border-b border-base-300';
-      tr.innerHTML = `<td class="px-4 py-2">${i + 1}</td><td class="px-4 py-2 font-mono">${x.epc}</td><td class="px-4 py-2">${x.chip || ''}</td><td class="px-4 py-2"></td>`;
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-outline btn-sm';
-      btn.textContent = 'Usar como origen';
-      btn.onclick = async () => {
-        btn.disabled = true;
-        cloneInfo.textContent = 'Verificando el tag elegido (presentalo solo)…';
-        try {
-          const q = await post('/api/clone_pick', {epc: x.epc});
-          if (!q.ok) { cloneInfo.textContent = 'Error: ' + (q.error || '?'); return; }
-          cloneSrc = q;
-          cloneWrite.disabled = false;
-          document.getElementById('cloneBurst').disabled = false;
-          cloneInfo.textContent = 'ORIGEN (de la lista)\nEPC: ' + q.epc + '\nTID: ' + q.tid + '\nChip: ' + (q.chip || '?');
-        } catch (e) { cloneInfo.textContent = 'Error: ' + e; }
-        finally { btn.disabled = false; }
-      };
-      tr.lastChild.appendChild(btn);
-      tb.appendChild(tr);
-    });
-    cloneInfo.textContent = r.count + ' tag(s) a la vista. Elegí el origen con «Usar como origen».';
-  } catch (e) { if (my === scanToken) cloneInfo.textContent = 'Error: ' + e; }
-  finally { if (my === scanToken) { document.getElementById('cloneScan').disabled = false; document.getElementById('cloneScanStop').disabled = true; } }
+    if (s.error) { cloneInfo.textContent = 'Error: ' + s.error; return; }
+    if (s.count) cloneInfo.textContent = s.count + ' tag(s) a la vista. Elegi el origen con «Usar como origen».';
+    else cloneInfo.textContent = 'Sin tags a la vista.';
+  }
+}
+document.getElementById('cloneScanStop').onclick = async () => {
+  await post('/api/clone_scan_stop', {});
+  scanStatus();
+};
+document.getElementById('cloneScan').onclick = async () => {
+  const r = await post('/api/clone_scan', {seconds: 8});
+  if (!r.ok) { cloneInfo.textContent = 'Error: ' + (r.error || '?'); return; }
+  document.getElementById('cloneScan').disabled = true;
+  document.getElementById('cloneScanStop').disabled = false;
+  document.getElementById('cloneListWrap').classList.add('hidden');
+  if (!scanTimer) scanTimer = setInterval(scanStatus, 500);
+  scanStatus();
 };
 function renderVerify(result, srcEpc) {
   const box = document.getElementById('cloneVerify');

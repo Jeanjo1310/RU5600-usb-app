@@ -2982,6 +2982,9 @@ def api_clone_write():
         r = _need_usb()
     except Exception as exc:  # noqa: BLE001
         return jsonify(ok=False, error=str(exc))
+    if not _ensure_answer_mode(r):
+        return jsonify(ok=False,
+                       error="el lector no acepto el modo dirigido: reabrí la conexión")
     try:
         cur_epc, _raw = _clone_probe(r)
         if not cur_epc:
@@ -3048,29 +3051,130 @@ _clone_stop = threading.Event()
 _clone_job = {"running": False, "result": None, "error": None,
                "seconds": 0, "started": 0.0}
 _clone_stop = threading.Event()
+def _ensure_answer_mode(r):
+    """Deja el lector en AnswerMode (lectura dirigida). Devuelve True si quedo."""
+    try:
+        from ru5600_core import DEV_ADDR, PARAM_WORKMODE, WORKMODE_ANSWER
+        r._pace()
+        with r._lock:
+            try:
+                r._lib.CFHid_StopRead()
+            except Exception:  # noqa: BLE001 - si no habia stream, seguir
+                pass
+            r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                            WORKMODE_ANSWER)
+        r._pace(settle=True)
+        return r.work_mode() == WORKMODE_ANSWER
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_clone_scan_job = {"running": False, "tags": [], "started": 0.0,
+                   "seconds": 0, "error": None}
 _clone_scan_stop = threading.Event()
+
+
+def _clone_run_scan(r, seconds):
+    """Escaner la muestra en stream con reporte en vivo (para elegir origen)."""
+    from ru5600_core import (DEV_ADDR, PARAM_WORKMODE, WORKMODE_ACTIVE,
+                             WORKMODE_ANSWER)
+    from ru5600_chip import TID_PREFIX_DB
+    deadline = time.monotonic() + seconds
+    stats: dict = {}
+    try:
+        r._pace()
+        with r._lock:
+            r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                            WORKMODE_ACTIVE)
+        r._pace(settle=True)
+        with r._lock:
+            r._lib.CFHid_ClearTagBuf()
+        r._pace()
+        with r._lock:
+            r._lib.CFHid_StartRead()
+        r._pace(settle=True)
+        while time.monotonic() < deadline and not _clone_scan_stop.is_set():
+            for tag in r.poll_tags():
+                epc = (getattr(tag, "epc_hex", "") or "").upper()
+                chip = None
+                tid = bytes(getattr(tag, "tid", b"") or b"")
+                if tid:
+                    prefix = tid.hex().upper()[:8]
+                    ent = TID_PREFIX_DB.get(prefix)
+                    chip = (("%s %s" % (ent[0], ent[1])).strip()
+                            if isinstance(ent, tuple) and len(ent) >= 2
+                            else prefix)
+                if not epc:
+                    epc, carved = _carve(bytes(tag.raw_id) if tag.raw_id
+                                          else bytes(tag.epc))
+                    chip = chip or carved
+                if not epc:
+                    continue
+                row = stats.setdefault(epc, {"epc": epc, "chip": chip or "candidato"})
+                if chip and (not row["chip"] or row["chip"] == "candidato"):
+                    row["chip"] = chip
+            with _lock:
+                _clone_scan_job["tags"] = [{"epc": k, "chip": v["chip"]}
+                                            for k, v in sorted(stats.items())]
+            time.sleep(0.15)
+    except Exception as exc:  # noqa: BLE001
+        with _lock:
+            _clone_scan_job["error"] = "escaneo fallo: " + str(exc)
+    finally:
+        try:
+            with r._lock:
+                r._lib.CFHid_StopRead()
+        except Exception:  # noqa: BLE001
+            pass
+        r._pace(settle=True)
+        try:
+            with r._lock:
+                r._lib.CFHid_SetDeviceOneParam(DEV_ADDR, PARAM_WORKMODE,
+                                                WORKMODE_ANSWER)
+            r._pace(settle=True)
+        except Exception:  # noqa: BLE001
+            pass
+        with _lock:
+            _clone_scan_job["running"] = False
 
 
 @app.route("/api/clone_scan", methods=["POST"])
 def api_clone_scan():
-    """Lista corta de tags a la vista (stream de N s) para elegir origen."""
+    """Escaner la muestra en segundo plano: el estado se lee con status."""
     cfg = request.get_json(silent=True) or {}
     try:
         seconds = float(cfg.get("seconds", 8))
     except (TypeError, ValueError):
         return jsonify(ok=False, error="segundos invalidos"), 400
     seconds = max(3.0, min(seconds, 20.0))
+    with _lock:
+        if _clone_scan_job["running"]:
+            return jsonify(ok=False, error="ya escaneando"), 409
+        _clone_scan_job.update(running=True, tags=[], started=time.monotonic(),
+                               seconds=seconds, error=None)
+        _clone_scan_stop.clear()
     try:
         r = _need_usb()
     except Exception as exc:  # noqa: BLE001
+        with _lock:
+            _clone_scan_job["running"] = False
         return jsonify(ok=False, error=str(exc))
-    _clone_scan_stop.clear()
-    try:
-        rows, elapsed = _stream_sweep(r, seconds, _clone_scan_stop)
-    except Exception as exc:  # noqa: BLE001
-        return jsonify(ok=False, error="barrido fallo: " + str(exc))
-    out = [{"epc": x["epc"], "chip": x.get("chip") or "candidato"} for x in rows]
-    return jsonify(ok=True, count=len(out), seconds=round(elapsed, 1), tags=out)
+    threading.Thread(target=_clone_run_scan, args=(r, seconds),
+                     daemon=True).start()
+    return jsonify(ok=True, seconds=seconds)
+
+
+@app.route("/api/clone_scan_status", methods=["GET"])
+def api_clone_scan_status():
+    with _lock:
+        job = dict(_clone_scan_job)
+        tags = list(job["tags"])
+    left = 0.0
+    if job["running"]:
+        left = max(0.0, job["seconds"] - (time.monotonic() - job["started"]))
+    return jsonify(ok=True, running=job["running"], count=len(tags),
+                   tags=tags, left=round(left, 1), seconds=job["seconds"],
+                   error=job["error"])
 
 
 @app.route("/api/clone_scan_stop", methods=["POST"])
@@ -3171,6 +3275,12 @@ def _clone_run_burst(r, seconds):
     done_tids: set = set()
     clonados = omitidos = errores = 0
     detalle: list = []
+    if not _ensure_answer_mode(r):
+        with _lock:
+            _clone_job["error"] = "el lector no acepto el modo dirigido"
+            _clone_job["running"] = False
+        _log("error", "clone_burst: sin modo dirigido, no arranco")
+        return
     try:
         while time.monotonic() < deadline and not _clone_stop.is_set():
             cur_epc, _raw = _clone_probe(r, attempts=3, pause=0.05)
