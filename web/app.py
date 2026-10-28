@@ -1104,16 +1104,29 @@ def _active_run():
                 for tag in tags_a:
                     raw = (bytes(tag.raw_id) if tag.raw_id
                            else bytes(tag.epc))
-                    key = raw.hex().upper()
+                    # Clave por EPC (como el Barrido): el mismo tag puede
+                    # llegar con tramas de distinto largo y el crudo cambia.
+                    epc, chip = _carve(raw)
+                    tid = bytes(getattr(tag, "tid", b"") or b"")
+                    if tid:
+                        prefix = tid.hex().upper()[:8]
+                        ent = TID_PREFIX_DB.get(prefix)
+                        if isinstance(ent, tuple) and len(ent) >= 2:
+                            chip = ("%s %s" % (ent[0], ent[1])).strip()
+                        else:
+                            chip = prefix
+                    key = (epc or raw.hex().upper())
                     if key in _active["seen"]:
                         for row in _active["tags"]:
-                            if row["raw"] == key:
+                            if row.get("key", row["raw"]) == key:
                                 row["n"] += 1
+                                row["rssi"] = tag.rssi
+                                row["ant"] = tag.ant
                         continue
                     _active["seen"].add(key)
-                    epc, chip = _carve(raw)
                     _active["tags"].append({
-                        "raw": key, "epc": epc or key[:24],
+                        "key": key, "raw": raw.hex().upper(),
+                        "epc": epc or raw.hex().upper()[:24],
                         "tid": "", "chip": chip or "interpreter pending",
                         "ant": tag.ant, "rssi": tag.rssi, "n": 1})
         finally:
